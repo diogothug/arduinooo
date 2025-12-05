@@ -1,6 +1,8 @@
 import { DataSourceConfig, Keyframe, TideSourceType, MockWaveType, EffectType, WeatherData } from "../types";
 import { useAppStore } from '../store';
 
+console.log("🟦 [TideService] Loading TideSourceService...");
+
 // Helper to generate a random ID
 const uid = () => Math.random().toString(36).substr(2, 9);
 

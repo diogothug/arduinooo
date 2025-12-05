@@ -24,20 +24,23 @@
       }
     </style>
     <script>
+      console.log("🟦 [Boot] HTML Loaded. Initializing Polyfills...");
+      
       // POLYFILL: Previne crash "process is not defined" no Vercel/Browser
       window.process = window.process || { env: { API_KEY: '' } };
       
       // DEBUG: Captura erros globais de script antes do React
       window.addEventListener('error', function(e) {
-        console.error("⛔ Global Script Error:", e.message, "at", e.filename, ":", e.lineno);
+        console.error("⛔ [Boot] Global Script Error:", e.message, "at", e.filename, ":", e.lineno);
         
-        // Se o root estiver vazio (app não montou), mostra o erro na tela
+        // Se o root estiver com o loading state (app não montou), mostra o erro na tela
         setTimeout(function() {
             var root = document.getElementById('root');
-            if(root && root.innerHTML.trim() === "") {
+            // Check if we are still showing the loading text
+            if(root && root.innerText.includes("Initializing System")) {
                 var errDiv = document.createElement('div');
                 errDiv.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:#0f172a; color:#ef4444; padding:20px; z-index:9999; font-family:monospace; overflow:auto;';
-                errDiv.innerHTML = '<h1>⚠ Fatal Boot Error</h1><p>' + e.message + '</p><pre>' + e.filename + ':' + e.lineno + '</pre><p>Check Console (F12) for details.</p>';
+                errDiv.innerHTML = '<h1 style="font-size:1.5em;margin-bottom:10px">⚠ Fatal Boot Error</h1><p>' + e.message + '</p><pre style="opacity:0.7">' + e.filename + ':' + e.lineno + '</pre><p style="margin-top:20px; color:#94a3b8">Check Console (F12) for details.</p>';
                 document.body.appendChild(errDiv);
             }
         }, 1000);
@@ -45,7 +48,7 @@
 
       // DEBUG: Captura Unhandled Promise Rejections
       window.addEventListener('unhandledrejection', function(e) {
-        console.error("⛔ Unhandled Promise Rejection:", e.reason);
+        console.error("⛔ [Boot] Unhandled Promise Rejection:", e.reason);
       });
     </script>
   <script type="importmap">
@@ -55,6 +58,7 @@
     "react": "https://aistudiocdn.com/react@^19.2.1",
     "recharts": "https://aistudiocdn.com/recharts@^3.5.1",
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
+    "react-dom": "https://aistudiocdn.com/react-dom@^19.2.1",
     "@google/genai": "https://aistudiocdn.com/@google/genai@^1.31.0",
     "lucide-react": "https://aistudiocdn.com/lucide-react@^0.556.0",
     "zustand": "https://aistudiocdn.com/zustand@^5.0.9",
@@ -64,6 +68,13 @@
 </script>
 </head>
   <body class="bg-slate-900 text-slate-100 antialiased">
-    <div id="root"></div>
+    <div id="root" class="flex h-screen w-full items-center justify-center text-slate-500 font-mono text-sm flex-col gap-4">
+        <div class="w-8 h-8 border-4 border-slate-700 border-t-cyan-500 rounded-full animate-spin"></div>
+        <div>Initializing System...</div>
+        <div class="text-xs opacity-50">Waiting for React mount</div>
+    </div>
+    
+    <!-- IMPORTANT: Entry point for Vite/Standard tooling -->
+    <script type="module" src="/index.tsx"></script>
   </body>
 </html>

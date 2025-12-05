@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { Keyframe, Device, ViewState, EffectType, FirmwareConfig, DisplayConfig, DisplayWidget, WidgetType, DisplayDriver, ConnectionType, DisplayTheme, RenderMode, DataSourceConfig, TideSourceType, MockWaveType, WeatherData, Notification } from './types';
 
-console.log("[Store] Initializing Zustand Store...");
+console.log("🟦 [Store] Loading store.ts module...");
 
 interface AppState {
   currentView: ViewState;
@@ -58,6 +58,8 @@ interface AppState {
   setNotification: (type: 'success' | 'error' | 'info', message: string) => void;
   clearNotification: () => void;
 }
+
+console.log("🟦 [Store] Creating Zustand store...");
 
 export const useAppStore = create<AppState>((set) => ({
   currentView: ViewState.DASHBOARD,
@@ -220,3 +222,5 @@ export const useAppStore = create<AppState>((set) => ({
   setNotification: (type, message) => set({ notification: { id: Math.random().toString(), type, message } }),
   clearNotification: () => set({ notification: null }),
 }));
+
+console.log("🟦 [Store] Store initialized successfully.");

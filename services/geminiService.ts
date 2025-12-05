@@ -4,10 +4,18 @@ import { Keyframe, EffectType } from "../types";
 // Helper to get a random ID
 const uid = () => Math.random().toString(36).substr(2, 9);
 
-// Safe Environment Accessor
+// Safe Environment Accessor to avoid "process is not defined" crashes
 const getApiKey = () => {
-    if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
-        return process.env.API_KEY;
+    try {
+        if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+            return process.env.API_KEY;
+        }
+        // Fallback for polyfilled window.process
+        if (typeof window !== 'undefined' && (window as any).process && (window as any).process.env) {
+             return (window as any).process.env.API_KEY;
+        }
+    } catch (e) {
+        console.warn("Error accessing process.env:", e);
     }
     return "";
 };
