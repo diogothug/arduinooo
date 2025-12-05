@@ -81,7 +81,7 @@ export const tideSourceService = {
             let weather: Partial<WeatherData> = {};
 
             // WeatherAPI Call for Sensors
-            if (token && locationId) {
+            if (token && locationId && config.activeSource === TideSourceType.API) {
                 const baseUrl = "https://api.weatherapi.com/v1/marine.json";
                 const url = `${baseUrl}?key=${token}&q=${encodeURIComponent(locationId)}&days=1&tides=yes&lang=pt`;
                 
@@ -160,6 +160,7 @@ export const tideSourceService = {
                     keyframes = await fetchTabuaMareData(config, 24); 
                 } catch (e: any) {
                     warning = "Clima OK, mas falha na Tábua Maré: " + e.message;
+                    useAppStore.getState().setApiDebugLog("Erro Tabua Mare: " + e.message);
                 }
             }
 
@@ -181,6 +182,7 @@ export const tideSourceService = {
 
         // Allow double slashes if present in config, but ensure protocol is clean
         const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io/api/v1');
+        // Per docs: GET /harbors/{ids}
         const url = `${apiBase}/harbors/${harborId}`;
 
         console.log("Fetching Harbor Details:", url);
@@ -331,6 +333,8 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     for(let i=0; i<daysRequired; i++) {
         const d = new Date(now);
         d.setDate(now.getDate() + i);
+        // Warning: This simple logic assumes days within same month. 
+        // For robustness near end of month, the API should ideally handle ranges, but sticking to same-month query for safety
         if (d.getMonth() + 1 === month) {
             daysArray.push(d.getDate());
         }
@@ -385,22 +389,50 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
         throw new Error("Nenhum dado de maré encontrado para esta região/data.");
     }
 
-    // 3. Process Data
+    // 3. Process Data (Nested Structure: Data -> Months -> Days -> Tides)
     const frames: Keyframe[] = [];
+    const allTides: { height: number, time: string, type: string, date: string }[] = [];
     
-    // Determine Min/Max for normalization across all days
+    rawData.forEach((harborObj: any) => {
+        // According to docs, structure contains 'months' array
+        const months = harborObj.months || [];
+        months.forEach((monthObj: any) => {
+             const days = monthObj.days || [];
+             days.forEach((dayObj: any) => {
+                 const dateStr = dayObj.date; // "YYYY-MM-DD" inferred or day info
+                 const tides = dayObj.tides || [];
+                 tides.forEach((t: any) => {
+                     // Flatten tide data with its parent date
+                     allTides.push({
+                         height: parseFloat(t.height),
+                         time: t.time,
+                         type: t.type,
+                         date: dateStr // Assuming dayObj has a date field, otherwise construction needed
+                     });
+                 });
+             });
+        });
+    });
+    
+    // Fallback for flat structure if API varies or docs are slightly off
+    if (allTides.length === 0) {
+         // Try checking if tides are direct on day objects (legacy assumption)
+         rawData.forEach((obj: any) => {
+             if (obj.tides) {
+                 obj.tides.forEach((t: any) => allTides.push({...t, height: parseFloat(t.height), date: obj.date}));
+             }
+         });
+    }
+
+    // Determine Min/Max for normalization across all collected tides
     let minH = Infinity;
     let maxH = -Infinity;
 
-    rawData.forEach((dayObj: any) => {
-        const tides = dayObj.tides || [];
-        tides.forEach((t: any) => {
-             const h = parseFloat(t.height);
-             if(!isNaN(h)) {
-                 if(h < minH) minH = h;
-                 if(h > maxH) maxH = h;
-             }
-        });
+    allTides.forEach(t => {
+        if(!isNaN(t.height)) {
+            if(t.height < minH) minH = t.height;
+            if(t.height > maxH) maxH = t.height;
+        }
     });
 
     if (minH === Infinity) { minH = 0.0; maxH = 2.0; }
@@ -414,48 +446,50 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     // Clamp bottom to 0 to prevent visual bugs
     absMin = Math.max(absMin, 0);
 
-    rawData.forEach((dayObj: any) => {
+    // Reference Time for calculation
+    const nowUTC = new Date();
+    const todayBRT = new Date(nowUTC.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    todayBRT.setHours(0,0,0,0);
+
+    allTides.forEach(t => {
          // Force BRT Timezone (-03:00) construction
-         // dayObj.date is "YYYY-MM-DD"
-         let objDate = new Date(`${dayObj.date}T00:00:00-03:00`);
-         
-         const nowUTC = new Date();
-         const todayBRT = new Date(nowUTC.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-         todayBRT.setHours(0,0,0,0);
+         let objDate;
+         if (t.date) {
+             objDate = new Date(`${t.date}T00:00:00-03:00`);
+         } else {
+             // Fallback if date is missing (uses current date + day index assumption, unreliable but safe)
+             objDate = new Date(todayBRT); 
+         }
          
          const diffTime = objDate.getTime() - todayBRT.getTime();
          const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
          
          if (diffDays < 0) return; 
 
-         const tides = dayObj.tides || [];
-         tides.forEach((t: any) => {
-             const [hh, mm] = t.time.split(':').map(Number);
-             
-             // Calculate decimal hour
-             const timeOffset = (diffDays * 24) + hh + (mm / 60);
-             
-             // Ignore if beyond requested cycle
-             if (timeOffset > cycleDuration) return;
+         const [hh, mm] = t.time.split(':').map(Number);
+         
+         // Calculate decimal hour
+         const timeOffset = (diffDays * 24) + hh + (mm / 60);
+         
+         // Ignore if beyond requested cycle
+         if (timeOffset > cycleDuration) return;
 
-             const h = parseFloat(t.height);
-             if (isNaN(h)) return;
+         if (isNaN(t.height)) return;
 
-             let pct = ((h - absMin) / (absMax - absMin)) * 100;
-             if (pct > 100) pct = 100;
-             if (pct < 0) pct = 0;
-             
-             const typeStr = (t.type || "").toLowerCase();
-             const isHigh = typeStr.includes('high') || typeStr.includes('cheia') || typeStr.includes('alta');
-             
-             frames.push({
-                 id: uid(),
-                 timeOffset: parseFloat(timeOffset.toFixed(2)),
-                 height: parseFloat(pct.toFixed(1)),
-                 color: isHigh ? '#00eebb' : '#004488',
-                 intensity: isHigh ? 255 : 100,
-                 effect: isHigh ? EffectType.WAVE : EffectType.STATIC
-             });
+         let pct = ((t.height - absMin) / (absMax - absMin)) * 100;
+         if (pct > 100) pct = 100;
+         if (pct < 0) pct = 0;
+         
+         const typeStr = (t.type || "").toLowerCase();
+         const isHigh = typeStr.includes('high') || typeStr.includes('cheia') || typeStr.includes('alta');
+         
+         frames.push({
+             id: uid(),
+             timeOffset: parseFloat(timeOffset.toFixed(2)),
+             height: parseFloat(pct.toFixed(1)),
+             color: isHigh ? '#00eebb' : '#004488',
+             intensity: isHigh ? 255 : 100,
+             effect: isHigh ? EffectType.WAVE : EffectType.STATIC
          });
     });
     
