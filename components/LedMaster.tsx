@@ -1,13 +1,14 @@
 
-import React, { useRef, useEffect, useState, useMemo } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { useAppStore } from '../store';
-import { Zap, Settings, AlertTriangle, Lightbulb, BoxSelect, CloudRain, Wind, Thermometer, Moon, Activity, Waves, Info, AlignLeft } from 'lucide-react';
+import { Zap, Settings, AlertTriangle, Lightbulb, BoxSelect, CloudRain, Wind, Thermometer, Moon, Activity, Waves, AlignLeft, Sun } from 'lucide-react';
 
 // Animation Presets Definition
 const PRESETS = [
     { id: 'TIDE_FILL', label: 'Nível Maré (Fill)', icon: <Waves size={16}/>, desc: 'Enchimento vertical baseado na maré atual.' },
     { id: 'TIDE_GRAPH', label: 'Gráfico Maré', icon: <Activity size={16}/>, desc: 'Curva de maré ao longo do tempo (Matriz).', matrixOnly: true },
     { id: 'OCEAN_WAVES', label: 'Ondas Dinâmicas', icon: <Waves size={16}/>, desc: 'Simulação fluída de ondas com vento.', matrixOnly: true },
+    { id: 'DAY_CYCLE', label: 'Ciclo Solar (Astro)', icon: <Sun size={16}/>, desc: 'Posição do sol e cor do céu (24h).', matrixOnly: true },
     { id: 'SCROLL_INFO', label: 'Info Ticker', icon: <AlignLeft size={16}/>, desc: 'Rolagem de dados: Temp, Vento, Maré.', matrixOnly: true },
     { id: 'MOON_PHASE', label: 'Fase da Lua', icon: <Moon size={16}/>, desc: 'Visualização da iluminação lunar.', matrixOnly: true },
     { id: 'WEATHER_ICON', label: 'Condição Clima', icon: <CloudRain size={16}/>, desc: 'Ícone pixel-art do clima atual.', matrixOnly: true },
@@ -194,9 +195,10 @@ export const LedMaster: React.FC = () => {
                              const effectiveRow = matrixH - 1 - row;
                              const baseLevel = (tideLevel / 100) * matrixH;
                              
-                             // Wave mechanics
-                             const waveSpeed = 0.005 + (weatherData.windSpeed * 0.0001);
-                             const waveAmp = 0.5 + (weatherData.windSpeed * 0.02);
+                             // Wave mechanics based on Wind
+                             const windFactor = Math.min(weatherData.windSpeed / 50, 1.5); // 0 to 1.5
+                             const waveSpeed = 0.005 + (windFactor * 0.01);
+                             const waveAmp = 0.5 + (windFactor * 1.5);
                              const waveFreq = 0.5;
                              
                              const wave1 = Math.sin((col * waveFreq) + (time * waveSpeed)) * waveAmp;
@@ -205,11 +207,15 @@ export const LedMaster: React.FC = () => {
                              const surfaceY = baseLevel + wave1 + wave2;
                              
                              if (effectiveRow < surfaceY) {
-                                 // Gradient depth
                                  const depth = surfaceY - effectiveRow;
-                                 if (depth < 1.5) { // Foam
-                                    r=150; g=230; b=255;
-                                 } else { // Deep water
+                                 if (depth < 0.8 && windFactor > 0.5 && Math.random() > 0.9) { 
+                                     // Foam / Whitecaps on peak
+                                     r=255; g=255; b=255;
+                                 } else if (depth < 1.5) { 
+                                    // Surface
+                                    r=100; g=210; b=255;
+                                 } else { 
+                                    // Deep water
                                     r=0; g=50 + (100/depth); b=150 + (100/depth);
                                  }
                              }
@@ -220,6 +226,59 @@ export const LedMaster: React.FC = () => {
                          }
                         break;
 
+                    case 'DAY_CYCLE':
+                         if (layout === 'MATRIX') {
+                             // 24h simulated time (0-24)
+                             // 0-6: Night/Dawn, 6-18: Day, 18-24: Dusk/Night
+                             const t = simulatedTime % 24;
+                             let skyColor = {r:0, g:0, b:20}; // Deep Night
+
+                             if (t >= 5 && t < 7) { // Dawn
+                                 skyColor = {r:50, g:20, b:50}; 
+                             } else if (t >= 7 && t < 17) { // Day
+                                 skyColor = {r:0, g:150, b:255};
+                             } else if (t >= 17 && t < 19) { // Dusk
+                                 skyColor = {r:255, g:100, b:50};
+                             } else if (t >= 19 && t < 20) { // Twilight
+                                 skyColor = {r:20, g:0, b:50};
+                             }
+
+                             // Fill Sky
+                             r = skyColor.r; g = skyColor.g; b = skyColor.b;
+
+                             // Draw Sun (Yellow)
+                             if (t > 5 && t < 19) {
+                                 // Sun Path (Arc)
+                                 const dayProgress = (t - 6) / 12; // 0 to 1
+                                 const sunX = dayProgress * matrixW;
+                                 const sunY = matrixH - Math.sin(dayProgress * Math.PI) * (matrixH * 0.8);
+                                 
+                                 const dx = col - sunX;
+                                 const dy = (matrixH - 1 - row) - sunY;
+                                 if (dx*dx + dy*dy < 2.5) {
+                                     r=255; g=220; b=0;
+                                 }
+                             } 
+                             // Draw Moon (White)
+                             else {
+                                 const nightProgress = (t >= 19 ? t - 19 : t + 5) / 10;
+                                 const moonX = nightProgress * matrixW;
+                                 const moonY = matrixH - Math.sin(nightProgress * Math.PI) * (matrixH * 0.6);
+                                 const dx = col - moonX;
+                                 const dy = (matrixH - 1 - row) - moonY;
+                                 if (dx*dx + dy*dy < 1.5) {
+                                     r=200; g=200; b=200;
+                                 }
+                             }
+
+                         } else {
+                             // Strip: Color based on time
+                             const t = simulatedTime % 24;
+                             if (t>6 && t<18) { r=0; g=100; b=255; } // Day
+                             else { r=0; g=0; b=50; } // Night
+                         }
+                         break;
+
                     case 'SCROLL_INFO':
                         if (layout === 'MATRIX' && textPixels) {
                             // Map i (linear index) to x,y in the canvas buffer
@@ -228,11 +287,11 @@ export const LedMaster: React.FC = () => {
                             const pxIndex = (row * matrixW + col) * 4;
                             const val = textPixels[pxIndex]; // R channel (since we drew white on black)
                             if (val > 50) {
-                                // Color based on variable mapping logic or just Cyan
+                                // Cyan text
                                 r=0; g=200; b=255; 
                             }
                         } else {
-                             // Fallback for strip - just a scanner
+                             // Fallback for strip
                              const pos = Math.floor((time / 50) % count);
                              if (Math.abs(i-pos) < 3) { r=255; g=255; b=255; }
                         }
@@ -287,8 +346,6 @@ export const LedMaster: React.FC = () => {
                                  // Assuming waxing for simplicity of vis
                                  const shadowEdge = (col - (cx - rad)) / (rad * 2);
                                  
-                                 // Check moon phase name to decide shadow side?
-                                 // Using simple gradient for now
                                  if (shadowEdge > phaseVal) {
                                      r=10; g=10; b=20; 
                                  }
@@ -307,13 +364,18 @@ export const LedMaster: React.FC = () => {
                             const cx = Math.floor(matrixW/2);
                             const cy = Math.floor(matrixH/2);
                             
-                            if (cond.includes('chuva') || cond.includes('rain') || cond.includes('drizzle')) {
+                            if (cond.includes('chuva') || cond.includes('rain') || cond.includes('drizzle') || cond.includes('storm')) {
                                 // Rain animation: drops falling
                                 const dropSpeed = 100;
                                 const dropOffset = Math.floor(time / dropSpeed);
                                 if ((col + row + dropOffset) % 4 === 0) { r=0; g=0; b=255; }
                                 // Dark background cloud top
                                 if (row < 2) { r=50; g=50; b=50; }
+
+                                // Lightning
+                                if ((cond.includes('storm') || cond.includes('trovoada')) && Math.random() > 0.98) {
+                                    r=255; g=255; b=255; // Flash
+                                }
                             } 
                             else if (cond.includes('nuve') || cond.includes('cloud') || cond.includes('overcast')) {
                                 // Moving clouds
@@ -561,6 +623,9 @@ export const LedMaster: React.FC = () => {
                               )}
                               {(activeAnimation === 'TIDE_FILL' || activeAnimation === 'TIDE_GRAPH' || activeAnimation === 'OCEAN_WAVES') && (
                                   <span className="text-[10px] text-cyan-300 bg-cyan-900/50 px-1 rounded">Maré: {getTideHeightAt(simulatedTime).toFixed(1)}%</span>
+                              )}
+                              {activeAnimation === 'DAY_CYCLE' && (
+                                  <span className="text-[10px] text-yellow-300 bg-yellow-900/50 px-1 rounded">Hora Solar: {simulatedTime.toFixed(1)}h</span>
                               )}
                          </div>
                      </div>

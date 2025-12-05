@@ -180,7 +180,7 @@ export const tideSourceService = {
         if (!harborId) throw new Error("ID do porto não definido");
 
         // Allow double slashes if present in config, but ensure protocol is clean
-        const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io//api/v1');
+        const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io/api/v1');
         const url = `${apiBase}/harbors/${harborId}`;
 
         console.log("Fetching Harbor Details:", url);
@@ -219,7 +219,7 @@ export const tideSourceService = {
     findNearestHarbor: async (config: DataSourceConfig): Promise<{ id: number, name: string, distance: number }> => {
          const { baseUrl, uf, lat, lng } = config.tabuaMare;
          
-         const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io//api/v1'); 
+         const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io/api/v1'); 
          const latLngParam = `[${lat},${lng}]`;
          
          // Using endpoint: GET /nearested-harbor/{state}/{[lat,lng]}
@@ -318,7 +318,7 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     const { baseUrl, uf, lat, lng, harborId } = config.tabuaMare;
     
     // Clean base URL using sanitizer
-    const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io//api/v1');
+    const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io/api/v1');
 
     // 1. Calculate Date Parameters
     const now = new Date();
