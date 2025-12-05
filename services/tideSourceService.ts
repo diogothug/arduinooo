@@ -1,14 +1,13 @@
-
 import { DataSourceConfig, Keyframe, TideSourceType, MockWaveType, EffectType, WeatherData } from "../types";
 import { useAppStore } from '../store';
 
 // Helper to generate a random ID
 const uid = () => Math.random().toString(36).substr(2, 9);
 
-// Helper to sanitize base URLs (remove trailing slashes, prevent double slashes in path)
+// Helper to sanitize base URLs and ensure valid structure
 const sanitizeBaseUrl = (url: string) => {
     if (!url) return '';
-    // Remove trailing slash
+    // Remove trailing slashes
     let clean = url.replace(/\/+$/, '');
     return clean;
 };
@@ -21,18 +20,19 @@ export const tideSourceService = {
         let resultFrames: Keyframe[] = [];
         let sourceUsed = TideSourceType.MOCK;
 
+        console.log(`[TideSource] Requesting data via ${config.activeSource}`);
+
         // --- LEVEL 1A: API (WeatherAPI) ---
         if (config.activeSource === TideSourceType.API) {
             try {
-                // For API source, we use fetchLiveWeather but extraction is specific
                 const { frames } = await tideSourceService.fetchLiveWeather(config);
                 if (frames.length > 0) {
                      return { frames, sourceUsed: TideSourceType.API };
                 } else {
-                    throw new Error("API retornou sucesso mas sem dados de maré.");
+                    console.warn("[TideSource] WeatherAPI returned success but no tide data.");
                 }
             } catch (error) {
-                console.warn("API Failure, falling back...", error);
+                console.warn("[TideSource] WeatherAPI Failure, trying fallback...", error);
             }
         }
 
@@ -45,17 +45,19 @@ export const tideSourceService = {
                  }
                  throw new Error("Tábua Maré vazia.");
              } catch (error: any) {
-                 console.warn("Tábua Maré Failure:", error);
+                 console.error("[TideSource] Tábua Maré Failure:", error);
+                 // We throw here to notify the UI specifically about the API failure if it was the selected source
                  throw new Error(`Falha Tábua Maré: ${error.message}`); 
              }
         }
 
         // --- LEVEL 2: MOCK ---
+        console.log("[TideSource] Using Mock/Fallback data");
         try {
             resultFrames = generateMockData(config, cycleDuration);
             sourceUsed = TideSourceType.MOCK;
         } catch (error) {
-             console.error("Mock Generation Failed", error);
+             console.error("[TideSource] Mock Generation Failed", error);
              if (config.lastValidData) {
                  resultFrames = calculateFallback(config.lastValidData, cycleDuration);
                  sourceUsed = TideSourceType.CALCULATED;
@@ -73,7 +75,6 @@ export const tideSourceService = {
     fetchLiveWeather: async (config: DataSourceConfig): Promise<{ weather: Partial<WeatherData>, frames: Keyframe[], warning?: string }> => {
         const { token, locationId } = config.api;
         
-        // Log Raw Response
         useAppStore.getState().setApiDebugLog("Iniciando requisição...");
 
         try {
@@ -85,11 +86,11 @@ export const tideSourceService = {
                 const baseUrl = "https://api.weatherapi.com/v1/marine.json";
                 const url = `${baseUrl}?key=${token}&q=${encodeURIComponent(locationId)}&days=1&tides=yes&lang=pt`;
                 
-                console.log(`Fetching Live Weather Data...`);
+                console.log(`[TideSource] GET ${url}`);
                 const response = await fetch(url);
                 const text = await response.text();
                 
-                useAppStore.getState().setApiDebugLog(text);
+                useAppStore.getState().setApiDebugLog(text.substring(0, 1000) + "..."); // Truncate log
 
                 if (!response.ok) {
                     throw new Error(`WeatherAPI Erro HTTP ${response.status}`);
@@ -106,15 +107,10 @@ export const tideSourceService = {
                      throw new Error(`WeatherAPI: ${errObj.message} (Code ${errObj.code})`);
                 }
                 
-                if (!data.location) {
-                    throw new Error("JSON incompleto: Objeto 'location' ausente.");
-                }
-
                 const forecastDay = data.forecast?.forecastday?.[0];
                 const current = data.current || {};
                 const astro = forecastDay?.astro || {};
                 
-                // Helper for boolean is_day
                 let isDay = true;
                 if (current.is_day !== undefined) isDay = current.is_day === 1;
                 else if (astro.is_sun_up !== undefined) isDay = astro.is_sun_up === 1;
@@ -135,14 +131,9 @@ export const tideSourceService = {
             let keyframes: Keyframe[] = [];
             let warning: string | undefined = undefined;
 
-            // Extract Tides based on Active Source
             if (config.activeSource === TideSourceType.API) {
-                // FIXED: Correct path for WeatherAPI Marine tides
                 if (data) {
-                    // Path 1: forecast.forecastday[0].tides[0].tide (Most common in Marine API)
                     let tideData = data.forecast?.forecastday?.[0]?.tides?.[0]?.tide;
-                    
-                    // Fallback Path: forecast.forecastday[0].day.tides[0].tide (Legacy/Alternative)
                     if (!tideData) {
                         tideData = data.forecast?.forecastday?.[0]?.day?.tides?.[0]?.tide;
                     }
@@ -150,16 +141,16 @@ export const tideSourceService = {
                     if (tideData && Array.isArray(tideData) && tideData.length > 0) {
                          keyframes = parseWeatherApiTides(tideData);
                     } else {
-                        warning = "Dados meteorológicos recebidos, mas sem tábua de maré (WeatherAPI). Verifique se 'tides=yes' está suportado no seu plano.";
+                        warning = "Dados meteorológicos recebidos, mas sem tábua de maré (WeatherAPI).";
                     }
                 }
             } 
             else if (config.activeSource === TideSourceType.TABUA_MARE) {
-                // Fetch independently
                 try {
                     keyframes = await fetchTabuaMareData(config, 24); 
                 } catch (e: any) {
                     warning = "Clima OK, mas falha na Tábua Maré: " + e.message;
+                    console.error("[TideSource] Tabua Mare Independent Fetch Error:", e);
                     useAppStore.getState().setApiDebugLog("Erro Tabua Mare: " + e.message);
                 }
             }
@@ -167,39 +158,31 @@ export const tideSourceService = {
             return { weather, frames: keyframes, warning };
 
         } catch (err: any) {
-            console.error("API Fetch Error:", err);
+            console.error("[TideSource] API Error:", err);
             useAppStore.getState().setApiDebugLog("Erro fatal: " + err.message);
             throw new Error(err.message || "Falha desconhecida na conexão API");
         }
     },
 
-    /**
-     * Get harbor details by ID (Port 8)
-     */
     getHarborById: async (config: DataSourceConfig): Promise<{ id: number, name: string, mean_level?: number }> => {
         const { baseUrl, harborId } = config.tabuaMare;
         if (!harborId) throw new Error("ID do porto não definido");
 
-        // Allow double slashes if present in config, but ensure protocol is clean
         const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io/api/v1');
-        // Per docs: GET /harbors/{ids}
         const url = `${apiBase}/harbors/${harborId}`;
 
-        console.log("Fetching Harbor Details:", url);
+        console.log("[TideSource] Fetching Harbor:", url);
         useAppStore.getState().setApiDebugLog(`GET ${url}...`);
 
         try {
             const res = await fetch(url);
             const textRes = await res.text();
             
-            // Append log
             useAppStore.getState().setApiDebugLog(textRes);
 
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             
             const json = JSON.parse(textRes);
-            
-            // Expected response: { data: [ { id: 8, harbor_name: "..." } ] }
             if (json.data && Array.isArray(json.data) && json.data.length > 0) {
                 const p = json.data[0];
                 return {
@@ -214,38 +197,24 @@ export const tideSourceService = {
         }
     },
 
-    /**
-     * Finds the nearest harbor based on state and lat/lng
-     * Returns structured object
-     */
     findNearestHarbor: async (config: DataSourceConfig): Promise<{ id: number, name: string, distance: number }> => {
          const { baseUrl, uf, lat, lng } = config.tabuaMare;
          
          const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io/api/v1'); 
          const latLngParam = `[${lat},${lng}]`;
-         
-         // Using endpoint: GET /nearested-harbor/{state}/{[lat,lng]}
          const url = `${apiBase}/nearested-harbor/${uf.toLowerCase()}/${latLngParam}`;
          
-         console.log("Checking Nearest Harbor:", url);
+         console.log("[TideSource] Finding Nearest:", url);
          useAppStore.getState().setApiDebugLog(`GET ${url}...`);
 
          try {
              const res = await fetch(url);
              const textRes = await res.text();
-             
-             // Capture Raw Response for Debug Log
              useAppStore.getState().setApiDebugLog(textRes);
              
              if (!res.ok) throw new Error(`HTTP ${res.status}`);
              
-             let json;
-             try {
-                json = JSON.parse(textRes);
-             } catch(e) {
-                throw new Error("Resposta inválida (não-JSON).");
-             }
-
+             const json = JSON.parse(textRes);
              if (json.data && json.data.length > 0) {
                  const p = json.data[0];
                  return {
@@ -261,7 +230,6 @@ export const tideSourceService = {
     }
 };
 
-// --- HELPER: Parse WeatherAPI Tides ---
 function parseWeatherApiTides(tideData: any[]): Keyframe[] {
     let keyframes: Keyframe[] = [];
     let maxH = -Infinity;
@@ -278,19 +246,15 @@ function parseWeatherApiTides(tideData: any[]): Keyframe[] {
     const range = maxH - minH;
     const effectiveRange = range < 0.1 ? 1.0 : range;
     
-    // Safety: Ensure absMin is not negative to prevent drawing artifacts
     let absMin = minH - (effectiveRange * 0.1); 
     let absMax = maxH + (effectiveRange * 0.1);
-    
-    // Clamp min to 0 if data is relative to chart datum (usually positive)
     absMin = Math.max(absMin, 0);
     
     tideData.forEach((t: any) => {
         const h = parseFloat(t.tide_height_mt);
         if (isNaN(h)) return;
 
-        const dateStr = t.tide_time; // "YYYY-MM-DD HH:MM"
-        // Robust Time Parsing
+        const dateStr = t.tide_time; 
         const [dPart, tPart] = dateStr.split(' ');
         const [hours, mins] = tPart.split(':').map(Number);
         
@@ -314,27 +278,26 @@ function parseWeatherApiTides(tideData: any[]): Keyframe[] {
     return keyframes.sort((a, b) => a.timeOffset - b.timeOffset);
 }
 
-
 // --- TABUA MARE GENERATOR (Level 1B) ---
 async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: number): Promise<Keyframe[]> {
     const { baseUrl, uf, lat, lng, harborId } = config.tabuaMare;
     
-    // Clean base URL using sanitizer
+    // Valid URL: https://tabuamare.devtu.qzz.io/api/v1
     const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io/api/v1');
 
-    // 1. Calculate Date Parameters
     const now = new Date();
-    const month = now.getMonth() + 1; // 1-12
+    const month = now.getMonth() + 1; 
     
-    // Calculate required days based on cycleDuration
+    // We request current day + next days based on duration
     const daysRequired = Math.ceil(cycleDuration / 24) || 1;
     const daysArray: number[] = [];
     
     for(let i=0; i<daysRequired; i++) {
         const d = new Date(now);
         d.setDate(now.getDate() + i);
-        // Warning: This simple logic assumes days within same month. 
-        // For robustness near end of month, the API should ideally handle ranges, but sticking to same-month query for safety
+        // Warning: API requires month matching. If span crosses month, this simple logic breaks.
+        // For strict reliability, we stick to current month query or would need multi-fetch.
+        // We will only query days belonging to current month for safety in this version.
         if (d.getMonth() + 1 === month) {
             daysArray.push(d.getDate());
         }
@@ -348,17 +311,15 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
 
     // 2. Select Endpoint
     if (harborId) {
-        // USE ID-BASED ENDPOINT if harborId is present (e.g. 8)
-        // GET /api/v1/tabua-mare/{harborId}/{month}/{days}
+        // GET /tabua-mare/{harbor}/{month}/{days}
         url = `${apiBase}/tabua-mare/${harborId}/${month}/${daysParam}`;
-        console.log("Fetching Tabua Mare by ID...", url);
+        console.log(`[TideSource] Fetching Tabua Mare by ID ${harborId}...`);
     } else {
-        // USE GEO-LOCATED ENDPOINT
+        // GET /geo-tabua-mare/{lat_lng}/{state}/{month}/{days}
         const latLngParam = `[${lat},${lng}]`;
         const stateParam = uf.toLowerCase();
-        // GET /geo-tabua-mare/{lat_lng}/{state}/{month}/{days}
         url = `${apiBase}/geo-tabua-mare/${latLngParam}/${stateParam}/${month}/${daysParam}`;
-        console.log("Fetching Geo Tabua Mare...", url);
+        console.log(`[TideSource] Fetching Geo Tabua Mare ${lat},${lng}...`);
     }
     
     useAppStore.getState().setApiDebugLog(`GET ${url}...`);
@@ -366,18 +327,17 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     const res = await fetch(url);
     const textRes = await res.text();
     
-    // Log for debug
-    useAppStore.getState().setApiDebugLog(textRes);
+    useAppStore.getState().setApiDebugLog(textRes.substring(0, 500) + "..."); // Truncate
 
     if (!res.ok) {
-        throw new Error(`Erro HTTP ${res.status} na Tábua Maré`);
+        throw new Error(`Erro HTTP ${res.status}: ${textRes}`);
     }
 
     let json: any;
     try {
         json = JSON.parse(textRes);
     } catch(e) {
-        throw new Error("Resposta inválida da API Tábua Maré (JSON Parse Error).");
+        throw new Error("Resposta inválida da API (JSON Parse Error).");
     }
     
     if (json.error && json.error.msg) {
@@ -386,45 +346,52 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
 
     const rawData = json.data || [];
     if (!Array.isArray(rawData) || rawData.length === 0) {
-        throw new Error("Nenhum dado de maré encontrado para esta região/data.");
+        throw new Error("Nenhum dado de maré encontrado na resposta (campo data vazio).");
     }
 
-    // 3. Process Data (Nested Structure: Data -> Months -> Days -> Tides)
     const frames: Keyframe[] = [];
     const allTides: { height: number, time: string, type: string, date: string }[] = [];
     
-    rawData.forEach((harborObj: any) => {
-        // According to docs, structure contains 'months' array
-        const months = harborObj.months || [];
-        months.forEach((monthObj: any) => {
-             const days = monthObj.days || [];
-             days.forEach((dayObj: any) => {
-                 const dateStr = dayObj.date; // "YYYY-MM-DD" inferred or day info
-                 const tides = dayObj.tides || [];
+    // Parse nested structure: Data -> Months -> Days -> Tides
+    // Doc Page 8: "data": [ { "months": [ { "days": [ { "tides": [...] } ] } ] } ]
+    
+    rawData.forEach((harborItem: any) => {
+        const months = harborItem.months || [];
+        
+        months.forEach((monthItem: any) => {
+             const days = monthItem.days || [];
+             
+             days.forEach((dayItem: any) => {
+                 const dateStr = dayItem.date; // "YYYY-MM-DD"
+                 const tides = dayItem.tides || [];
+                 
                  tides.forEach((t: any) => {
-                     // Flatten tide data with its parent date
                      allTides.push({
                          height: parseFloat(t.height),
                          time: t.time,
                          type: t.type,
-                         date: dateStr // Assuming dayObj has a date field, otherwise construction needed
+                         date: dateStr
                      });
                  });
              });
         });
+
+        // Fallback for flat structure (if API structure varies from docs)
+        if (allTides.length === 0 && harborItem.tides) {
+            console.log("[TideSource] Using fallback flat structure parsing");
+            harborItem.tides.forEach((t: any) => {
+                 allTides.push({...t, height: parseFloat(t.height), date: harborItem.date});
+            });
+        }
     });
-    
-    // Fallback for flat structure if API varies or docs are slightly off
+
+    console.log(`[TideSource] Parsed ${allTides.length} raw tide points.`);
+
     if (allTides.length === 0) {
-         // Try checking if tides are direct on day objects (legacy assumption)
-         rawData.forEach((obj: any) => {
-             if (obj.tides) {
-                 obj.tides.forEach((t: any) => allTides.push({...t, height: parseFloat(t.height), date: obj.date}));
-             }
-         });
+        throw new Error("Estrutura do JSON desconhecida ou sem marés.");
     }
 
-    // Determine Min/Max for normalization across all collected tides
+    // Determine Min/Max for normalization
     let minH = Infinity;
     let maxH = -Infinity;
 
@@ -439,40 +406,37 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     const range = maxH - minH;
     const safeRange = range < 0.1 ? 1.0 : range;
     
-    // Add 10% buffer
     let absMin = minH - (safeRange * 0.1); 
     const absMax = maxH + (safeRange * 0.1);
-    
-    // Clamp bottom to 0 to prevent visual bugs
     absMin = Math.max(absMin, 0);
 
     // Reference Time for calculation
     const nowUTC = new Date();
-    const todayBRT = new Date(nowUTC.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-    todayBRT.setHours(0,0,0,0);
+    // Use simple date comparison to avoid timezone complexity in browser
+    const todayStr = nowUTC.toISOString().split('T')[0];
+    const todayDate = new Date(todayStr);
 
     allTides.forEach(t => {
-         // Force BRT Timezone (-03:00) construction
-         let objDate;
+         let tideDate;
          if (t.date) {
-             objDate = new Date(`${t.date}T00:00:00-03:00`);
+             tideDate = new Date(t.date);
          } else {
-             // Fallback if date is missing (uses current date + day index assumption, unreliable but safe)
-             objDate = new Date(todayBRT); 
+             tideDate = new Date(todayDate);
          }
          
-         const diffTime = objDate.getTime() - todayBRT.getTime();
+         const diffTime = tideDate.getTime() - todayDate.getTime();
          const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
          
-         if (diffDays < 0) return; 
+         // Only process if within valid range (allow slight past for interpolation)
+         if (diffDays < -1) return; 
 
          const [hh, mm] = t.time.split(':').map(Number);
          
-         // Calculate decimal hour
+         // Calculate decimal hour from start of TODAY
          const timeOffset = (diffDays * 24) + hh + (mm / 60);
          
-         // Ignore if beyond requested cycle
-         if (timeOffset > cycleDuration) return;
+         // Ignore if too far in future
+         if (timeOffset > cycleDuration + 24) return; 
 
          if (isNaN(t.height)) return;
 
@@ -496,11 +460,10 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     return frames.sort((a,b) => a.timeOffset - b.timeOffset);
 }
 
-// --- MOCK GENERATOR (Level 2) ---
 function generateMockData(config: DataSourceConfig, cycleDuration: number): Keyframe[] {
     const { minHeight, maxHeight, periodHours, waveType } = config.mock;
     const frames: Keyframe[] = [];
-    const steps = 12; // More steps for smoother default
+    const steps = 12; 
     
     for (let i = 0; i <= steps; i++) {
         const t = (i / steps) * cycleDuration;
@@ -530,7 +493,6 @@ function generateMockData(config: DataSourceConfig, cycleDuration: number): Keyf
     return frames;
 }
 
-// --- CALCULATION FALLBACK (Level 3) ---
 function calculateFallback(lastFrame: Keyframe | null, cycleDuration: number): Keyframe[] {
     const frames: Keyframe[] = [];
     const period = 12.42;

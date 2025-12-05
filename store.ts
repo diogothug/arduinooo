@@ -1,6 +1,7 @@
-
 import { create } from 'zustand';
 import { Keyframe, Device, ViewState, EffectType, FirmwareConfig, DisplayConfig, DisplayWidget, WidgetType, DisplayDriver, ConnectionType, DisplayTheme, RenderMode, DataSourceConfig, TideSourceType, MockWaveType, WeatherData, Notification } from './types';
+
+console.log("[Store] Initializing Zustand Store...");
 
 interface AppState {
   currentView: ViewState;
@@ -116,6 +117,7 @@ export const useAppStore = create<AppState>((set) => ({
       locationId: '-13.5655,-38.9227', // Moreré Coordinates (Precise)
     },
     tabuaMare: {
+      // NOTE: Using double slash in path if needed by server, but usually normalized
       baseUrl: 'https://tabuamare.devtu.qzz.io/api/v1',
       uf: 'ba',
       lat: -14.78, // Official Lat for Porto 8
