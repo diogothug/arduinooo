@@ -1,3 +1,4 @@
+
 import { DataSourceConfig, Keyframe, TideSourceType, MockWaveType, EffectType, WeatherData } from "../types";
 import { useAppStore } from '../store';
 
@@ -85,7 +86,8 @@ export const tideSourceService = {
 
             if (token && locationId && config.activeSource === TideSourceType.API) {
                 const baseUrl = "https://api.weatherapi.com/v1/marine.json";
-                const url = `${baseUrl}?key=${token}&q=${encodeURIComponent(locationId)}&days=1&tides=yes&lang=pt`;
+                // Add days=3 for forecast and astronomy
+                const url = `${baseUrl}?key=${token}&q=${encodeURIComponent(locationId)}&days=3&tides=yes&lang=pt`;
                 
                 console.log(`[TideSource] GET ${url}`);
                 const response = await fetch(url);
@@ -104,12 +106,40 @@ export const tideSourceService = {
                 }
                 
                 const current = data.current || {};
+                const forecastDays = data.forecast?.forecastday || [];
+                const astro = forecastDays[0]?.astro || {};
+                
                 weather = {
                     temp: current.temp_c ?? 0,
                     humidity: current.humidity ?? 0,
                     windSpeed: current.wind_kph ?? 0,
                     windDir: current.wind_degree ?? 0,
-                    conditionText: current.condition?.text || "Desconhecido"
+                    conditionText: current.condition?.text || "Desconhecido",
+                    
+                    // Expanded Metrics
+                    feelsLike: current.feelslike_c ?? current.temp_c,
+                    uv: current.uv ?? 0,
+                    pressure: current.pressure_mb ?? 1013,
+                    cloud: current.cloud ?? 0,
+                    precip: current.precip_mm ?? 0,
+                    isDay: current.is_day === 1,
+                    
+                    // Astronomy (From Forecast Day 0)
+                    sunrise: astro.sunrise ?? "06:00 AM",
+                    sunset: astro.sunset ?? "06:00 PM",
+                    moonPhase: astro.moon_phase ?? "Unknown",
+                    moonIllumination: astro.moon_illumination ?? 50,
+                    
+                    // 3-Day Forecast
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    forecast: forecastDays.map((d: any) => ({
+                        date: d.date, // "2023-10-25"
+                        maxTemp: d.day.maxtemp_c,
+                        minTemp: d.day.mintemp_c,
+                        rainChance: d.day.daily_chance_of_rain,
+                        condition: d.day.condition.text,
+                        icon: d.day.condition.icon
+                    }))
                 };
             }
 
@@ -117,7 +147,53 @@ export const tideSourceService = {
             let warning: string | undefined = undefined;
 
             if (config.activeSource === TideSourceType.API && data) {
-                // Logic for WeatherAPI tides (omitted for brevity, assume similar to before)
+                // Logic for WeatherAPI tides (if available in marine.json)
+                 if (data.forecast?.forecastday) {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    data.forecast.forecastday.forEach((day: any) => {
+                         if (day.day?.tides) {
+                             // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                             day.day.tides.forEach((tideSet: any) => {
+                                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                 tideSet.tide.forEach((t: any) => {
+                                     const timeStr = t.tide_time; // "2023-10-25 04:30"
+                                     const dt = new Date(timeStr);
+                                     const today = new Date();
+                                     today.setHours(0,0,0,0);
+                                     
+                                     // Calculate 0-24h (or more) offset
+                                     const diffMs = dt.getTime() - today.getTime();
+                                     const timeOffset = diffMs / (1000 * 60 * 60);
+
+                                     // Assuming 0-24h cycle for main view
+                                     // Filter logic can be improved for multi-day
+                                     
+                                     const h = parseFloat(t.tide_height_mt);
+                                     if (!isNaN(h)) {
+                                         // Rough normalize: -0.2 to 2.5m -> 0 to 100%
+                                         let pct = ((h + 0.2) / 2.7) * 100;
+                                         pct = Math.max(0, Math.min(100, pct));
+                                         
+                                         const isHigh = t.tide_type === "HIGH";
+                                         keyframes.push({
+                                            id: uid(),
+                                            timeOffset: parseFloat(timeOffset.toFixed(2)),
+                                            height: parseFloat(pct.toFixed(1)),
+                                            color: isHigh ? '#00eebb' : '#004488',
+                                            intensity: 100,
+                                            effect: isHigh ? EffectType.WAVE : EffectType.STATIC
+                                         });
+                                     }
+                                 });
+                             });
+                         }
+                    });
+                    
+                    // Sort
+                    keyframes.sort((a,b) => a.timeOffset - b.timeOffset);
+                    
+                    if (keyframes.length === 0) warning = "API retornou Clima/Astro, mas SEM dados de maré.";
+                 }
             } 
             else if (config.activeSource === TideSourceType.TABUA_MARE) {
                 try {

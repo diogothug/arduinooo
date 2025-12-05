@@ -232,17 +232,40 @@ export interface FirmwareConfig {
   ledMatrixWidth?: number; // Only for matrix
 }
 
+export interface DailyForecast {
+  date: string;
+  maxTemp: number;
+  minTemp: number;
+  rainChance: number;
+  condition: string;
+  icon?: string;
+}
+
 export interface WeatherData {
+  // Core
   temp: number;
   humidity: number;
   windSpeed: number; // km/h
   windDir: number; // degrees
-  rain: number; // mm
-  battery: number; // %
-  moonPhase: string; // e.g., "Full Moon"
+  
+  // Environment (New)
+  feelsLike: number;
+  uv: number;
+  pressure: number; // mb
+  cloud: number; // %
+  precip: number; // mm
+  
+  // Astronomy
+  moonPhase: string;
   moonIllumination: number; // 0-100
-  isDay: boolean; // New: True if day, False if night
-  conditionText: string; // New: e.g. "Parcialmente nublado"
+  isDay: boolean;
+  sunrise: string;
+  sunset: string;
+
+  // Status & Forecast
+  battery: number; // %
+  conditionText: string;
+  forecast: DailyForecast[];
 }
 
 export enum ViewState {

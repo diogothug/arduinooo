@@ -1,3 +1,4 @@
+
 import { create } from 'zustand';
 import { Keyframe, Device, ViewState, EffectType, FirmwareConfig, DisplayConfig, DisplayWidget, WidgetType, DisplayDriver, ConnectionType, DisplayTheme, RenderMode, DataSourceConfig, TideSourceType, MockWaveType, WeatherData, Notification } from './types';
 
@@ -174,12 +175,23 @@ export const useAppStore = create<AppState>((set) => ({
       humidity: 78,
       windSpeed: 22, // km/h
       windDir: 45, // NE
-      rain: 0,
+      
+      // New Fields
+      feelsLike: 31,
+      uv: 8,
+      pressure: 1012,
+      cloud: 20,
+      precip: 0,
+      
+      sunrise: "05:30",
+      sunset: "17:45",
+      isDay: true,
+      
       battery: 100,
       moonPhase: "Waxing Crescent",
       moonIllumination: 25,
-      isDay: true,
-      conditionText: "Ensolarado"
+      conditionText: "Ensolarado",
+      forecast: []
   },
   
   apiLoading: false,

@@ -12,63 +12,64 @@ struct WS2812BConfig {
     int pin;
     int numLeds;
     uint8_t brightness;
-    String order; // "GRB" or "RGB"
-    String mode;  // "tideFill", "waveFlow", etc.
+    int matrixWidth;  // 0 or 1 for strip
+    int matrixHeight; 
+    String layout;    // "STRIP", "MATRIX", "RING"
+    String order;     // "GRB"
+    
+    // Default Animation Params
+    String mode;      
+    float speed;
+    float intensity;
+    int paletteId;
 };
 
 class WS2812BConfigManager {
 public:
     static WS2812BConfig config;
     static void load();
-    static void save();
     static void updateFromJson(JsonObject json);
-    static String getJson();
 };
 
 #endif
 `;
 
-export const generateWs2812bConfigCpp = (config: FirmwareConfig) => `
+export const generateWs2812bConfigCpp = (config: FirmwareConfig) => {
+    const isMatrix = config.ledLayoutType === 'MATRIX';
+    const w = isMatrix ? (config.ledMatrixWidth || 10) : config.ledCount;
+    const h = isMatrix ? Math.ceil(config.ledCount / w) : 1;
+
+    return `
 #include "ws2812b_config.h"
-#include "config.h" // Access to compile-time defaults
+#include "config.h" 
 
 WS2812BConfig WS2812BConfigManager::config = {
     LED_PIN,
     NUM_LEDS,
     LED_BRIGHTNESS,
+    ${w}, // Width
+    ${h}, // Height
+    "${config.ledLayoutType}",
     "GRB",
-    "tideFill"
+    "oceanCaustics", // Default Premium Mode
+    1.0f, // Speed
+    0.5f, // Intensity
+    0     // Palette (Ocean)
 };
 
 void WS2812BConfigManager::load() {
-    // In a real implementation, load from LittleFS/EEPROM
-    // For now, use defaults from config.h
-}
-
-void WS2812BConfigManager::save() {
-    // Save to LittleFS
+    // Placeholder for LittleFS load
 }
 
 void WS2812BConfigManager::updateFromJson(JsonObject json) {
-    if (json.containsKey("pin")) config.pin = json["pin"];
-    if (json.containsKey("num_leds")) config.numLeds = json["num_leds"];
     if (json.containsKey("brightness")) config.brightness = json["brightness"];
-    if (json.containsKey("order")) config.order = json["order"].as<String>();
     if (json.containsKey("mode")) config.mode = json["mode"].as<String>();
-}
-
-String WS2812BConfigManager::getJson() {
-    DynamicJsonDocument doc(512);
-    doc["pin"] = config.pin;
-    doc["num_leds"] = config.numLeds;
-    doc["brightness"] = config.brightness;
-    doc["order"] = config.order;
-    doc["mode"] = config.mode;
-    String output;
-    serializeJson(doc, output);
-    return output;
+    if (json.containsKey("speed")) config.speed = json["speed"];
+    if (json.containsKey("intensity")) config.intensity = json["intensity"];
+    if (json.containsKey("palette")) config.paletteId = json["palette"];
 }
 `;
+};
 
 export const generateWs2812bControllerH = () => `
 #ifndef WS2812B_CONTROLLER_H
@@ -81,17 +82,27 @@ class WS2812BController {
 public:
     WS2812BController();
     void begin();
-    void setPixelColor(int index, uint8_t r, uint8_t g, uint8_t b);
-    void fillColor(uint8_t r, uint8_t g, uint8_t b);
+    
+    // Core Drawing API
+    void setPixel(int i, CRGB color);
+    void setPixelXY(int x, int y, CRGB color);
     void fadeAll(uint8_t amount);
-    void blackout();
+    void clear();
     void show();
-    void setBrightness(uint8_t b);
+    
+    int getWidth();
+    int getHeight();
     int getNumLeds();
+    
+    // Internal Mapping
+    uint16_t XY(uint8_t x, uint8_t y);
 
 private:
     CRGB* leds;
     int _numLeds;
+    int _width;
+    int _height;
+    bool _isMatrix;
 };
 
 #endif
@@ -104,53 +115,56 @@ WS2812BController::WS2812BController() : leds(nullptr), _numLeds(0) {}
 
 void WS2812BController::begin() {
     _numLeds = WS2812BConfigManager::config.numLeds;
-    
+    _width = WS2812BConfigManager::config.matrixWidth;
+    _height = WS2812BConfigManager::config.matrixHeight;
+    _isMatrix = (WS2812BConfigManager::config.layout == "MATRIX");
+
     if (leds) delete[] leds;
     leds = new CRGB[_numLeds];
-    
-    // Note: FastLED requires compile-time constants for Templates. 
-    // To support dynamic pins fully, we would need a switch-case macro.
-    // For this firmware, we use the LED_PIN macro from config.h which corresponds to initial setup.
-    // Dynamic pin changing at runtime requires reboot or advanced FastLED usage.
     
     FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, _numLeds).setCorrection(TypicalLEDStrip);
     FastLED.setBrightness(WS2812BConfigManager::config.brightness);
     
-    blackout();
+    clear();
     show();
 }
 
-void WS2812BController::setPixelColor(int index, uint8_t r, uint8_t g, uint8_t b) {
-    if (index >= 0 && index < _numLeds) {
-        leds[index] = CRGB(r, g, b);
+uint16_t WS2812BController::XY(uint8_t x, uint8_t y) {
+    if (!_isMatrix) return x; // Strip mode treat x as index
+    if (x >= _width || y >= _height) return 0;
+    
+    // Serpentine Layout Logic
+    if (y & 1) {
+        return (y * _width) + (_width - 1 - x);
+    } else {
+        return (y * _width) + x;
     }
 }
 
-void WS2812BController::fillColor(uint8_t r, uint8_t g, uint8_t b) {
-    fill_solid(leds, _numLeds, CRGB(r, g, b));
+void WS2812BController::setPixel(int i, CRGB color) {
+    if (i >= 0 && i < _numLeds) leds[i] = color;
+}
+
+void WS2812BController::setPixelXY(int x, int y, CRGB color) {
+    uint16_t i = XY(x, y);
+    if (i < _numLeds) leds[i] = color;
 }
 
 void WS2812BController::fadeAll(uint8_t amount) {
-    for(int i = 0; i < _numLeds; i++) { 
-        leds[i].nscale8(amount); 
-    }
+    for(int i = 0; i < _numLeds; i++) leds[i].nscale8(amount);
 }
 
-void WS2812BController::blackout() {
-    fillColor(0, 0, 0);
+void WS2812BController::clear() {
+    fill_solid(leds, _numLeds, CRGB::Black);
 }
 
 void WS2812BController::show() {
     FastLED.show();
 }
 
-void WS2812BController::setBrightness(uint8_t b) {
-    FastLED.setBrightness(b);
-}
-
-int WS2812BController::getNumLeds() {
-    return _numLeds;
-}
+int WS2812BController::getWidth() { return _width; }
+int WS2812BController::getHeight() { return _height; }
+int WS2812BController::getNumLeds() { return _numLeds; }
 `;
 
 export const generateWs2812bAnimationsH = () => `
@@ -159,19 +173,33 @@ export const generateWs2812bAnimationsH = () => `
 
 #include "ws2812b_controller.h"
 
+struct AnimationParams {
+    float speed;        // 0.1 to 5.0
+    float intensity;    // 0.0 to 1.0
+    CRGBPalette16 palette;
+    float tideLevel;    // 0.0 to 1.0 (Normalized)
+};
+
 class WS2812BAnimations {
 public:
     static void attachController(WS2812BController* controller);
     
-    // Core animations
-    static void tideFillAnimation(float levelPercent); // 0.0 - 1.0
-    static void waveFlowAnimation(int speed);
-    static void breathingWater(float levelPercent);
-    static void alertAnimation(int type); // 1: Low, 2: High, 3: Error
-    static void idleAmbient();
+    // Main Dispatcher
+    static void run(String mode, float tideLevel);
+
+    // --- Premium Generative Engines ---
+    static void oceanCaustics(AnimationParams p, uint32_t t);
+    static void tideFill2(AnimationParams p, uint32_t t);
+    static void auroraWaves(AnimationParams p, uint32_t t);
+    static void deepSeaParticles(AnimationParams p, uint32_t t);
+    static void stormSurge(AnimationParams p, uint32_t t);
+    static void neonPulse(AnimationParams p, uint32_t t);
+    
+    // Helpers
+    static CRGBPalette16 getPaletteById(int id);
 
 private:
-    static WS2812BController* _controller;
+    static WS2812BController* _ctrl;
 };
 
 #endif
@@ -180,89 +208,191 @@ private:
 export const generateWs2812bAnimationsCpp = () => `
 #include "ws2812b_animations.h"
 
-WS2812BController* WS2812BAnimations::_controller = nullptr;
+WS2812BController* WS2812BAnimations::_ctrl = nullptr;
 
 void WS2812BAnimations::attachController(WS2812BController* controller) {
-    _controller = controller;
+    _ctrl = controller;
 }
 
-void WS2812BAnimations::tideFillAnimation(float levelPercent) {
-    if (!_controller) return;
-    
-    int numLeds = _controller->getNumLeds();
-    int limit = (int)(levelPercent * numLeds);
-    
-    // Sanity check
-    if (limit < 0) limit = 0;
-    if (limit > numLeds) limit = numLeds;
-
-    _controller->blackout();
-
-    // Water Color: Cyan/Blue
-    for(int i=0; i<limit; i++) {
-        // Simple Gradient from deep blue to lighter cyan
-        uint8_t r = 0;
-        uint8_t g = map(i, 0, numLeds, 20, 150);
-        uint8_t b = map(i, 0, numLeds, 150, 255);
-        _controller->setPixelColor(i, r, g, b);
-    }
-    
-    _controller->show();
+CRGBPalette16 WS2812BAnimations::getPaletteById(int id) {
+    if (id == 1) return ForestColors_p;
+    if (id == 2) return LavaColors_p;
+    if (id == 3) return CloudColors_p;
+    if (id == 4) return PartyColors_p;
+    return OceanColors_p; // Default 0
 }
 
-void WS2812BAnimations::waveFlowAnimation(int speed) {
-    if (!_controller) return;
-    int numLeds = _controller->getNumLeds();
-    static uint16_t pos = 0;
-    pos += speed;
+void WS2812BAnimations::run(String mode, float tideLevel) {
+    if (!_ctrl) return;
     
-    for(int i=0; i<numLeds; i++) {
-        uint8_t val = sin8(i*10 + pos);
-        _controller->setPixelColor(i, 0, val/2, val);
-    }
-    _controller->show();
+    // Construct Params from Config + Live Data
+    AnimationParams p;
+    p.speed = WS2812BConfigManager::config.speed;
+    p.intensity = WS2812BConfigManager::config.intensity;
+    p.palette = getPaletteById(WS2812BConfigManager::config.paletteId);
+    p.tideLevel = tideLevel;
+
+    uint32_t t = millis();
+
+    if (mode == "oceanCaustics") oceanCaustics(p, t);
+    else if (mode == "tideFill2") tideFill2(p, t);
+    else if (mode == "aurora") auroraWaves(p, t);
+    else if (mode == "deepSea") deepSeaParticles(p, t);
+    else if (mode == "storm") stormSurge(p, t);
+    else if (mode == "neon") neonPulse(p, t);
+    else oceanCaustics(p, t); // Default
+    
+    _ctrl->show();
 }
 
-void WS2812BAnimations::breathingWater(float levelPercent) {
-    if (!_controller) return;
-    int numLeds = _controller->getNumLeds();
-    int limit = (int)(levelPercent * numLeds);
+// ==========================================
+// 🌊 ALGORITHM A: OCEAN CAUSTICS (Noise)
+// ==========================================
+void WS2812BAnimations::oceanCaustics(AnimationParams p, uint32_t t) {
+    int w = _ctrl->getWidth();
+    int h = _ctrl->getHeight();
     
-    float breath = (exp(sin(millis()/2000.0*PI)) - 0.36787944)*108.0;
-    
-    for(int i=0; i<limit; i++) {
-        _controller->setPixelColor(i, 0, 50 + (int)breath/2, 150 + (int)breath/2);
+    // Scale noise coords
+    uint16_t scale = 30; 
+    uint16_t speed = t * (p.speed * 0.5);
+
+    for(int x = 0; x < w; x++) {
+        for(int y = 0; y < h; y++) {
+            // 2D Simplex Noise approximation
+            uint8_t noise = inoise8(x * scale, y * scale + speed, t / 3);
+            
+            // Map noise to palette brightness
+            // "Caustics" look: Dark base with bright highlights
+            uint8_t brightness = map(noise, 0, 255, 10, 255);
+            
+            // Cutoff for sharp lines
+            if (brightness < 100) brightness = brightness / 3; 
+            else brightness = map(brightness, 100, 255, 50, 255);
+
+            // Level masking (if tide level matters, dim top)
+            // But usually caustics fill the volume
+            
+            CRGB color = ColorFromPalette(p.palette, noise, brightness);
+            _ctrl->setPixelXY(x, y, color);
+        }
     }
-    for(int i=limit; i<numLeds; i++) {
-        _controller->setPixelColor(i, 0, 0, 0);
-    }
-    _controller->show();
 }
 
-void WS2812BAnimations::alertAnimation(int type) {
-    if (!_controller) return;
-    int numLeds = _controller->getNumLeds();
+// ==========================================
+// 🌊 ALGORITHM B: TIDE FILL 2.0 (Gradient)
+// ==========================================
+void WS2812BAnimations::tideFill2(AnimationParams p, uint32_t t) {
+    int w = _ctrl->getWidth();
+    int h = _ctrl->getHeight();
     
-    // Blink Red for Error, Orange for Low, Purple for High
-    bool blink = (millis() / 500) % 2 == 0;
-    if (!blink) {
-        _controller->blackout();
-        _controller->show();
-        return;
+    // Calculate top pixel Y based on level (0.0 - 1.0)
+    // Flip coordinate system so 0 is bottom
+    float fillHeight = p.tideLevel * h;
+    int waterTopY = (int)fillHeight;
+
+    for(int y = 0; y < h; y++) {
+        // Invert Y for render: FastLED usually 0 is cable input.
+        // Assuming cable at bottom left.
+        int effectiveY = (h - 1) - y; 
+        
+        if (effectiveY < waterTopY) {
+            // Underwater Gradient
+            uint8_t depth = map(effectiveY, 0, waterTopY, 0, 255);
+            CRGB color = ColorFromPalette(p.palette, depth);
+            
+            // Add subtle ripple
+            uint8_t ripple = sin8(effectiveY * 10 - t/10);
+            if (ripple > 240) color += CRGB(20, 20, 20);
+            
+            _ctrl->setPixelXY(0, y, color); // Logic simplified for strip/matrix uniform columns
+            // For matrix, fill whole row
+            for(int x=0; x<w; x++) {
+                 // Add horizontal variation
+                 uint8_t hWave = sin8(x*10 + t/5);
+                 CRGB c = color;
+                 if (effectiveY == waterTopY - 1 && hWave > 200) c += CRGB::White; // Surface foam
+                 _ctrl->setPixelXY(x, y, c);
+            }
+        } else {
+             // Air (Clear or very dim sky)
+            for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, CRGB::Black);
+        }
     }
-
-    uint8_t r=0, g=0, b=0;
-    if (type == 1) { r=255; g=100; b=0; } // Low (Orange)
-    if (type == 2) { r=150; g=0; b=255; } // High (Purple)
-    if (type == 3) { r=255; g=0; b=0; }   // Error (Red)
-
-    _controller->fillColor(r, g, b);
-    _controller->show();
 }
 
-void WS2812BAnimations::idleAmbient() {
-    if (!_controller) return;
-    // Slow blue shift
-    waveFlowAnimation(2);
+// ==========================================
+// 🌌 ALGORITHM C: AURORA WAVES
+// ==========================================
+void WS2812BAnimations::auroraWaves(AnimationParams p, uint32_t t) {
+    int w = _ctrl->getWidth();
+    int h = _ctrl->getHeight();
+
+    for (int x = 0; x < w; x++) {
+        // Interference pattern
+        int wave1 = sin8((x * 10) + (t * p.speed / 3));
+        int wave2 = cos8((x * 15) - (t * p.speed / 2));
+        int wave3 = sin8((x * 5) + (t * p.speed));
+
+        uint8_t hue = wave1 + wave2 + wave3;
+        
+        for (int y = 0; y < h; y++) {
+             // Vertical shift
+             uint8_t vShift = sin8(y * 8 + t/5);
+             CRGB color = ColorFromPalette(p.palette, hue + vShift, 255);
+             _ctrl->setPixelXY(x, y, color);
+        }
+    }
+}
+
+// ==========================================
+// ✨ ALGORITHM D: DEEP SEA PARTICLES
+// ==========================================
+void WS2812BAnimations::deepSeaParticles(AnimationParams p, uint32_t t) {
+    _ctrl->fadeAll(200); // Trail effect
+    
+    int w = _ctrl->getWidth();
+    int h = _ctrl->getHeight();
+    
+    // Spawn new particle randomly
+    if (random8() < (20 * p.intensity)) {
+        int x = random16(w);
+        int y = random16(h);
+        // Only spawn in "water" if using level? For now full screen
+        CRGB c = ColorFromPalette(p.palette, random8());
+        _ctrl->setPixelXY(x, y, c);
+    }
+    
+    // Physics? In this simplified version we assume the fade does the work
+    // Or we could shift pixels up.
+    // Simple pixel shift for bubbles:
+    if (t % 50 == 0) {
+        // Shift logic would need read-back which is slow on strips without buffer.
+        // Relying on random spawn + fade for "glimmering" plankton effect.
+    }
+}
+
+// ==========================================
+// ⚡ ALGORITHM E: STORM SURGE
+// ==========================================
+void WS2812BAnimations::stormSurge(AnimationParams p, uint32_t t) {
+    int w = _ctrl->getWidth();
+    int h = _ctrl->getHeight();
+    
+    // Turbulent noise
+    for(int i=0; i<_ctrl->getNumLeds(); i++) {
+         uint8_t noise = inoise8(i*50, t * p.speed);
+         if (noise > 200) {
+             _ctrl->setPixel(i, CRGB::White); // Lightning flash
+         } else {
+             _ctrl->setPixel(i, ColorFromPalette(p.palette, noise));
+         }
+    }
+}
+
+void WS2812BAnimations::neonPulse(AnimationParams p, uint32_t t) {
+     uint8_t hue = (t / 10) * p.speed;
+     for(int i=0; i<_ctrl->getNumLeds(); i++) {
+         _ctrl->setPixel(i, CHSV(hue + (i*5), 255, 255));
+     }
 }
 `;

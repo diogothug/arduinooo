@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../../store';
 import { DisplayTheme, WidgetType } from '../../types';
-import { Zap, Palette, CloudSun, AlertCircle, Loader2, Wifi, Bluetooth, Sparkles, Image as ImageIcon, Clipboard, Terminal, CheckCircle, Moon, Sun, CloudRain, Thermometer, Wind, Droplets } from 'lucide-react';
+import { Zap, Palette, CloudSun, AlertCircle, Loader2, Wifi, Bluetooth, Sparkles, Image as ImageIcon, Clipboard, Terminal, CheckCircle, Moon, Sun, CloudRain, Thermometer, Wind, Droplets, Umbrella, Gauge, Eye, Sunrise, Sunset, CalendarDays } from 'lucide-react';
 import { tideSourceService } from '../../services/tideSourceService';
 import { generateDisplayImage } from '../../services/geminiService';
 
@@ -138,7 +138,7 @@ export const DisplaySidebar: React.FC = () => {
                 className={`w-full py-2 rounded text-xs font-bold flex items-center justify-center gap-2 transition ${apiLoading ? 'bg-slate-700 text-slate-400 cursor-not-allowed' : 'bg-cyan-600 hover:bg-cyan-700 text-white'}`}
             >
                 {apiLoading ? <Loader2 className="animate-spin" size={14} /> : <CloudSun size={14} />}
-                {apiLoading ? 'Buscando Dados...' : 'Atualizar com Dados Reais'}
+                {apiLoading ? 'Buscando Dados Completos...' : 'Atualizar Dados (Free Tier)'}
             </button>
 
             {apiError && (
@@ -152,14 +152,71 @@ export const DisplaySidebar: React.FC = () => {
             )}
             
             {!apiLoading && !apiError && weatherData && (
-                <div className="mt-2 text-[10px] text-green-400 flex flex-col gap-1 opacity-90 p-2 bg-green-900/10 rounded border border-green-900/30">
-                    <div className="flex items-center gap-1 font-bold">
-                        <CheckCircle size={12} /> Dados Atualizados
+                <div className="mt-4 flex flex-col gap-4 animate-in fade-in">
+                    
+                    {/* Basic Status */}
+                    <div className="text-[10px] text-green-400 flex flex-col gap-1 p-2 bg-green-900/10 rounded border border-green-900/30">
+                        <div className="flex items-center gap-1 font-bold">
+                            <CheckCircle size={12} /> Dados Atualizados
+                        </div>
+                        {weatherData.conditionText && (
+                            <div className="flex items-center gap-1 text-slate-300">
+                                 {weatherData.isDay ? <Sun size={10} className="text-amber-400"/> : <Moon size={10} className="text-indigo-400"/>}
+                                 {weatherData.conditionText} ({Math.round(weatherData.temp)}°C)
+                            </div>
+                        )}
                     </div>
-                    {weatherData.conditionText && (
-                        <div className="flex items-center gap-1 text-slate-300">
-                             {weatherData.isDay ? <Sun size={10} className="text-amber-400"/> : <Moon size={10} className="text-indigo-400"/>}
-                             {weatherData.conditionText}
+
+                    {/* Environmental Grid */}
+                    <div>
+                        <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2 flex items-center gap-1"><Gauge size={12}/> Detalhes Ambientais</h4>
+                        <div className="grid grid-cols-2 gap-2">
+                             <div className="bg-slate-900 p-2 rounded flex flex-col items-center justify-center border border-slate-700">
+                                 <span className="text-[9px] text-slate-500 uppercase">Sensação</span>
+                                 <span className="text-sm font-bold text-orange-400">{weatherData.feelsLike}°C</span>
+                             </div>
+                             <div className="bg-slate-900 p-2 rounded flex flex-col items-center justify-center border border-slate-700">
+                                 <span className="text-[9px] text-slate-500 uppercase flex items-center gap-1"><Sun size={8}/> UV Index</span>
+                                 <span className={`text-sm font-bold ${weatherData.uv > 5 ? 'text-purple-400' : 'text-green-400'}`}>{weatherData.uv}</span>
+                             </div>
+                             <div className="bg-slate-900 p-2 rounded flex flex-col items-center justify-center border border-slate-700">
+                                 <span className="text-[9px] text-slate-500 uppercase flex items-center gap-1"><Umbrella size={8}/> Precip</span>
+                                 <span className="text-sm font-bold text-blue-400">{weatherData.precip}mm</span>
+                             </div>
+                             <div className="bg-slate-900 p-2 rounded flex flex-col items-center justify-center border border-slate-700">
+                                 <span className="text-[9px] text-slate-500 uppercase">Pressão</span>
+                                 <span className="text-sm font-bold text-slate-300">{weatherData.pressure}mb</span>
+                             </div>
+                        </div>
+                    </div>
+
+                    {/* Astronomy */}
+                    <div>
+                        <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2 flex items-center gap-1"><Moon size={12}/> Astronomia</h4>
+                        <div className="flex justify-between items-center bg-slate-900 p-2 rounded border border-slate-700 text-xs">
+                             <div className="flex items-center gap-2 text-amber-400">
+                                 <Sunrise size={14} /> {weatherData.sunrise}
+                             </div>
+                             <div className="h-4 w-px bg-slate-700"></div>
+                             <div className="flex items-center gap-2 text-indigo-400">
+                                 <Sunset size={14} /> {weatherData.sunset}
+                             </div>
+                        </div>
+                    </div>
+
+                     {/* Forecast */}
+                    {weatherData.forecast && weatherData.forecast.length > 0 && (
+                        <div>
+                             <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2 flex items-center gap-1"><CalendarDays size={12}/> Previsão 3 Dias</h4>
+                             <div className="space-y-1">
+                                 {weatherData.forecast.map((d, i) => (
+                                     <div key={i} className="flex justify-between items-center bg-slate-900/50 p-1.5 rounded text-[10px] text-slate-300">
+                                          <span className="w-16 opacity-70">{d.date.split('-').slice(1).join('/')}</span>
+                                          <span className="flex-1 truncate px-2">{d.condition}</span>
+                                          <span className="font-mono text-cyan-400">{Math.round(d.minTemp)}° / {Math.round(d.maxTemp)}°</span>
+                                     </div>
+                                 ))}
+                             </div>
                         </div>
                     )}
                 </div>
