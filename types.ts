@@ -1,4 +1,5 @@
 
+
 export enum EffectType {
   STATIC = 'STATIC',
   WAVE = 'WAVE',
@@ -230,6 +231,12 @@ export interface FirmwareConfig {
   ledColorOrder: 'GRB' | 'RGB';
   ledLayoutType: 'STRIP' | 'MATRIX' | 'RING';
   ledMatrixWidth?: number; // Only for matrix
+  
+  // Animation Engine 2.0
+  animationMode: string;
+  animationSpeed: number;
+  animationIntensity: number;
+  animationPalette: number;
 }
 
 export interface DailyForecast {

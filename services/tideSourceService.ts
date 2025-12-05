@@ -1,4 +1,3 @@
-
 import { DataSourceConfig, Keyframe, TideSourceType, MockWaveType, EffectType, WeatherData } from "../types";
 import { useAppStore } from '../store';
 
@@ -10,7 +9,10 @@ const uid = () => Math.random().toString(36).substr(2, 9);
 // Helper to sanitize base URLs and ensure valid structure
 const sanitizeBaseUrl = (url: string) => {
     if (!url) return '';
-    let clean = url.replace(/\/+$/, '');
+    // Fix common double slash issues if present in middle of path
+    let clean = url.replace(/([^:]\/)\/+/g, "$1"); 
+    // Remove trailing slash
+    clean = clean.replace(/\/+$/, '');
     return clean;
 };
 
@@ -19,7 +21,12 @@ const safeLog = (msg: string) => {
     console.log(msg);
     try {
         // Only try to update store if it's initialized
-        useAppStore.getState().setApiDebugLog(msg);
+        const store = useAppStore.getState();
+        if (store && store.setApiDebugLog) {
+            // Append log instead of overwrite for better history
+            const current = store.apiDebugLog || "";
+            store.setApiDebugLog(current + "\n" + msg);
+        }
     } catch (e) {
         // Ignore store errors during early init
     }
@@ -30,7 +37,7 @@ export const tideSourceService = {
         let resultFrames: Keyframe[] = [];
         let sourceUsed = TideSourceType.MOCK;
 
-        safeLog(`[TideSource] Requesting data via ${config.activeSource}`);
+        safeLog(`\n--- [TideSource] New Request: ${config.activeSource} ---`);
 
         if (config.activeSource === TideSourceType.API) {
             try {
@@ -89,11 +96,13 @@ export const tideSourceService = {
                 // Add days=3 for forecast and astronomy
                 const url = `${baseUrl}?key=${token}&q=${encodeURIComponent(locationId)}&days=3&tides=yes&lang=pt`;
                 
-                console.log(`[TideSource] GET ${url}`);
+                safeLog(`[API] GET ${url}`);
                 const response = await fetch(url);
-                const text = await response.text();
+                safeLog(`[API] Status: ${response.status} ${response.statusText}`);
                 
-                safeLog("Resp WeatherAPI (trunc): " + text.substring(0, 200));
+                const text = await response.text();
+                // Limit log size
+                safeLog("Resp Payload: " + text.substring(0, 150) + "...");
 
                 if (!response.ok) {
                     throw new Error(`WeatherAPI Erro HTTP ${response.status}`);
@@ -218,11 +227,20 @@ export const tideSourceService = {
         if (!harborId) throw new Error("ID do porto não definido");
         const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io/api/v1');
         const url = `${apiBase}/harbors/${harborId}`;
-        safeLog(`GET Harbor ID: ${url}`);
+        
+        safeLog(`[API] GET Harbor ID: ${url}`);
 
         const res = await fetch(url);
+        
+        // --- DIAGNOSTIC LOG START ---
+        safeLog(`[API] Status: ${res.status} ${res.statusText}`);
+        const headersList: string[] = [];
+        res.headers.forEach((val, key) => headersList.push(`${key}: ${val}`));
+        safeLog(`[API] Headers: ${JSON.stringify(headersList)}`);
+        // --- DIAGNOSTIC LOG END ---
+
         const textRes = await res.text();
-        safeLog(`Resp: ${textRes}`);
+        safeLog(`[API] Resp Body: ${textRes.substring(0, 100)}...`);
         
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = JSON.parse(textRes);
@@ -236,10 +254,19 @@ export const tideSourceService = {
          const latLngParam = `[${lat},${lng}]`;
          const url = `${apiBase}/nearested-harbor/${uf.toLowerCase()}/${latLngParam}`;
          
-         safeLog(`GET Nearest: ${url}`);
+         safeLog(`[API] GET Nearest: ${url}`);
+         
          const res = await fetch(url);
+         
+         // --- DIAGNOSTIC LOG START ---
+         safeLog(`[API] Status: ${res.status} ${res.statusText}`);
+         const headersList: string[] = [];
+         res.headers.forEach((val, key) => headersList.push(`${key}: ${val}`));
+         safeLog(`[API] Headers: ${JSON.stringify(headersList)}`);
+         // --- DIAGNOSTIC LOG END ---
+         
          const textRes = await res.text();
-         safeLog(`Resp: ${textRes}`);
+         safeLog(`[API] Resp Body: ${textRes.substring(0, 100)}...`);
          
          if (!res.ok) throw new Error(`HTTP ${res.status}`);
          const json = JSON.parse(textRes);
@@ -279,6 +306,14 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     safeLog(`[API] Req URL: ${url}`);
 
     const res = await fetch(url);
+    
+    // --- DIAGNOSTIC LOG START ---
+    safeLog(`[API] Status: ${res.status} ${res.statusText}`);
+    const headersList: string[] = [];
+    res.headers.forEach((val, key) => headersList.push(`${key}: ${val}`));
+    safeLog(`[API] Headers: ${JSON.stringify(headersList)}`);
+    // --- DIAGNOSTIC LOG END ---
+
     const textRes = await res.text();
     safeLog(`[API] Raw Resp (${textRes.length} chars): ${textRes.substring(0, 300)}...`);
 
@@ -301,50 +336,59 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
 
     const frames: Keyframe[] = [];
     
-    rawData.forEach((harborItem: any, hIdx: number) => {
-        const months = harborItem.months || [];
-        safeLog(`[API] Harbor ${hIdx} has ${months.length} months`);
-        
-        months.forEach((monthItem: any) => {
-             const days = monthItem.days || [];
-             safeLog(`[API] Month has ${days.length} days`);
+    // Logic to handle both Nested (by harbor/month) or Flat responses depending on endpoint variant
+    // The previous debug showed complex nesting. Let's be robust.
+    
+    // Helper to process tide list
+    const processTides = (tides: any[], dateStr: string) => {
+         tides.forEach((t: any) => {
+             const [hh, mm] = t.time.split(':').map(Number);
              
-             days.forEach((dayItem: any) => {
-                 const tides = dayItem.tides || [];
-                 safeLog(`[API] Date ${dayItem.date} has ${tides.length} tides`);
-                 
-                 tides.forEach((t: any) => {
-                     const [hh, mm] = t.time.split(':').map(Number);
-                     
-                     // Calculate offset relative to TODAY's start
-                     const today = new Date(now.toISOString().split('T')[0]);
-                     const tideDate = new Date(dayItem.date);
-                     const diffDays = Math.round((tideDate.getTime() - today.getTime()) / (86400000));
-                     const timeOffset = (diffDays * 24) + hh + (mm / 60);
+             // Calculate offset relative to TODAY's start
+             const today = new Date(now.toISOString().split('T')[0]);
+             const tideDate = new Date(dateStr);
+             const diffDays = Math.round((tideDate.getTime() - today.getTime()) / (86400000));
+             const timeOffset = (diffDays * 24) + hh + (mm / 60);
 
-                     if (timeOffset >= 0 && timeOffset <= cycleDuration + 24) {
-                        // Height normalization logic (simplified for debug)
-                        // Assume standard range 0.0 to 2.5m roughly
-                        const h = parseFloat(t.height);
-                        if (!isNaN(h)) {
-                            // Rough mapping: -0.2m to 2.5m -> 0 to 100%
-                            let pct = ((h + 0.2) / 2.7) * 100;
-                            pct = Math.max(0, Math.min(100, pct));
-                            
-                            const isHigh = (t.type || "").toLowerCase().includes('high');
-                            frames.push({
-                                id: uid(),
-                                timeOffset: parseFloat(timeOffset.toFixed(2)),
-                                height: parseFloat(pct.toFixed(1)),
-                                color: isHigh ? '#00eebb' : '#004488',
-                                intensity: 100,
-                                effect: isHigh ? EffectType.WAVE : EffectType.STATIC
-                            });
-                        }
-                     }
-                 });
+             if (timeOffset >= 0 && timeOffset <= cycleDuration + 24) {
+                // Height normalization logic (simplified for debug)
+                // Assume standard range 0.0 to 2.5m roughly
+                const h = parseFloat(t.height);
+                if (!isNaN(h)) {
+                    // Rough mapping: -0.2m to 2.5m -> 0 to 100%
+                    let pct = ((h + 0.2) / 2.7) * 100;
+                    pct = Math.max(0, Math.min(100, pct));
+                    
+                    const isHigh = (t.type || "").toLowerCase().includes('high') || (t.type || "").toLowerCase().includes('alta');
+                    frames.push({
+                        id: uid(),
+                        timeOffset: parseFloat(timeOffset.toFixed(2)),
+                        height: parseFloat(pct.toFixed(1)),
+                        color: isHigh ? '#00eebb' : '#004488',
+                        intensity: 100,
+                        effect: isHigh ? EffectType.WAVE : EffectType.STATIC
+                    });
+                }
+             }
+         });
+    };
+
+    rawData.forEach((item: any) => {
+        // Case 1: Structure with "months" -> "days" -> "tides"
+        if (item.months) {
+             item.months.forEach((m: any) => {
+                 if (m.days) {
+                     m.days.forEach((d: any) => {
+                         if (d.tides) processTides(d.tides, d.date);
+                     });
+                 }
              });
-        });
+        } 
+        // Case 2: Direct "tides" array (some endpoints might return flat)
+        else if (item.tides) {
+             // If date is missing on item, assume today or passed param
+             processTides(item.tides, item.date || now.toISOString());
+        }
     });
     
     safeLog(`[API] Parsed ${frames.length} keyframes.`);

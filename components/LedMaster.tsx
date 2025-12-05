@@ -1,4 +1,5 @@
 
+
 import React, { useRef, useEffect, useState } from 'react';
 import { useAppStore } from '../store';
 import { Zap, Settings, AlertTriangle, Lightbulb, BoxSelect, CloudRain, Wind, Thermometer, Moon, Activity, Waves, AlignLeft, Sun, Sliders } from 'lucide-react';
@@ -17,10 +18,14 @@ export const LedMaster: React.FC = () => {
     const { firmwareConfig, updateFirmwareConfig, keyframes, simulatedTime } = useAppStore();
     const canvasRef = useRef<HTMLCanvasElement>(null);
     
-    // New Params for Generative Engine
-    const [animSpeed, setAnimSpeed] = useState(1.0);
-    const [animIntensity, setAnimIntensity] = useState(0.5);
-    const [activePresetId, setActivePresetId] = useState('oceanCaustics');
+    // Bind local state to Store Config
+    const animSpeed = firmwareConfig.animationSpeed;
+    const animIntensity = firmwareConfig.animationIntensity;
+    const activePresetId = firmwareConfig.animationMode;
+    
+    const setAnimSpeed = (v: number) => updateFirmwareConfig({ animationSpeed: v });
+    const setAnimIntensity = (v: number) => updateFirmwareConfig({ animationIntensity: v });
+    const setActivePresetId = (id: string, palette: number) => updateFirmwareConfig({ animationMode: id, animationPalette: palette });
 
     // Power Calculation
     const maxCurrent = (firmwareConfig.ledCount * 60) / 1000;
@@ -213,10 +218,16 @@ export const LedMaster: React.FC = () => {
                              <span className="block text-slate-500 uppercase font-bold mb-1">Layout</span>
                              <div className="flex bg-slate-900 rounded p-1">
                                  {['STRIP', 'MATRIX', 'RING'].map(l => (
-                                     <button key={l} onClick={()=>updateFirmwareConfig({ledLayoutType: l as any})} className={`flex-1 py-1 rounded ${firmwareConfig.ledLayoutType === l ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:text-white'}`}>{l}</button>
+                                     <button key={l} onClick={()=>updateFirmwareConfig({ledLayoutType: l as any})} className={`flex-1 py-1 rounded text-[10px] ${firmwareConfig.ledLayoutType === l ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:text-white'}`}>{l}</button>
                                  ))}
                              </div>
                         </div>
+                        {firmwareConfig.ledLayoutType === 'MATRIX' && (
+                            <div className="col-span-2">
+                                <span className="block text-slate-500 uppercase font-bold mb-1">Largura da Matriz</span>
+                                <input type="number" value={firmwareConfig.ledMatrixWidth || 10} onChange={e=>updateFirmwareConfig({ledMatrixWidth: parseInt(e.target.value)})} className="w-full bg-slate-900 border border-slate-600 rounded p-1 text-white"/>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -252,7 +263,7 @@ export const LedMaster: React.FC = () => {
                                  return (
                                     <button 
                                         key={preset.id}
-                                        onClick={() => setActivePresetId(preset.id)}
+                                        onClick={() => setActivePresetId(preset.id, preset.palette)}
                                         className={`flex flex-col items-start p-3 rounded-lg border text-left transition relative overflow-hidden group ${
                                             isMatch
                                             ? 'bg-cyan-900/30 border-cyan-500 text-white shadow-lg shadow-cyan-900/20' 

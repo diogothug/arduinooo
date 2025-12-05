@@ -1,4 +1,3 @@
-
 import { create } from 'zustand';
 import { Keyframe, Device, ViewState, EffectType, FirmwareConfig, DisplayConfig, DisplayWidget, WidgetType, DisplayDriver, ConnectionType, DisplayTheme, RenderMode, DataSourceConfig, TideSourceType, MockWaveType, WeatherData, Notification } from './types';
 
@@ -86,6 +85,7 @@ export const useAppStore = create<AppState>((set) => ({
     ledBrightness: 160,
     ledColorOrder: 'GRB',
     ledLayoutType: 'STRIP',
+    ledMatrixWidth: 10,
     deviceName: 'MareFlux_ESP32',
     enableBLE: true,
     enableSerial: true,
@@ -107,12 +107,18 @@ export const useAppStore = create<AppState>((set) => ({
         apiKey: '9afcd90f4bc04d6d96e115416251409',
         location: '-13.5985,-38.8976',
         intervalMinutes: 60
-    }
+    },
+    
+    // Animation Engine Defaults
+    animationMode: 'oceanCaustics',
+    animationSpeed: 1.0,
+    animationIntensity: 0.5,
+    animationPalette: 0
   },
 
   // Default Data Source Config
   dataSourceConfig: {
-    activeSource: TideSourceType.TABUA_MARE, // Default to Tabua Mare as requested
+    activeSource: TideSourceType.TABUA_MARE, 
     api: {
       url: 'https://api.weatherapi.com/v1/marine.json',
       token: '9afcd90f4bc04d6d96e115416251409',
@@ -120,7 +126,7 @@ export const useAppStore = create<AppState>((set) => ({
       locationId: '-13.5655,-38.9227', // Moreré Coordinates (Precise)
     },
     tabuaMare: {
-      // NOTE: Using double slash in path if needed by server, but usually normalized
+      // FIX: Removed double slash from base URL which causes issues on some routers
       baseUrl: 'https://tabuamare.devtu.qzz.io/api/v1',
       uf: 'ba',
       lat: -14.78, // Official Lat for Porto 8

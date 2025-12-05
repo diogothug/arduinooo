@@ -1,4 +1,5 @@
 
+
 import { FirmwareConfig } from '../../types';
 
 export const generateWs2812bConfigH = () => `
@@ -7,6 +8,9 @@ export const generateWs2812bConfigH = () => `
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
+
+// --- LAYER 1: CONFIGURATION ---
+// Handles persistence and parameter state
 
 struct WS2812BConfig {
     int pin;
@@ -17,11 +21,11 @@ struct WS2812BConfig {
     String layout;    // "STRIP", "MATRIX", "RING"
     String order;     // "GRB"
     
-    // Default Animation Params
+    // Animation Engine Params
     String mode;      
-    float speed;
-    float intensity;
-    int paletteId;
+    float speed;      // 0.1 - 5.0
+    float intensity;  // 0.0 - 1.0
+    int paletteId;    // 0:Ocean, 1:Forest, 2:Lava, 3:Cloud, 4:Party
 };
 
 class WS2812BConfigManager {
@@ -51,14 +55,14 @@ WS2812BConfig WS2812BConfigManager::config = {
     ${h}, // Height
     "${config.ledLayoutType}",
     "GRB",
-    "oceanCaustics", // Default Premium Mode
-    1.0f, // Speed
-    0.5f, // Intensity
-    0     // Palette (Ocean)
+    "${config.animationMode || 'oceanCaustics'}", 
+    ${config.animationSpeed.toFixed(1)}f, 
+    ${config.animationIntensity.toFixed(1)}f, 
+    ${config.animationPalette}
 };
 
 void WS2812BConfigManager::load() {
-    // Placeholder for LittleFS load
+    // Future: Load from LittleFS 'led_config.json'
 }
 
 void WS2812BConfigManager::updateFromJson(JsonObject json) {
@@ -78,6 +82,9 @@ export const generateWs2812bControllerH = () => `
 #include <FastLED.h>
 #include "ws2812b_config.h"
 
+// --- LAYER 2: HARDWARE ABSTRACTION (CONTROLLER) ---
+// Handles physical LED mapping, buffers, and matrix logic
+
 class WS2812BController {
 public:
     WS2812BController();
@@ -85,7 +92,7 @@ public:
     
     // Core Drawing API
     void setPixel(int i, CRGB color);
-    void setPixelXY(int x, int y, CRGB color);
+    void setPixelXY(int x, int y, CRGB color); // Handles Matrix Mapping
     void fadeAll(uint8_t amount);
     void clear();
     void show();
@@ -130,10 +137,13 @@ void WS2812BController::begin() {
 }
 
 uint16_t WS2812BController::XY(uint8_t x, uint8_t y) {
-    if (!_isMatrix) return x; // Strip mode treat x as index
+    if (!_isMatrix) return x; // Strip mode: x is index
+    
     if (x >= _width || y >= _height) return 0;
     
-    // Serpentine Layout Logic
+    // Serpentine Layout Logic (ZigZag)
+    // Even rows L->R, Odd rows R->L (or configurable)
+    // This assumes standard WS2812B matrix standard
     if (y & 1) {
         return (y * _width) + (_width - 1 - x);
     } else {
@@ -173,6 +183,9 @@ export const generateWs2812bAnimationsH = () => `
 
 #include "ws2812b_controller.h"
 
+// --- LAYER 3: ANIMATION LOGIC ---
+// Pure logic functions, unaware of specific hardware pins
+
 struct AnimationParams {
     float speed;        // 0.1 to 5.0
     float intensity;    // 0.0 to 1.0
@@ -184,10 +197,14 @@ class WS2812BAnimations {
 public:
     static void attachController(WS2812BController* controller);
     
-    // Main Dispatcher
+    // Main Dispatcher (Called by loop)
     static void run(String mode, float tideLevel);
+    
+    // Standard Modes
+    static void idleAmbient();
+    static void tideFillAnimation(float tideNorm); // Legacy
 
-    // --- Premium Generative Engines ---
+    // --- Premium Generative Engines 2.0 ---
     static void oceanCaustics(AnimationParams p, uint32_t t);
     static void tideFill2(AnimationParams p, uint32_t t);
     static void auroraWaves(AnimationParams p, uint32_t t);
@@ -240,9 +257,24 @@ void WS2812BAnimations::run(String mode, float tideLevel) {
     else if (mode == "deepSea") deepSeaParticles(p, t);
     else if (mode == "storm") stormSurge(p, t);
     else if (mode == "neon") neonPulse(p, t);
-    else oceanCaustics(p, t); // Default
+    else tideFillAnimation(tideLevel); // Default Legacy
     
     _ctrl->show();
+}
+
+void WS2812BAnimations::idleAmbient() {
+    // Simple placeholder
+}
+
+void WS2812BAnimations::tideFillAnimation(float tideNorm) {
+    // Legacy simple fill
+    int h = _ctrl->getHeight();
+    int w = _ctrl->getWidth();
+    int level = tideNorm * h;
+    for(int y=0; y<h; y++) {
+        CRGB c = (y < level) ? CRGB::Blue : CRGB::Black;
+        for(int x=0; x<w; x++) _ctrl->setPixelXY(x,y,c);
+    }
 }
 
 // ==========================================
@@ -269,9 +301,6 @@ void WS2812BAnimations::oceanCaustics(AnimationParams p, uint32_t t) {
             if (brightness < 100) brightness = brightness / 3; 
             else brightness = map(brightness, 100, 255, 50, 255);
 
-            // Level masking (if tide level matters, dim top)
-            // But usually caustics fill the volume
-            
             CRGB color = ColorFromPalette(p.palette, noise, brightness);
             _ctrl->setPixelXY(x, y, color);
         }
@@ -291,9 +320,10 @@ void WS2812BAnimations::tideFill2(AnimationParams p, uint32_t t) {
     int waterTopY = (int)fillHeight;
 
     for(int y = 0; y < h; y++) {
-        // Invert Y for render: FastLED usually 0 is cable input.
         // Assuming cable at bottom left.
-        int effectiveY = (h - 1) - y; 
+        // If your strip goes UP from 0, standard Y is fine. 
+        // If 0 is TOP, we invert. Let's assume 0 is BOTTOM for physics feel.
+        int effectiveY = y; 
         
         if (effectiveY < waterTopY) {
             // Underwater Gradient
@@ -304,17 +334,17 @@ void WS2812BAnimations::tideFill2(AnimationParams p, uint32_t t) {
             uint8_t ripple = sin8(effectiveY * 10 - t/10);
             if (ripple > 240) color += CRGB(20, 20, 20);
             
-            _ctrl->setPixelXY(0, y, color); // Logic simplified for strip/matrix uniform columns
-            // For matrix, fill whole row
+            _ctrl->setPixelXY(0, y, color); // Logic simplified
+            // For matrix, fill whole row with X variation
             for(int x=0; x<w; x++) {
-                 // Add horizontal variation
                  uint8_t hWave = sin8(x*10 + t/5);
                  CRGB c = color;
-                 if (effectiveY == waterTopY - 1 && hWave > 200) c += CRGB::White; // Surface foam
+                 // Surface foam
+                 if (effectiveY == waterTopY - 1 && hWave > 200) c += CRGB::White; 
                  _ctrl->setPixelXY(x, y, c);
             }
         } else {
-             // Air (Clear or very dim sky)
+             // Air
             for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, CRGB::Black);
         }
     }
@@ -348,26 +378,17 @@ void WS2812BAnimations::auroraWaves(AnimationParams p, uint32_t t) {
 // ✨ ALGORITHM D: DEEP SEA PARTICLES
 // ==========================================
 void WS2812BAnimations::deepSeaParticles(AnimationParams p, uint32_t t) {
-    _ctrl->fadeAll(200); // Trail effect
+    _ctrl->fadeAll(235); // Slow fade trails
     
     int w = _ctrl->getWidth();
     int h = _ctrl->getHeight();
     
-    // Spawn new particle randomly
+    // Spawn new particle randomly based on intensity
     if (random8() < (20 * p.intensity)) {
         int x = random16(w);
         int y = random16(h);
-        // Only spawn in "water" if using level? For now full screen
         CRGB c = ColorFromPalette(p.palette, random8());
         _ctrl->setPixelXY(x, y, c);
-    }
-    
-    // Physics? In this simplified version we assume the fade does the work
-    // Or we could shift pixels up.
-    // Simple pixel shift for bubbles:
-    if (t % 50 == 0) {
-        // Shift logic would need read-back which is slow on strips without buffer.
-        // Relying on random spawn + fade for "glimmering" plankton effect.
     }
 }
 
@@ -379,19 +400,22 @@ void WS2812BAnimations::stormSurge(AnimationParams p, uint32_t t) {
     int h = _ctrl->getHeight();
     
     // Turbulent noise
-    for(int i=0; i<_ctrl->getNumLeds(); i++) {
-         uint8_t noise = inoise8(i*50, t * p.speed);
-         if (noise > 200) {
-             _ctrl->setPixel(i, CRGB::White); // Lightning flash
-         } else {
-             _ctrl->setPixel(i, ColorFromPalette(p.palette, noise));
-         }
+    for(int x=0; x<w; x++) {
+        for(int y=0; y<h; y++) {
+             uint8_t noise = inoise8(x*50, y*50, t * p.speed);
+             if (noise > 220) {
+                 _ctrl->setPixelXY(x, y, CRGB::White); // Lightning flash
+             } else {
+                 _ctrl->setPixelXY(x, y, ColorFromPalette(p.palette, noise));
+             }
+        }
     }
 }
 
 void WS2812BAnimations::neonPulse(AnimationParams p, uint32_t t) {
      uint8_t hue = (t / 10) * p.speed;
-     for(int i=0; i<_ctrl->getNumLeds(); i++) {
+     int num = _ctrl->getNumLeds();
+     for(int i=0; i<num; i++) {
          _ctrl->setPixel(i, CHSV(hue + (i*5), 255, 255));
      }
 }
