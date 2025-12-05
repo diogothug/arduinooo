@@ -1,9 +1,8 @@
-
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
 import { EffectType, Keyframe, ConnectionType, TideSourceType, MockWaveType } from '../types';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot } from 'recharts';
-import { Wand2, Play, Pause, Trash2, Plus, RefreshCw, UploadCloud, Usb, Bluetooth, Wifi, CalendarClock, Zap, Server, Activity, Calculator, Database, MapPin, Search, AlertCircle, CheckCircle, Terminal, Clipboard } from 'lucide-react';
+import { Wand2, Play, Pause, Trash2, Plus, RefreshCw, UploadCloud, Usb, Bluetooth, Wifi, CalendarClock, Zap, Server, Activity, Calculator, Database, MapPin, Search, AlertCircle, CheckCircle, Terminal, Clipboard, CloudSun, Thermometer, Wind, Droplets, Battery, Moon, Sliders } from 'lucide-react';
 import { generateTideCurveWithAI } from '../services/geminiService';
 import { hardwareBridge } from '../services/hardwareBridge';
 import { generateSevenDayForecast } from '../utils/tideLogic';
@@ -14,7 +13,7 @@ export const TideEditor: React.FC = () => {
     keyframes, setKeyframes, addKeyframe, removeKeyframe, updateKeyframe, 
     simulatedTime, setSimulatedTime, activeDeviceId, devices, connectionType,
     firmwareConfig, updateFirmwareConfig, dataSourceConfig, updateDataSourceConfig,
-    setNotification, apiDebugLog
+    setNotification, apiDebugLog, setWeatherData, setApiStatus, weatherData
   } = useAppStore();
   
   const [isPlaying, setIsPlaying] = useState(false);
@@ -28,8 +27,6 @@ export const TideEditor: React.FC = () => {
   const [isCheckingPort, setIsCheckingPort] = useState(false);
 
   const activeDevice = devices.find(d => d.id === activeDeviceId);
-
-  // Determine which data to show/sync
   const activeData = useSevenDayMode ? generateSevenDayForecast(keyframes) : keyframes;
   const cycleLimit = useSevenDayMode ? 168 : 24;
 
@@ -61,13 +58,23 @@ export const TideEditor: React.FC = () => {
   
   const handleSourceGenerate = async () => {
       setIsGeneratingSource(true);
+      setApiStatus(true, null);
       try {
-          const { frames, sourceUsed } = await tideSourceService.getTideData(dataSourceConfig, cycleLimit);
+          const { frames, sourceUsed, weather } = await tideSourceService.getTideData(dataSourceConfig, cycleLimit);
           setKeyframes(frames);
           setSimulatedTime(0);
-          setNotification('success', `Dados gerados via: ${sourceUsed}`);
+          
+          if (weather) {
+              setWeatherData(weather);
+              setNotification('success', `Dados gerados: ${frames.length} pontos + Clima Atualizado`);
+          } else {
+              setNotification('success', `Dados de maré gerados via: ${sourceUsed}`);
+          }
+          setApiStatus(false, null);
+
       } catch (e: any) {
           setNotification('error', `Erro: ${e.message}`);
+          setApiStatus(false, e.message);
       } finally {
           setIsGeneratingSource(false);
       }
@@ -79,19 +86,15 @@ export const TideEditor: React.FC = () => {
       try {
           let resultName = "";
           let resultDist = "";
-          
           if (dataSourceConfig.tabuaMare.harborId) {
-             // New Logic: Check by ID first
              const result = await tideSourceService.getHarborById(dataSourceConfig);
              resultName = `${result.name} (ID: ${result.id})`;
              resultDist = "Selecionado por ID";
           } else {
-             // Fallback Logic: Check by Coordinates
              const result = await tideSourceService.findNearestHarbor(dataSourceConfig);
              resultName = `${result.name} (ID: ${result.id})`;
              resultDist = `${result.distance}km`;
           }
-          
           const formatted = `Porto: ${resultName} - ${resultDist}`;
           updateDataSourceConfig({ tabuaMare: {...dataSourceConfig.tabuaMare, lastFoundHarbor: formatted} });
           setNotification('success', 'Porto confirmado!');
@@ -108,11 +111,9 @@ export const TideEditor: React.FC = () => {
         setNotification('error', "Não conectado! Configure USB, BLE ou WiFi.");
         return;
     }
-    
     setIsSyncing(true);
     try {
         updateFirmwareConfig({ cycleDuration: cycleLimit });
-        
         await hardwareBridge.sendData(
           useSevenDayMode ? activeData : keyframes, 
           connectionType, 
@@ -236,17 +237,17 @@ export const TideEditor: React.FC = () => {
         </div>
       </div>
 
-      {/* TABS for Editors */}
+      {/* TABS */}
       <div className="flex border-b border-slate-700 px-4">
           <button onClick={() => setActiveTab('DRAW')} className={`pb-2 px-4 text-sm font-medium ${activeTab === 'DRAW' ? 'border-b-2 border-cyan-500 text-white' : 'text-slate-400'}`}>
               Editor Manual
           </button>
           <button onClick={() => setActiveTab('SOURCE')} className={`pb-2 px-4 text-sm font-medium ${activeTab === 'SOURCE' ? 'border-b-2 border-purple-500 text-white' : 'text-slate-400'}`}>
-              Fonte de Dados
+              Fonte de Dados & Simulação
           </button>
       </div>
 
-      {/* Editor Panels */}
+      {/* EDITOR TAB */}
       {activeTab === 'DRAW' && !useSevenDayMode && (
         <div className="bg-slate-800 rounded-lg border border-slate-700 p-6 animate-in fade-in">
             <div className="flex justify-between items-center mb-4">
@@ -317,16 +318,16 @@ export const TideEditor: React.FC = () => {
         </div>
       )}
 
-      {/* Data Source Configuration Panel */}
+      {/* SOURCE & SIMULATION TAB */}
       {activeTab === 'SOURCE' && (
         <div className="bg-slate-800 rounded-lg border border-slate-700 p-6 animate-in fade-in">
            <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-               <Database size={20} className="text-purple-400" /> Configuração de Fonte de Dados
+               <Database size={20} className="text-purple-400" /> Configuração Central de Dados
            </h3>
            
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                
-               {/* API Config */}
+               {/* 1. API Config */}
                <div className={`p-4 rounded-lg border transition-all ${dataSourceConfig.activeSource === TideSourceType.API ? 'border-cyan-500 bg-cyan-900/10' : 'border-slate-600 bg-slate-900/50'}`}>
                    <div className="flex items-center gap-2 mb-3">
                        <input 
@@ -353,7 +354,7 @@ export const TideEditor: React.FC = () => {
                    </div>
                </div>
 
-                {/* Tabua Mare (Brasil) Config */}
+                {/* 2. Tabua Mare Config */}
                <div className={`p-4 rounded-lg border transition-all ${dataSourceConfig.activeSource === TideSourceType.TABUA_MARE ? 'border-yellow-500 bg-yellow-900/10' : 'border-slate-600 bg-slate-900/50'}`}>
                    <div className="flex items-center gap-2 mb-3">
                        <input 
@@ -365,13 +366,9 @@ export const TideEditor: React.FC = () => {
                        <span className="font-bold text-sm">2. Tábua Maré (Brasil)</span>
                    </div>
                    <p className="text-[10px] text-slate-400 mb-3 leading-tight">
-                       API gratuita que localiza o porto mais próximo baseado em coordenadas.
+                       API direta via navegador. Requer ID do porto ou Lat/Lng.
                    </p>
                    <div className="space-y-3 opacity-90">
-                       <div>
-                           <label className="text-xs text-slate-500 block mb-1">Base URL</label>
-                           <input type="text" value={dataSourceConfig.tabuaMare.baseUrl || 'https://tabuamare.devtu.qzz.io//api/v1'} onChange={(e) => updateDataSourceConfig({ tabuaMare: {...dataSourceConfig.tabuaMare, baseUrl: e.target.value} })} className="w-full bg-slate-900 border border-slate-700 rounded p-1 text-xs text-slate-300"/>
-                       </div>
                        <div className="flex gap-2">
                            <div className="flex-1">
                                <label className="text-xs text-slate-500 block mb-1">ID do Porto (Ex: 8)</label>
@@ -387,14 +384,13 @@ export const TideEditor: React.FC = () => {
                                 onClick={handleCheckPort}
                                 disabled={isCheckingPort}
                                 className="bg-slate-700 hover:bg-slate-600 text-white px-3 py-1 rounded text-xs border border-slate-600 h-[26px] flex items-center gap-2"
-                                title="Verificar porto mais próximo ou ID"
                            >
                                {isCheckingPort ? <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"/> : <Search size={12}/>}
                                Verificar
                            </button>
                        </div>
                        
-                       {/* Validation Status Box */}
+                       {/* Validation Status */}
                        {dataSourceConfig.tabuaMare.lastFoundHarbor && (
                            <div className={`text-[10px] p-2 rounded border flex items-start gap-2 ${dataSourceConfig.tabuaMare.lastFoundHarbor.startsWith("Erro") ? 'bg-red-900/20 border-red-900/30 text-red-300' : 'bg-green-900/20 border-green-900/30 text-green-400'}`}>
                                {dataSourceConfig.tabuaMare.lastFoundHarbor.startsWith("Erro") ? <AlertCircle size={14} className="shrink-0 mt-0.5"/> : <CheckCircle size={14} className="shrink-0 mt-0.5"/>}
@@ -412,13 +408,10 @@ export const TideEditor: React.FC = () => {
                                <input type="number" value={dataSourceConfig.tabuaMare.lng} onChange={(e) => updateDataSourceConfig({ tabuaMare: {...dataSourceConfig.tabuaMare, lng: parseFloat(e.target.value)} })} className="w-full bg-slate-900 border border-slate-700 rounded p-1 text-xs text-slate-300"/>
                            </div>
                        </div>
-                       <p className="text-[9px] text-slate-500 italic mt-1">
-                           *Se o ID do Porto estiver preenchido, a geolocalização será ignorada.
-                       </p>
                    </div>
                </div>
 
-               {/* Mock Config */}
+               {/* 3. Mock Config */}
                <div className={`p-4 rounded-lg border transition-all ${dataSourceConfig.activeSource === TideSourceType.MOCK ? 'border-green-500 bg-green-900/10' : 'border-slate-600 bg-slate-900/50'}`}>
                    <div className="flex items-center gap-2 mb-3">
                        <input 
@@ -455,6 +448,43 @@ export const TideEditor: React.FC = () => {
                    </div>
                </div>
 
+                {/* 4. Manual Weather Controls (Centralized) */}
+               <div className={`p-4 rounded-lg border border-slate-600 bg-slate-900/50`}>
+                   <div className="flex items-center justify-between mb-3">
+                       <div className="flex items-center gap-2">
+                           <Sliders size={16} className="text-orange-400"/>
+                           <span className="font-bold text-sm">Controles de Clima (Global)</span>
+                       </div>
+                       <span className="text-[9px] bg-slate-800 px-2 py-0.5 rounded text-slate-400">Tempo Real</span>
+                   </div>
+                   <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="text-[10px] text-slate-500 block mb-1 flex items-center gap-1"><Thermometer size={10} className="text-orange-400"/> Temp ({weatherData.temp}°C)</label>
+                            <input type="range" min="15" max="40" value={weatherData.temp} onChange={e => setWeatherData({temp: parseInt(e.target.value)})} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer" />
+                        </div>
+                        <div>
+                            <label className="text-[10px] text-slate-500 block mb-1 flex items-center gap-1"><Droplets size={10} className="text-blue-400"/> Umidade ({weatherData.humidity}%)</label>
+                            <input type="range" min="0" max="100" value={weatherData.humidity} onChange={e => setWeatherData({humidity: parseInt(e.target.value)})} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer" />
+                        </div>
+                        <div>
+                            <label className="text-[10px] text-slate-500 block mb-1 flex items-center gap-1"><Wind size={10} className="text-slate-300"/> Vento ({weatherData.windSpeed} km/h)</label>
+                            <input type="range" min="0" max="100" value={weatherData.windSpeed} onChange={e => setWeatherData({windSpeed: parseInt(e.target.value)})} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer" />
+                        </div>
+                        <div>
+                            <label className="text-[10px] text-slate-500 block mb-1">Dir Vento ({weatherData.windDir}°)</label>
+                            <input type="range" min="0" max="360" value={weatherData.windDir} onChange={e => setWeatherData({windDir: parseInt(e.target.value)})} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer" />
+                        </div>
+                         <div>
+                            <label className="text-[10px] text-slate-500 block mb-1 flex items-center gap-1"><Battery size={10} className="text-green-400"/> Bateria ({weatherData.battery}%)</label>
+                            <input type="range" min="0" max="100" value={weatherData.battery} onChange={e => setWeatherData({battery: parseInt(e.target.value)})} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer" />
+                        </div>
+                        <div>
+                            <label className="text-[10px] text-slate-500 block mb-1 flex items-center gap-1"><Moon size={10} className="text-purple-400"/> Ilum. Lua ({weatherData.moonIllumination}%)</label>
+                            <input type="range" min="0" max="100" value={weatherData.moonIllumination} onChange={e => setWeatherData({moonIllumination: parseInt(e.target.value)})} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer" />
+                        </div>
+                   </div>
+               </div>
+
                {/* Action Area */}
                <div className="md:col-span-2 lg:col-span-3 mt-4">
                     <button 
@@ -467,9 +497,9 @@ export const TideEditor: React.FC = () => {
                         ) : (
                             <Database size={24} className="mb-1" />
                         )}
-                        <span>{isGeneratingSource ? 'Processando...' : 'Gerar Tábua Agora'}</span>
+                        <span>{isGeneratingSource ? 'Processando...' : 'Atualizar Dados (API/Maré)'}</span>
                         <span className="text-[10px] font-normal opacity-70">
-                            Usa a fonte selecionada acima ({dataSourceConfig.activeSource})
+                            Busca dados da fonte selecionada e atualiza todos os módulos
                         </span>
                     </button>
                </div>

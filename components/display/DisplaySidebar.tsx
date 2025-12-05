@@ -1,43 +1,18 @@
-
 import React, { useState } from 'react';
 import { useAppStore } from '../../store';
-import { DisplayTheme, WidgetType } from '../../types';
-import { Zap, Palette, CloudSun, AlertCircle, Loader2, Wifi, Bluetooth, Sparkles, Image as ImageIcon, Clipboard, Terminal, CheckCircle, Moon, Sun, CloudRain, Thermometer, Wind, Droplets, Umbrella, Gauge, Eye, Sunrise, Sunset, CalendarDays } from 'lucide-react';
-import { tideSourceService } from '../../services/tideSourceService';
+import { DisplayTheme, WidgetType, ViewState } from '../../types';
+import { Zap, Palette, CloudSun, Sparkles, Image as ImageIcon, CheckCircle, Moon, Sun, Thermometer, Wind, Droplets, Gauge, Wifi, Bluetooth, ExternalLink, Settings } from 'lucide-react';
 import { generateDisplayImage } from '../../services/geminiService';
 
 export const DisplaySidebar: React.FC = () => {
   const { 
-      weatherData, setWeatherData, displayConfig, setDisplayConfig, setDisplayWidgets, addDisplayWidget,
-      dataSourceConfig, setKeyframes, setApiStatus, apiLoading, apiError, apiDebugLog
+      weatherData, displayConfig, setDisplayConfig, setDisplayWidgets, addDisplayWidget,
+      dataSourceConfig, setView
   } = useAppStore();
 
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiGenerating, setAiGenerating] = useState(false);
   const [lastGeneratedImage, setLastGeneratedImage] = useState<string | null>(null);
-
-  const handleFetchLiveData = async () => {
-      setApiStatus(true, null);
-      try {
-          const { weather, frames, warning } = await tideSourceService.fetchLiveWeather(dataSourceConfig);
-          
-          setWeatherData(weather);
-          
-          if (frames.length > 0) {
-              setKeyframes(frames);
-              setApiStatus(false, warning || null); // Pass warning if it exists (e.g. no tides)
-          } else {
-              if (warning) {
-                  // Valid weather but no tides is a "partial error" state for us
-                  setApiStatus(false, "Atenção: " + warning);
-              } else {
-                   setApiStatus(false, null);
-              }
-          }
-      } catch (error: any) {
-          setApiStatus(false, error.message);
-      }
-  };
 
   const handleGenerateImage = async () => {
       if(!aiPrompt) return;
@@ -63,13 +38,6 @@ export const DisplaySidebar: React.FC = () => {
               zIndex: 0,
               imageUrl: lastGeneratedImage
           });
-      }
-  };
-
-  const copyLogToClipboard = () => {
-      if (apiDebugLog) {
-          navigator.clipboard.writeText(apiDebugLog);
-          alert("Log JSON copiado para a área de transferência!");
       }
   };
 
@@ -121,43 +89,39 @@ export const DisplaySidebar: React.FC = () => {
   return (
     <div className="flex flex-col gap-6 max-h-full overflow-y-auto pr-2 pb-20 custom-scrollbar">
         
-        {/* API Real Time Control */}
+        {/* Data Monitor Card (Read Only) */}
         <div className="bg-slate-800 rounded-lg border border-slate-700 p-6">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                <CloudSun size={14} className="text-cyan-400" /> Dados Reais (WeatherAPI)
-            </h3>
+            <div className="flex justify-between items-start mb-4">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                    <CloudSun size={14} className="text-cyan-400" /> Monitor de Dados
+                </h3>
+                <button 
+                    onClick={() => setView(ViewState.EDITOR)}
+                    className="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition"
+                    title="Configurar Fontes de Dados"
+                >
+                    <Settings size={14} />
+                </button>
+            </div>
             
             <div className="text-[10px] text-slate-500 mb-3 bg-slate-900/50 p-2 rounded">
-                API Key: <span className="text-slate-300 font-mono">...{dataSourceConfig.api.token.slice(-6)}</span><br/>
-                Local: <span className="text-slate-300">{dataSourceConfig.api.locationId}</span>
+                <div className="flex justify-between">
+                    <span>Fonte Ativa:</span>
+                    <span className="text-slate-300 font-bold">{dataSourceConfig.activeSource}</span>
+                </div>
+                {dataSourceConfig.activeSource === 'API' && (
+                    <div className="flex justify-between mt-1">
+                         <span>Loc:</span> <span className="text-slate-300 truncate max-w-[100px]">{dataSourceConfig.api.locationId}</span>
+                    </div>
+                )}
             </div>
 
-            <button 
-                onClick={handleFetchLiveData}
-                disabled={apiLoading}
-                className={`w-full py-2 rounded text-xs font-bold flex items-center justify-center gap-2 transition ${apiLoading ? 'bg-slate-700 text-slate-400 cursor-not-allowed' : 'bg-cyan-600 hover:bg-cyan-700 text-white'}`}
-            >
-                {apiLoading ? <Loader2 className="animate-spin" size={14} /> : <CloudSun size={14} />}
-                {apiLoading ? 'Buscando Dados Completos...' : 'Atualizar Dados (Free Tier)'}
-            </button>
-
-            {apiError && (
-                <div className={`mt-3 p-3 rounded flex items-start gap-2 ${apiError.includes("Atenção") ? 'bg-amber-900/20 border border-amber-800 text-amber-300' : 'bg-red-900/20 border border-red-800 text-red-300'}`}>
-                    <AlertCircle size={14} className="mt-0.5 shrink-0" />
-                    <div className="text-[10px] leading-relaxed">
-                        <strong className="block mb-1">{apiError.includes("Atenção") ? "Aviso:" : "Falha na API:"}</strong>
-                        {apiError}
-                    </div>
-                </div>
-            )}
-            
-            {!apiLoading && !apiError && weatherData && (
-                <div className="mt-4 flex flex-col gap-4 animate-in fade-in">
-                    
+            {weatherData ? (
+                <div className="mt-2 flex flex-col gap-4 animate-in fade-in">
                     {/* Basic Status */}
                     <div className="text-[10px] text-green-400 flex flex-col gap-1 p-2 bg-green-900/10 rounded border border-green-900/30">
                         <div className="flex items-center gap-1 font-bold">
-                            <CheckCircle size={12} /> Dados Atualizados
+                            <CheckCircle size={12} /> Estado do Sistema
                         </div>
                         {weatherData.conditionText && (
                             <div className="flex items-center gap-1 text-slate-300">
@@ -169,7 +133,7 @@ export const DisplaySidebar: React.FC = () => {
 
                     {/* Environmental Grid */}
                     <div>
-                        <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2 flex items-center gap-1"><Gauge size={12}/> Detalhes Ambientais</h4>
+                        <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2 flex items-center gap-1"><Gauge size={12}/> Métricas Atuais</h4>
                         <div className="grid grid-cols-2 gap-2">
                              <div className="bg-slate-900 p-2 rounded flex flex-col items-center justify-center border border-slate-700">
                                  <span className="text-[9px] text-slate-500 uppercase">Sensação</span>
@@ -179,67 +143,21 @@ export const DisplaySidebar: React.FC = () => {
                                  <span className="text-[9px] text-slate-500 uppercase flex items-center gap-1"><Sun size={8}/> UV Index</span>
                                  <span className={`text-sm font-bold ${weatherData.uv > 5 ? 'text-purple-400' : 'text-green-400'}`}>{weatherData.uv}</span>
                              </div>
-                             <div className="bg-slate-900 p-2 rounded flex flex-col items-center justify-center border border-slate-700">
-                                 <span className="text-[9px] text-slate-500 uppercase flex items-center gap-1"><Umbrella size={8}/> Precip</span>
-                                 <span className="text-sm font-bold text-blue-400">{weatherData.precip}mm</span>
-                             </div>
-                             <div className="bg-slate-900 p-2 rounded flex flex-col items-center justify-center border border-slate-700">
-                                 <span className="text-[9px] text-slate-500 uppercase">Pressão</span>
-                                 <span className="text-sm font-bold text-slate-300">{weatherData.pressure}mb</span>
-                             </div>
                         </div>
                     </div>
-
-                    {/* Astronomy */}
-                    <div>
-                        <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2 flex items-center gap-1"><Moon size={12}/> Astronomia</h4>
-                        <div className="flex justify-between items-center bg-slate-900 p-2 rounded border border-slate-700 text-xs">
-                             <div className="flex items-center gap-2 text-amber-400">
-                                 <Sunrise size={14} /> {weatherData.sunrise}
-                             </div>
-                             <div className="h-4 w-px bg-slate-700"></div>
-                             <div className="flex items-center gap-2 text-indigo-400">
-                                 <Sunset size={14} /> {weatherData.sunset}
-                             </div>
-                        </div>
-                    </div>
-
-                     {/* Forecast */}
-                    {weatherData.forecast && weatherData.forecast.length > 0 && (
-                        <div>
-                             <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2 flex items-center gap-1"><CalendarDays size={12}/> Previsão 3 Dias</h4>
-                             <div className="space-y-1">
-                                 {weatherData.forecast.map((d, i) => (
-                                     <div key={i} className="flex justify-between items-center bg-slate-900/50 p-1.5 rounded text-[10px] text-slate-300">
-                                          <span className="w-16 opacity-70">{d.date.split('-').slice(1).join('/')}</span>
-                                          <span className="flex-1 truncate px-2">{d.condition}</span>
-                                          <span className="font-mono text-cyan-400">{Math.round(d.minTemp)}° / {Math.round(d.maxTemp)}°</span>
-                                     </div>
-                                 ))}
-                             </div>
-                        </div>
-                    )}
+                </div>
+            ) : (
+                <div className="text-xs text-slate-500 text-center py-4 italic">
+                    Nenhum dado carregado.
                 </div>
             )}
             
-            {/* DEBUG LOG SECTION */}
-            {apiDebugLog && (
-                <div className="mt-4 border-t border-slate-700 pt-2">
-                    <div className="flex justify-between items-center mb-2">
-                         <h4 className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
-                             <Terminal size={12}/> Debug Log (Raw JSON)
-                         </h4>
-                         <button onClick={copyLogToClipboard} className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 border border-cyan-900 px-2 py-0.5 rounded bg-cyan-900/20">
-                             <Clipboard size={10} /> Copiar
-                         </button>
-                    </div>
-                    <div className="bg-slate-950 p-2 rounded border border-slate-800 h-32 overflow-auto custom-scrollbar">
-                         <pre className="text-[9px] text-slate-400 font-mono whitespace-pre-wrap break-all">
-                             {apiDebugLog}
-                         </pre>
-                    </div>
-                </div>
-            )}
+            <button 
+                onClick={() => setView(ViewState.EDITOR)}
+                className="w-full mt-4 py-2 rounded text-xs font-bold flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white transition border border-slate-600"
+            >
+                <ExternalLink size={12} /> Gerenciar Fontes de Dados
+            </button>
         </div>
 
         {/* AI Image Generator */}
@@ -261,7 +179,7 @@ export const DisplaySidebar: React.FC = () => {
                 disabled={aiGenerating || !aiPrompt}
                 className={`w-full py-2 rounded text-xs font-bold flex items-center justify-center gap-2 mb-3 transition ${aiGenerating ? 'bg-purple-900/50 text-purple-300' : 'bg-purple-600 hover:bg-purple-500 text-white'}`}
             >
-                {aiGenerating ? <Loader2 className="animate-spin" size={14}/> : <ImageIcon size={14}/>}
+                {aiGenerating ? <ImageIcon className="animate-spin" size={14}/> : <ImageIcon size={14}/>}
                 {aiGenerating ? 'Gerando...' : 'Gerar Imagem'}
             </button>
 
@@ -299,7 +217,7 @@ export const DisplaySidebar: React.FC = () => {
         {/* Simulators & Weather Widgets */}
         <div className="bg-slate-800 rounded-lg border border-slate-700 p-6">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                <Zap size={14} className="text-yellow-400" /> Clima (Simulação/Widgets)
+                <Zap size={14} className="text-yellow-400" /> Widgets de Clima
             </h3>
 
             {/* Weather Widget Buttons */}
@@ -317,32 +235,7 @@ export const DisplaySidebar: React.FC = () => {
                     <CloudSun size={16} className="text-yellow-400" /> Condição (Txt)
                 </button>
             </div>
-
-            <div className="grid grid-cols-2 gap-3 border-t border-slate-700 pt-3">
-                <div>
-                    <label className="text-[10px] text-slate-500 block mb-1">Vento (Dir {weatherData.windDir}°)</label>
-                    <input type="range" min="0" max="360" value={weatherData.windDir} onChange={e => setWeatherData({windDir: parseInt(e.target.value)})} className="w-full" />
-                </div>
-                <div>
-                    <label className="text-[10px] text-slate-500 block mb-1">Velocidade ({weatherData.windSpeed} km/h)</label>
-                    <input type="range" min="0" max="100" value={weatherData.windSpeed} onChange={e => setWeatherData({windSpeed: parseInt(e.target.value)})} className="w-full" />
-                </div>
-                <div>
-                    <label className="text-[10px] text-slate-500 block mb-1">Temp ({weatherData.temp}°C)</label>
-                    <input type="range" min="15" max="40" value={weatherData.temp} onChange={e => setWeatherData({temp: parseInt(e.target.value)})} className="w-full" />
-                </div>
-                <div>
-                    <label className="text-[10px] text-slate-500 block mb-1">Bateria ({weatherData.battery}%)</label>
-                    <input type="range" min="0" max="100" value={weatherData.battery} onChange={e => setWeatherData({battery: parseInt(e.target.value)})} className="w-full accent-green-500" />
-                </div>
-                <div className="col-span-2 pt-2 border-t border-slate-700 mt-2">
-                    <div className="flex justify-between items-center mb-1">
-                        <label className="text-[10px] text-slate-500 block">Fase Lua: <span className="text-white">{weatherData.moonPhase}</span></label>
-                        <span className="text-[10px] text-purple-400">{weatherData.moonIllumination}% Ilum.</span>
-                    </div>
-                    <input type="range" min="0" max="100" value={weatherData.moonIllumination} onChange={e => setWeatherData({moonIllumination: parseInt(e.target.value)})} className="w-full accent-purple-500" />
-                </div>
-            </div>
+            {/* Note: Manual sliders removed. Use Tide Editor > Source to simulate weather. */}
         </div>
 
         {/* Themes */}
