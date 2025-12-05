@@ -2,7 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 
-console.log("[System] Starting Index.tsx...");
+console.log("🟦 [Index] Module loaded. Starting React Boot Sequence...");
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, error: Error | null, info: any }> {
   constructor(props: { children: React.ReactNode }) {
@@ -15,7 +15,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
   }
 
   componentDidCatch(error: Error, info: any) {
-    console.error("[System] Critical Error Caught in Boundary:", error, info);
+    console.error("⛔ [Index] Critical Error Caught in Boundary:", error, info);
   }
 
   render() {
@@ -40,15 +40,15 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
-  console.error("[System] Root element not found!");
+  console.error("⛔ [Index] Root element 'root' not found in DOM!");
   throw new Error("Could not find root element to mount to");
 } else {
-    console.log("[System] Root element found. Mounting React...");
+    console.log("🟦 [Index] Root element found. Creating React Root...");
 }
 
-const root = ReactDOM.createRoot(rootElement);
-
 try {
+    const root = ReactDOM.createRoot(rootElement);
+    console.log("🟦 [Index] Root created. Rendering App...");
     root.render(
       <React.StrictMode>
         <ErrorBoundary>
@@ -56,7 +56,9 @@ try {
         </ErrorBoundary>
       </React.StrictMode>
     );
-    console.log("[System] React Mount command sent.");
+    console.log("🟩 [Index] React Mount command sent successfully.");
 } catch(e: any) {
-    console.error("[System] Failed to call root.render:", e);
+    console.error("⛔ [Index] Failed to call root.render:", e);
+    // Try to update UI manually if React fails hard
+    if(rootElement) rootElement.innerHTML = `<div style="color:red; padding:20px">Failed to mount React: ${e.message}</div>`;
 }
