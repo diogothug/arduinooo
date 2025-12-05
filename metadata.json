@@ -1,0 +1,8 @@
+{
+  "name": "TideFlux ESP32 Controller",
+  "description": "An advanced React application to design, simulate, and generate firmware for ESP32-controlled physical tide maps using WS2812B LEDs.",
+  "requestFramePermissions": [
+    "serial",
+    "bluetooth"
+  ]
+}

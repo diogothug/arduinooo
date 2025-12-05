@@ -1,0 +1,16 @@
+{
+  "short_name": "TideFlux",
+  "name": "TideFlux ESP32 Controller",
+  "description": "Control physical tide maps with ESP32",
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#0f172a",
+  "background_color": "#0f172a",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/11329/11329060.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ]
+}

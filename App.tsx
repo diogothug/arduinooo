@@ -1,0 +1,228 @@
+
+import React, { useState, useEffect } from 'react';
+import { useAppStore } from './store';
+import { ViewState, ConnectionType } from './types';
+import { TideEditor } from './components/TideEditor';
+import { LedSimulator } from './components/LedSimulator';
+import { FirmwareBuilder } from './components/FirmwareBuilder';
+import { DisplayEditor } from './components/DisplayEditor';
+import { LedMaster } from './components/LedMaster';
+import { ConnectionManager } from './components/ConnectionManager';
+import { LayoutDashboard, Waves, Cpu, Settings, Activity, Monitor, Link2, Wifi, Usb, Bluetooth, AlertCircle, CheckCircle, Info, X, Lightbulb } from 'lucide-react';
+
+const NotificationToast = () => {
+    const { notification, clearNotification } = useAppStore();
+    
+    useEffect(() => {
+        if (notification) {
+            const timer = setTimeout(clearNotification, 5000);
+            return () => clearTimeout(timer);
+        }
+    }, [notification, clearNotification]);
+
+    if (!notification) return null;
+
+    const bgColor = notification.type === 'success' ? 'bg-green-600' : notification.type === 'error' ? 'bg-red-600' : 'bg-cyan-600';
+    const Icon = notification.type === 'success' ? CheckCircle : notification.type === 'error' ? AlertCircle : Info;
+
+    return (
+        <div className={`fixed bottom-6 right-6 z-50 ${bgColor} text-white px-4 py-3 rounded-lg shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4`}>
+             <Icon size={20} />
+             <span className="text-sm font-medium">{notification.message}</span>
+             <button onClick={clearNotification} className="ml-2 hover:bg-white/20 rounded-full p-1"><X size={14}/></button>
+        </div>
+    );
+};
+
+const App: React.FC = () => {
+  const { currentView, setView, devices, setActiveDevice, activeDeviceId, connectionType } = useAppStore();
+  const [showConnectionManager, setShowConnectionManager] = useState(false);
+
+  const handleEditDevice = (id: string) => {
+      setActiveDevice(id);
+      setView(ViewState.EDITOR);
+  };
+
+  return (
+    <div className="flex h-screen w-full bg-slate-950 text-slate-200 overflow-hidden font-sans">
+      
+      {showConnectionManager && <ConnectionManager onClose={() => setShowConnectionManager(false)} />}
+      <NotificationToast />
+
+      {/* Sidebar Navigation */}
+      <nav className="w-20 lg:w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between">
+         <div>
+            <div className="p-6 flex items-center gap-3">
+                <div className="w-8 h-8 bg-cyan-500 rounded-lg flex items-center justify-center shadow-lg shadow-cyan-500/30">
+                    <Waves className="text-white" size={20} />
+                </div>
+                <h1 className="text-xl font-bold tracking-tight hidden lg:block text-white">TideFlux</h1>
+            </div>
+
+            <div className="mt-8 px-4 space-y-2">
+                <NavButton 
+                    active={currentView === ViewState.DASHBOARD} 
+                    onClick={() => setView(ViewState.DASHBOARD)} 
+                    icon={<LayoutDashboard size={20}/>} 
+                    label="Painel" 
+                />
+                <NavButton 
+                    active={currentView === ViewState.EDITOR} 
+                    onClick={() => setView(ViewState.EDITOR)} 
+                    icon={<Activity size={20}/>} 
+                    label="Editor de Maré" 
+                />
+                 <NavButton 
+                    active={currentView === ViewState.DISPLAY} 
+                    onClick={() => setView(ViewState.DISPLAY)} 
+                    icon={<Monitor size={20}/>} 
+                    label="Display GC9A01" 
+                />
+                <NavButton 
+                    active={currentView === ViewState.LED_MASTER} 
+                    onClick={() => setView(ViewState.LED_MASTER)} 
+                    icon={<Lightbulb size={20}/>} 
+                    label="LED Master" 
+                />
+                <NavButton 
+                    active={currentView === ViewState.FIRMWARE} 
+                    onClick={() => setView(ViewState.FIRMWARE)} 
+                    icon={<Cpu size={20}/>} 
+                    label="Firmware" 
+                />
+            </div>
+         </div>
+         
+         <div className="p-4 border-t border-slate-800">
+             <div className="flex items-center gap-3 px-2 py-2 text-slate-500 hover:text-slate-300 cursor-pointer transition">
+                <Settings size={20} />
+                <span className="hidden lg:block text-sm font-medium">Configurações</span>
+             </div>
+         </div>
+      </nav>
+
+      {/* Main Content Area */}
+      <main className="flex-1 flex flex-col h-screen overflow-hidden">
+         {/* Top Header - Mobile friendly */}
+         <header className="h-16 bg-slate-900/50 backdrop-blur-sm border-b border-slate-800 flex items-center justify-between px-6 lg:px-8">
+            <h2 className="text-lg font-semibold text-white">
+                {currentView === ViewState.DASHBOARD && 'Visão Geral'}
+                {currentView === ViewState.EDITOR && 'Editor Visual de Maré'}
+                {currentView === ViewState.DISPLAY && 'Designer do Display'}
+                {currentView === ViewState.LED_MASTER && 'LED Master WS2812B'}
+                {currentView === ViewState.FIRMWARE && 'Gerador de Firmware'}
+            </h2>
+            <div className="flex items-center gap-4">
+                 
+                 <button 
+                    onClick={() => setShowConnectionManager(true)}
+                    className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-full text-xs font-medium border border-slate-600 transition"
+                 >
+                     {connectionType === ConnectionType.NONE ? (
+                        <>
+                           <Link2 size={14} /> Conectar
+                        </>
+                     ) : (
+                        <>
+                           {connectionType === ConnectionType.USB && <Usb size={14} className="text-green-400" />}
+                           {connectionType === ConnectionType.BLE && <Bluetooth size={14} className="text-blue-400" />}
+                           {connectionType === ConnectionType.WIFI && <Wifi size={14} className="text-cyan-400" />}
+                           <span className="text-green-400">Conectado</span>
+                        </>
+                     )}
+                 </button>
+
+                 <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-500 to-blue-600 border border-slate-700 shadow-md"></div>
+            </div>
+         </header>
+
+         {/* Scrollable View Content */}
+         <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 lg:p-8">
+             
+             {currentView === ViewState.DASHBOARD && (
+                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {/* Device Cards */}
+                    {devices.map(device => (
+                        <div key={device.id} className="bg-slate-800 border border-slate-700 rounded-xl p-6 relative overflow-hidden group hover:border-cyan-500/50 transition-all shadow-lg hover:shadow-cyan-900/20">
+                            <div className={`absolute top-0 right-0 p-4`}>
+                                <div className={`w-3 h-3 rounded-full ${device.status === 'online' ? 'bg-green-500 shadow-lg shadow-green-500/50' : 'bg-red-500'}`}></div>
+                            </div>
+                            <h3 className="text-lg font-bold text-white mb-1">{device.name}</h3>
+                            <p className="text-sm text-slate-400 font-mono mb-6 flex items-center gap-2">
+                                <span className="w-1.5 h-1.5 bg-slate-500 rounded-full"></span>
+                                {device.ip}
+                            </p>
+                            
+                            <div className="flex gap-2">
+                                <button className="flex-1 bg-slate-700 hover:bg-slate-600 text-white text-sm py-2 rounded transition font-medium">
+                                    Ping
+                                </button>
+                                <button 
+                                  onClick={() => handleEditDevice(device.id)}
+                                  className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white text-sm py-2 rounded transition font-medium"
+                                >
+                                    Editar
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                    
+                    {/* Quick Stats or Add Device */}
+                    <div 
+                        onClick={() => setShowConnectionManager(true)}
+                        className="border-2 border-dashed border-slate-700 rounded-xl p-6 flex flex-col items-center justify-center text-slate-500 hover:border-slate-500 hover:text-slate-300 transition cursor-pointer hover:bg-slate-800/50"
+                    >
+                        <div className="p-3 bg-slate-800 rounded-full mb-3">
+                             <Waves size={24} />
+                        </div>
+                        <span className="text-sm font-medium">Conectar Novo Controlador</span>
+                    </div>
+                 </div>
+             )}
+
+             {currentView === ViewState.EDITOR && (
+                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-140px)]">
+                     <div className="lg:col-span-2 h-full overflow-y-auto pr-2 pb-20 lg:pb-0">
+                         <TideEditor />
+                     </div>
+                     <div className="lg:col-span-1 h-full min-h-[500px]">
+                         <LedSimulator />
+                     </div>
+                 </div>
+             )}
+
+             {currentView === ViewState.DISPLAY && (
+                 <div className="h-full">
+                     <DisplayEditor />
+                 </div>
+             )}
+
+             {currentView === ViewState.LED_MASTER && (
+                 <div className="h-full">
+                     <LedMaster />
+                 </div>
+             )}
+
+             {currentView === ViewState.FIRMWARE && (
+                 <div className="h-full">
+                     <FirmwareBuilder />
+                 </div>
+             )}
+
+         </div>
+      </main>
+    </div>
+  );
+};
+
+const NavButton = ({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) => (
+    <button 
+        onClick={onClick}
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${active ? 'bg-cyan-500/10 text-cyan-400 font-medium border-r-2 border-cyan-500' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}
+    >
+        {icon}
+        <span className="hidden lg:block">{label}</span>
+    </button>
+);
+
+export default App;
