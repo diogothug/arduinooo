@@ -324,9 +324,12 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     
     useAppStore.getState().setApiDebugLog(`GET ${url}...`);
     
+    console.log("[DEBUG] Fetching URL:", url);
+
     const res = await fetch(url);
     const textRes = await res.text();
     
+    console.log("[DEBUG] Raw Response Length:", textRes.length);
     useAppStore.getState().setApiDebugLog(textRes.substring(0, 500) + "..."); // Truncate
 
     if (!res.ok) {
@@ -337,6 +340,7 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     try {
         json = JSON.parse(textRes);
     } catch(e) {
+        console.error("[DEBUG] JSON Parse Error", e);
         throw new Error("Resposta inválida da API (JSON Parse Error).");
     }
     
@@ -345,6 +349,8 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     }
 
     const rawData = json.data || [];
+    console.log("[DEBUG] Data Array Length:", rawData.length);
+    
     if (!Array.isArray(rawData) || rawData.length === 0) {
         throw new Error("Nenhum dado de maré encontrado na resposta (campo data vazio).");
     }
@@ -355,13 +361,16 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     // Parse nested structure: Data -> Months -> Days -> Tides
     // Doc Page 8: "data": [ { "months": [ { "days": [ { "tides": [...] } ] } ] } ]
     
-    rawData.forEach((harborItem: any) => {
+    rawData.forEach((harborItem: any, hIdx: number) => {
+        console.log(`[DEBUG] Parsing Harbor Item ${hIdx}`);
         const months = harborItem.months || [];
         
-        months.forEach((monthItem: any) => {
+        months.forEach((monthItem: any, mIdx: number) => {
+             console.log(`  [DEBUG] Month Item ${mIdx}`);
              const days = monthItem.days || [];
              
-             days.forEach((dayItem: any) => {
+             days.forEach((dayItem: any, dIdx: number) => {
+                 console.log(`    [DEBUG] Day Item ${dIdx} - Date: ${dayItem.date}`);
                  const dateStr = dayItem.date; // "YYYY-MM-DD"
                  const tides = dayItem.tides || [];
                  
@@ -388,7 +397,7 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     console.log(`[TideSource] Parsed ${allTides.length} raw tide points.`);
 
     if (allTides.length === 0) {
-        throw new Error("Estrutura do JSON desconhecida ou sem marés.");
+        throw new Error("Estrutura do JSON desconhecida ou sem marés. Verifique o Log.");
     }
 
     // Determine Min/Max for normalization

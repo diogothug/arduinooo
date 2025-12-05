@@ -23,6 +23,31 @@
         background: #6b7280; 
       }
     </style>
+    <script>
+      // POLYFILL: Previne crash "process is not defined" no Vercel/Browser
+      window.process = window.process || { env: { API_KEY: '' } };
+      
+      // DEBUG: Captura erros globais de script antes do React
+      window.addEventListener('error', function(e) {
+        console.error("⛔ Global Script Error:", e.message, "at", e.filename, ":", e.lineno);
+        
+        // Se o root estiver vazio (app não montou), mostra o erro na tela
+        setTimeout(function() {
+            var root = document.getElementById('root');
+            if(root && root.innerHTML.trim() === "") {
+                var errDiv = document.createElement('div');
+                errDiv.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:#0f172a; color:#ef4444; padding:20px; z-index:9999; font-family:monospace; overflow:auto;';
+                errDiv.innerHTML = '<h1>⚠ Fatal Boot Error</h1><p>' + e.message + '</p><pre>' + e.filename + ':' + e.lineno + '</pre><p>Check Console (F12) for details.</p>';
+                document.body.appendChild(errDiv);
+            }
+        }, 1000);
+      });
+
+      // DEBUG: Captura Unhandled Promise Rejections
+      window.addEventListener('unhandledrejection', function(e) {
+        console.error("⛔ Unhandled Promise Rejection:", e.reason);
+      });
+    </script>
   <script type="importmap">
 {
   "imports": {
