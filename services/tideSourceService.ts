@@ -287,19 +287,29 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     const daysRequired = Math.ceil(cycleDuration / 24) || 1;
     const daysArray: number[] = [];
     
+    // Logic: Request required days. For simplistic current implementation, we fetch from current month.
+    // NOTE: This basic implementation assumes all requested days fall in the current month. 
+    // To support month-crossing (e.g. Jan 31 to Feb 1), we would need 2 API calls.
     for(let i=0; i<daysRequired; i++) {
         const d = new Date(now);
         d.setDate(now.getDate() + i);
+        // Add protection for month crossing in this basic version:
+        // If we cross month, we skip for now to avoid 404 from API mismatch (API expects {month} for all {days}).
         if (d.getMonth() + 1 === month) daysArray.push(d.getDate());
     }
     if (daysArray.length === 0) daysArray.push(now.getDate());
-    const daysParam = `[${daysArray.join(',')}]`;
+    
+    // FIX: Format days explicitly using URL Encoded Brackets %5B and %5D as required by API
+    // Example: %5B8,12,15%5D
+    const daysParam = `%5B${daysArray.join(',')}%5D`;
+    
+    safeLog(`[API] Days Param generated: ${daysParam}`);
     
     let url = "";
     if (harborId) {
         url = `${apiBase}/tabua-mare/${harborId}/${month}/${daysParam}`;
     } else {
-        const latLngParam = `[${lat},${lng}]`;
+        const latLngParam = `%5B${lat},${lng}%5D`;
         url = `${apiBase}/geo-tabua-mare/${latLngParam}/${uf.toLowerCase()}/${month}/${daysParam}`;
     }
     
@@ -317,7 +327,7 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     const textRes = await res.text();
     safeLog(`[API] Raw Resp (${textRes.length} chars): ${textRes.substring(0, 300)}...`);
 
-    if (!res.ok) throw new Error(`Erro HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`Erro HTTP ${res.status} (Verifique se o porto ${harborId} existe para Mês ${month})`);
 
     let json: any;
     try {
@@ -336,27 +346,25 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
 
     const frames: Keyframe[] = [];
     
-    // Logic to handle both Nested (by harbor/month) or Flat responses depending on endpoint variant
-    // The previous debug showed complex nesting. Let's be robust.
-    
     // Helper to process tide list
     const processTides = (tides: any[], dateStr: string) => {
          tides.forEach((t: any) => {
              const [hh, mm] = t.time.split(':').map(Number);
              
-             // Calculate offset relative to TODAY's start
+             // Calculate offset relative to TODAY's start (0h)
              const today = new Date(now.toISOString().split('T')[0]);
              const tideDate = new Date(dateStr);
              const diffDays = Math.round((tideDate.getTime() - today.getTime()) / (86400000));
              const timeOffset = (diffDays * 24) + hh + (mm / 60);
 
+             // Filter only relevant data within our cycle view
              if (timeOffset >= 0 && timeOffset <= cycleDuration + 24) {
-                // Height normalization logic (simplified for debug)
+                // Height normalization logic
                 // Assume standard range 0.0 to 2.5m roughly
                 const h = parseFloat(t.height);
                 if (!isNaN(h)) {
-                    // Rough mapping: -0.2m to 2.5m -> 0 to 100%
-                    let pct = ((h + 0.2) / 2.7) * 100;
+                    // Rough mapping: -0.2m to 2.7m -> 0 to 100%
+                    let pct = ((h + 0.2) / 2.9) * 100;
                     pct = Math.max(0, Math.min(100, pct));
                     
                     const isHigh = (t.type || "").toLowerCase().includes('high') || (t.type || "").toLowerCase().includes('alta');
@@ -386,8 +394,7 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
         } 
         // Case 2: Direct "tides" array (some endpoints might return flat)
         else if (item.tides) {
-             // If date is missing on item, assume today or passed param
-             processTides(item.tides, item.date || now.toISOString());
+             processTides(item.tides, item.date || now.toISOString().split('T')[0]);
         }
     });
     
@@ -397,21 +404,26 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
 
 // ... rest of file (mock data, fallback) ...
 function generateMockData(config: DataSourceConfig, cycleDuration: number): Keyframe[] {
-    // Keep existing mock logic
     const { minHeight, maxHeight, periodHours } = config.mock;
     const frames: Keyframe[] = [];
-    for (let i = 0; i <= 12; i++) {
-        const t = (i / 12) * cycleDuration;
+    const limit = Math.ceil(cycleDuration / 12) * 12 + 12; // Generate enough frames
+    
+    for (let i = 0; i <= limit; i++) {
+        const t = i; // hours
         const val = (Math.sin(t * 2 * Math.PI / periodHours) + 1) / 2;
         const h = minHeight + (val * (maxHeight - minHeight));
-        frames.push({
-            id: uid(),
-            timeOffset: parseFloat(t.toFixed(1)),
-            height: parseFloat(h.toFixed(1)),
-            color: '#0ea5e9',
-            intensity: 150,
-            effect: EffectType.STATIC
-        });
+        
+        // Add only frames within cycle
+        if(t <= cycleDuration) {
+             frames.push({
+                id: uid(),
+                timeOffset: parseFloat(t.toFixed(1)),
+                height: parseFloat(h.toFixed(1)),
+                color: '#0ea5e9',
+                intensity: 150,
+                effect: EffectType.STATIC
+            });
+        }
     }
     return frames;
 }

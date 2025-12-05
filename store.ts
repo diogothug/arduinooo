@@ -118,7 +118,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   // Default Data Source Config
   dataSourceConfig: {
-    activeSource: TideSourceType.TABUA_MARE, 
+    activeSource: TideSourceType.TABUA_MARE, // Set to Tábua Maré by default
     api: {
       url: 'https://api.weatherapi.com/v1/marine.json',
       token: '9afcd90f4bc04d6d96e115416251409',
@@ -126,13 +126,12 @@ export const useAppStore = create<AppState>((set) => ({
       locationId: '-13.5655,-38.9227', // Moreré Coordinates (Precise)
     },
     tabuaMare: {
-      // FIX: Removed double slash from base URL which causes issues on some routers
       baseUrl: 'https://tabuamare.devtu.qzz.io/api/v1',
       uf: 'ba',
       lat: -14.78, // Official Lat for Porto 8
       lng: -39.0167, // Official Lng for Porto 8
-      harborId: 8, // PORTO DE ILHÉUS MALHADO (ALWAYS 8)
-      lastFoundHarbor: 'Porto ID: 8 (Ilhéus) - Selecionado'
+      harborId: 8, // PORTO DE ILHÉUS MALHADO (Default 8)
+      lastFoundHarbor: 'Porto ID: 8 (Ilhéus) - Padrão'
     },
     mock: {
       minHeight: 10,
