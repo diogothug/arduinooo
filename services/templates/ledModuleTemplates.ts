@@ -522,4 +522,3 @@ void WS2812BAnimations::neonPulse(AnimationParams p, uint32_t t) {
      }
 }
 `;
-};
