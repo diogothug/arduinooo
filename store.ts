@@ -126,7 +126,7 @@ export const useAppStore = create<AppState>((set) => ({
       locationId: '-13.5655,-38.9227', // Moreré Coordinates (Precise)
     },
     tabuaMare: {
-      baseUrl: 'https://tabuamare.devtu.qzz.io/api/v1',
+      baseUrl: 'https://tabuamare.devtu.qzz.io//api/v1', // CRITICAL: Force double slash for 403 fix
       uf: 'ba',
       lat: -14.78, // Official Lat for Porto 8
       lng: -39.0167, // Official Lng for Porto 8

@@ -1,4 +1,3 @@
-
 import { DataSourceConfig, Keyframe, TideSourceType, MockWaveType, EffectType, WeatherData } from "../types";
 import { useAppStore } from '../store';
 
@@ -10,8 +9,15 @@ const uid = () => Math.random().toString(36).substr(2, 9);
 // Helper to sanitize base URLs but ALLOW double slashes if intentional (as per API docs)
 const sanitizeBaseUrl = (url: string) => {
     if (!url) return '';
-    // Only remove trailing slashes
-    return url.replace(/\/+$/, '');
+    let cleaned = url.replace(/\/+$/, '');
+    
+    // CRITICAL FIX: The API requires a double slash before /api/v1 due to reverse proxy routing
+    // If we detect the domain but missing double slash, enforce it.
+    if (cleaned.includes('tabuamare.devtu.qzz.io') && !cleaned.includes('//api')) {
+         cleaned = cleaned.replace('/api', '//api');
+    }
+    
+    return cleaned;
 };
 
 // Safe logger helper
