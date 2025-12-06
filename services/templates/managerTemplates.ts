@@ -1,4 +1,5 @@
 
+
 import { DataSourceConfig, FirmwareConfig } from '../../types';
 
 export const generateWifiManagerH = () => `
@@ -23,7 +24,10 @@ void WifiManager::connect() {
     WiFi.setHostname(DEVICE_NAME);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     
-    Serial.print("Conectando ao WiFi");
+    Serial.println("");
+    Serial.println("--------------------------------");
+    Serial.printf("[WiFi] Conectando a: %s\n", WIFI_SSID);
+    
     int attempts = 0;
     while (WiFi.status() != WL_CONNECTED && attempts < 20) {
         delay(500);
@@ -31,22 +35,29 @@ void WifiManager::connect() {
         attempts++;
     }
     
+    Serial.println("");
+    
     if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("");
-        Serial.print("Conectado! IP: ");
+        Serial.println("[WiFi] CONECTADO!");
+        Serial.print("[WiFi] IP Address: ");
         Serial.println(WiFi.localIP());
+        Serial.print("[WiFi] RSSI: ");
+        Serial.println(WiFi.RSSI());
         
         configTime(-3 * 3600, 0, "pool.ntp.org", "time.nist.gov");
-        Serial.print("Sincronizando relogio...");
+        Serial.print("[NTP] Sincronizando relogio...");
         struct tm timeinfo;
         if(getLocalTime(&timeinfo)){
            Serial.println("OK");
+           Serial.printf("[NTP] Hora Atual: %02d:%02d:%02d\n", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
         } else {
-           Serial.println("Falha NTP");
+           Serial.println("Falha (Timeout)");
         }
     } else {
-        Serial.println("\\nFalha na conexao WiFi!");
+        Serial.println("[WiFi] FALHA NA CONEXAO (Timeout)");
+        Serial.println("[WiFi] Verifique SSID/Senha em config.h");
     }
+    Serial.println("--------------------------------");
 }
 `;
 
@@ -127,6 +138,7 @@ void SerialManager::handle() {
     while (Serial.available()) {
         char c = (char)Serial.read();
         if (c == '\\n') {
+            Serial.printf("[Serial] Cmd Recebido: %s\n", _inputBuffer.c_str());
             processCommand(_inputBuffer);
             _inputBuffer = "";
         } else {
@@ -140,7 +152,8 @@ void SerialManager::processCommand(String json) {
     DeserializationError error = deserializeJson(doc, json);
 
     if (error) {
-        Serial.println("Erro: JSON Invalido");
+        Serial.print("[Serial] Erro JSON Invalido: ");
+        Serial.println(error.c_str());
         return;
     }
     
@@ -148,7 +161,7 @@ void SerialManager::processCommand(String json) {
     if (doc.containsKey("harborId") && _weather != nullptr) {
         int pid = doc["harborId"];
         _weather->setHarborId(pid);
-        Serial.print("Port Updated: "); Serial.println(pid);
+        Serial.printf("[Serial] Harbor ID Updated to: %d\n", pid);
     }
 
     std::vector<TideKeyframe> newFrames;
@@ -159,11 +172,14 @@ void SerialManager::processCommand(String json) {
     } else if (doc.containsKey("frames")) {
         frames = doc["frames"].as<JsonArray>();
         if (doc.containsKey("cycleDuration")) {
-             _engine->setCycleDuration(doc["cycleDuration"].as<float>());
+             float cycle = doc["cycleDuration"].as<float>();
+             _engine->setCycleDuration(cycle);
+             Serial.printf("[Serial] Cycle Duration Updated: %.1f hours\n", cycle);
         }
     }
 
     if (!frames.isNull()) {
+        Serial.printf("[Serial] Processando %d keyframes...\n", frames.size());
         for (JsonObject k : frames) {
             float t = k["timeOffset"];
             uint8_t h = k["height"];
@@ -181,8 +197,8 @@ void SerialManager::processCommand(String json) {
             newFrames.push_back({t, h, colorInt, i, effectType});
         }
         _engine->setKeyframes(newFrames);
+        Serial.println("[Serial] OK: Engine Keyframes Atualizados.");
     }
-    Serial.println("OK: Config Atualizada");
 }
 `;
 
@@ -223,13 +239,21 @@ public:
         std::string value = pCharacteristic->getValue();
         if (value.length() > 0) {
             String json = String(value.c_str());
+            Serial.println("[BLE] Received Write Payload");
+            
             DynamicJsonDocument doc(8192);
             if (!deserializeJson(doc, json)) {
                  if (doc.containsKey("harborId")) {
                     WeatherManager* w = _manager->getWeatherManager();
-                    if (w) w->setHarborId(doc["harborId"]);
+                    if (w) {
+                        int hid = doc["harborId"];
+                        w->setHarborId(hid);
+                        Serial.printf("[BLE] HarborID updated to %d\n", hid);
+                    }
                  }
-                 // Frames logic omitted for brevity in this callback for now, usually handled same as Serial
+                 // Frames logic omitted for brevity in this callback
+            } else {
+                Serial.println("[BLE] JSON Parse Error");
             }
         }
     }
@@ -252,6 +276,8 @@ void BleManager::begin(String deviceName) {
     NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(SERVICE_UUID);
     pAdvertising->start();
+    
+    Serial.printf("[BLE] Service Started. Name: %s\n", deviceName.c_str());
 }
 `;
 
@@ -323,7 +349,7 @@ WeatherManager::WeatherManager(MareEngine* engine) : _engine(engine) {
     _harborId = prefs.getInt("port", ${buildTimeHarborId});
     prefs.end();
     
-    Serial.print("WeatherManager Init. Active Harbor ID: ");
+    Serial.print("[WeatherMgr] Init. Active Harbor ID from NVS: ");
     Serial.println(_harborId);
 }
 
@@ -334,7 +360,7 @@ void WeatherManager::setHarborId(int id) {
         prefs.begin("tide", false); // R/W
         prefs.putInt("port", id);
         prefs.end();
-        Serial.print("Saved New Harbor ID to NVS: "); Serial.println(id);
+        Serial.printf("[WeatherMgr] Harbor ID changed to %d and saved to NVS.\n", id);
         
         // Force update on next cycle
         _firstRun = true;
@@ -377,10 +403,13 @@ void WeatherManager::update() {
     
     if (_firstRun || (currentMillis - _lastUpdate > intervalMs)) {
         if (WiFi.status() == WL_CONNECTED) {
+            Serial.println("[WeatherMgr] Triggering Periodic Update...");
             fetchWeatherData();
             fetchTabuaMareData();
             _lastUpdate = currentMillis;
             _firstRun = false;
+        } else {
+            Serial.println("[WeatherMgr] Skipping update (WiFi Not Connected)");
         }
     }
 }
@@ -393,10 +422,15 @@ void WeatherManager::fetchWeatherData() {
     String encodedLoc = urlEncode(WEATHER_LOCATION);
     String url = "https://api.weatherapi.com/v1/current.json?key=" + String(WEATHER_API_KEY) + "&q=" + encodedLoc + "&lang=pt";
     
-    Serial.print("GET Weather: "); Serial.println(url);
+    Serial.printf("[API] WeatherAPI Req: %s\n", url.c_str());
 
+    unsigned long t0 = millis();
     if (http.begin(client, url)) {
         int httpCode = http.GET();
+        unsigned long dur = millis() - t0;
+        
+        Serial.printf("[API] WeatherAPI Res: Code %d (%lu ms)\n", httpCode, dur);
+
         if (httpCode == HTTP_CODE_OK) {
              DynamicJsonDocument doc(2048);
              DeserializationError error = deserializeJson(doc, http.getStream());
@@ -406,17 +440,23 @@ void WeatherManager::fetchWeatherData() {
                  _data.windSpeed = doc["current"]["wind_kph"] | 0;
                  _data.windDir = doc["current"]["wind_degree"] | 0;
                  _data.valid = true;
-                 Serial.println("Weather Updated.");
+                 Serial.println("[API] Weather Data Updated Successfully.");
+             } else {
+                 Serial.print("[API] Weather JSON Error: "); Serial.println(error.c_str());
              }
+        } else {
+            Serial.printf("[API] Weather HTTP Error: %s\n", http.errorToString(httpCode).c_str());
         }
         http.end();
+    } else {
+        Serial.println("[API] Weather Connect Failed");
     }
 }
 
 void WeatherManager::fetchTabuaMareData() {
     struct tm timeinfo;
     if(!getLocalTime(&timeinfo)){
-        Serial.println("Time not set, skipping Tabua Mare");
+        Serial.println("[API] Time not set, skipping Tabua Mare sync.");
         return;
     }
     
@@ -425,26 +465,34 @@ void WeatherManager::fetchTabuaMareData() {
     
     String url;
     
-    // Dynamic Port Logic using Encoded Brackets for safety
+    // Dynamic Port Logic using LITERAL Brackets for API compatibility
     if (_harborId > 0) {
-        // Enforcing encoded brackets [%5B, %5D] instead of literals, just to be safe with standard URL parsing
-        url = String(TABUA_MARE_BASE) + "/tabua-mare/" + String(_harborId) + "/" + String(month) + "/%5B" + String(day) + "%5D";
+        url = String(TABUA_MARE_BASE) + "/tabua-mare/" + String(_harborId) + "/" + String(month) + "/[" + String(day) + "]";
     } else {
         // Fallback to build-time Geo if no port set
-        url = String(TABUA_MARE_BASE) + "/geo-tabua-mare/" + TABUA_MARE_COORDS + "/" + TABUA_MARE_STATE + "/" + String(month) + "/%5B" + String(day) + "%5D";
+        url = String(TABUA_MARE_BASE) + "/geo-tabua-mare/" + TABUA_MARE_COORDS + "/" + TABUA_MARE_STATE + "/" + String(month) + "/[" + String(day) + "]";
     }
 
     WiFiClientSecure client;
     client.setInsecure();
     HTTPClient http;
     
-    Serial.print("GET Tides: "); Serial.println(url);
+    Serial.printf("[API] TabuaMare Req: %s\n", url.c_str());
     
+    unsigned long t0 = millis();
     if (http.begin(client, url)) {
         int httpCode = http.GET();
+        unsigned long dur = millis() - t0;
+        
+        Serial.printf("[API] TabuaMare Res: Code %d (%lu ms)\n", httpCode, dur);
+
         if (httpCode == HTTP_CODE_OK) {
+            String payload = http.getString();
+            Serial.printf("[API] Payload Size: %d bytes\n", payload.length());
+            // Serial.println(payload); // Uncomment for verbose payload dump
+            
             DynamicJsonDocument doc(4096);
-            DeserializationError error = deserializeJson(doc, http.getStream());
+            DeserializationError error = deserializeJson(doc, payload);
             
             if (!error && doc.containsKey("data")) {
                 JsonArray dataList = doc["data"];
@@ -455,6 +503,7 @@ void WeatherManager::fetchTabuaMareData() {
                      if (tides.size() > 0) {
                         std::vector<TideKeyframe> newFrames;
                         
+                        // Parse range
                         float maxH = -100.0f;
                         float minH = 100.0f;
                         for (JsonObject t : tides) {
@@ -493,12 +542,25 @@ void WeatherManager::fetchTabuaMareData() {
                         });
 
                         _engine->setKeyframes(newFrames);
-                        Serial.println("Tides Updated via TabuaMare.");
+                        Serial.printf("[API] Success! Loaded %d tide points.\n", newFrames.size());
+                     } else {
+                        Serial.println("[API] 'tides' array is empty in payload.");
                      }
+                } else {
+                     Serial.println("[API] 'data' array is empty.");
                 }
+            } else {
+                Serial.print("[API] JSON Parse Error or No 'data': ");
+                Serial.println(error.c_str());
             }
+        } else {
+             Serial.printf("[API] HTTP Error: %s\n", http.errorToString(httpCode).c_str());
+             String err = http.getString();
+             if(err.length() > 0) Serial.printf("[API] Error Body: %s\n", err.c_str());
         }
         http.end();
+    } else {
+         Serial.println("[API] TabuaMare Connect Failed");
     }
 }
 `;
@@ -544,7 +606,7 @@ void RestServer::begin() {
     _server.on("/api/status", HTTP_GET, [this](){ handleStatus(); });
     _server.onNotFound([this](){ _server.send(404, "text/plain", "Not Found"); });
     _server.begin();
-    Serial.println("REST Server Started");
+    Serial.println("[REST] Server Started on Port 80");
 }
 
 void RestServer::handle() {
@@ -562,21 +624,28 @@ void RestServer::handleConfig() {
     _server.sendHeader("Access-Control-Allow-Origin", "*");
     
     if (!_server.hasArg("plain")) {
+        Serial.println("[REST] Error: No Body received in Config POST");
         _server.send(400, "application/json", "{\\"error\\":\\"No body\\"}");
         return;
     }
     
     String body = _server.arg("plain");
+    Serial.printf("[REST] Config POST Received (%d bytes)\n", body.length());
+    // Serial.println(body); // Verbose debug
+    
     DynamicJsonDocument doc(8192);
     DeserializationError error = deserializeJson(doc, body);
     
     if (error) {
+        Serial.print("[REST] JSON Parse Error: "); Serial.println(error.c_str());
         _server.send(400, "application/json", "{\\"error\\":\\"Invalid JSON\\"}");
         return;
     }
     
     if (doc.containsKey("harborId") && _weather != nullptr) {
-        _weather->setHarborId(doc["harborId"]);
+        int hid = doc["harborId"];
+        _weather->setHarborId(hid);
+        Serial.printf("[REST] Harbor ID updated via API to: %d\n", hid);
     }
     
     std::vector<TideKeyframe> newFrames;
@@ -587,11 +656,13 @@ void RestServer::handleConfig() {
     } else if (doc.containsKey("frames")) {
         frames = doc["frames"].as<JsonArray>();
         if (doc.containsKey("cycleDuration")) {
-             _engine->setCycleDuration(doc["cycleDuration"].as<float>());
+             float c = doc["cycleDuration"].as<float>();
+             _engine->setCycleDuration(c);
         }
     }
 
     if (!frames.isNull()) {
+         Serial.printf("[REST] Processing %d frames from API\n", frames.size());
          for (JsonObject k : frames) {
             float t = k["timeOffset"];
             uint8_t h = k["height"];
@@ -610,7 +681,6 @@ void RestServer::handleConfig() {
          _engine->setKeyframes(newFrames);
          _server.send(200, "application/json", "{\\"status\\":\\"ok\\"}");
     } else {
-         // It might be just a config update (port) without frames
          if (doc.containsKey("harborId")) {
              _server.send(200, "application/json", "{\\"status\\":\\"ok\\"}");
          } else {

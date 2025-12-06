@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
 import { 
@@ -22,20 +23,16 @@ export const FirmwareBuilder: React.FC = () => {
       'platformio.ini': generatePlatformIO(firmwareConfig, displayConfig),
       'src/main.cpp': generateMainCpp(displayConfig),
       'src/config.h': generateConfigH(firmwareConfig),
-      
-      // Core Managers
       'src/WifiManager.h': generateWifiManagerH(),
       'src/WifiManager.cpp': generateWifiManagerCpp(),
       'src/MareEngine.h': generateMareEngineH(),
-      'src/MareEngine.cpp': generateMareEngineCpp(keyframes), // Baked-in calculation mode data
+      'src/MareEngine.cpp': generateMareEngineCpp(keyframes), 
       'src/RestServer.h': generateRestServerH(),
       'src/RestServer.cpp': generateRestServerCpp(),
       'src/DisplayManager.h': generateDisplayManagerH(),
       'src/DisplayManager.cpp': generateDisplayManagerCpp(displayWidgets, displayConfig),
       'src/SerialManager.h': generateSerialManagerH(),
       'src/SerialManager.cpp': generateSerialManagerCpp(),
-
-      // NEW: Modular LED Structure
       'src/modules/led_ws2812b/ws2812b_config.h': generateWs2812bConfigH(),
       'src/modules/led_ws2812b/ws2812b_config.cpp': generateWs2812bConfigCpp(firmwareConfig),
       'src/modules/led_ws2812b/ws2812b_controller.h': generateWs2812bControllerH(),
@@ -51,7 +48,6 @@ export const FirmwareBuilder: React.FC = () => {
   
   if (firmwareConfig.weatherApi?.enabled) {
       files['src/WeatherManager.h'] = generateWeatherManagerH();
-      // Inject Data Source Config for Tabua Mare usage in C++
       files['src/WeatherManager.cpp'] = generateWeatherManagerCpp(firmwareConfig, dataSourceConfig);
   }
 
@@ -112,7 +108,7 @@ export const FirmwareBuilder: React.FC = () => {
                 {/* Device Options */}
                  <div className="pt-4 border-t border-slate-700">
                     <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
-                       <Usb size={14} className="text-white" /> Interfaces
+                       <Usb size={14} className="text-white" /> Interfaces & Opções
                     </h3>
                     <div className="space-y-2">
                         <div className="flex items-center justify-between bg-slate-900 p-3 rounded border border-slate-700">
@@ -124,19 +120,19 @@ export const FirmwareBuilder: React.FC = () => {
                                 type="checkbox" 
                                 checked={firmwareConfig.enableBLE}
                                 onChange={e => updateFirmwareConfig({ enableBLE: e.target.checked })}
-                                className="w-4 h-4"
+                                className="w-4 h-4 cursor-pointer"
                              />
                         </div>
                         <div className="flex items-center justify-between bg-slate-900 p-3 rounded border border-slate-700">
                              <div className="flex items-center gap-2">
                                  <Terminal size={16} className={firmwareConfig.enableSerial ? "text-green-400" : "text-slate-500"} />
-                                 <span className="text-xs font-bold text-slate-300">Serial Debug</span>
+                                 <span className="text-xs font-bold text-slate-300">Serial Debug Monitor</span>
                              </div>
                              <input 
                                 type="checkbox" 
                                 checked={firmwareConfig.enableSerial}
                                 onChange={e => updateFirmwareConfig({ enableSerial: e.target.checked })}
-                                className="w-4 h-4"
+                                className="w-4 h-4 cursor-pointer"
                              />
                         </div>
                     </div>
@@ -157,12 +153,6 @@ export const FirmwareBuilder: React.FC = () => {
                          <div className="flex items-center justify-between text-xs">
                              <span className="text-slate-400">Layout</span>
                              <span className="font-bold text-cyan-400">{firmwareConfig.ledLayoutType}</span>
-                         </div>
-                         <div className="flex items-center justify-between text-xs">
-                             <span className="text-slate-400">Link Climático</span>
-                             <span className={`font-bold ${firmwareConfig.autonomous.linkWeatherToLeds ? 'text-orange-400' : 'text-slate-500'}`}>
-                                 {firmwareConfig.autonomous.linkWeatherToLeds ? 'ATIVO' : 'OFF'}
-                             </span>
                          </div>
                          <div className="mt-2 text-[10px] text-slate-500 italic flex items-center gap-1">
                              <Lock size={10}/> Ajuste estas opções na aba 'LED Master'.

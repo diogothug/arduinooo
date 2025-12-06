@@ -124,15 +124,19 @@ float readBatteryLevel() { return 100.0; }
 void setup() {
   Serial.begin(115200);
   delay(1000);
-  Serial.println("Iniciando Controlador TideFlux...");
+  Serial.println("\n\n==================================");
+  Serial.println("[SYSTEM] Iniciando Controlador TideFlux...");
+  Serial.println("==================================");
 
   // Init LED Module
+  Serial.println("[INIT] WS2812B LED Controller...");
   WS2812BConfigManager::load();
   ledController.begin();
   WS2812BAnimations::attachController(&ledController);
   WS2812BAnimations::idleAmbient(); // Start with idle
 
   // Display Setup
+  Serial.println("[INIT] Display GC9A01...");
   display.begin();
   display.setBrightness(${displayConfig.brightness});
   display.showSplashScreen();
@@ -140,6 +144,7 @@ void setup() {
 
   // --- Dependency Injection for Weather/Port Config ---
   #if WEATHER_API_ENABLED
+  Serial.println("[INIT] Weather Manager Dependencies...");
   serialManager.setWeatherManager(&weatherManager);
   server.setWeatherManager(&weatherManager);
   #ifdef ENABLE_BLE
@@ -147,14 +152,19 @@ void setup() {
   #endif
   #endif
 
+  // WiFi
   wifiManager.connect();
+  
+  // Servers
+  Serial.println("[INIT] Starting REST Server...");
   server.begin();
 
   #ifdef ENABLE_BLE
+  Serial.println("[INIT] Starting BLE Stack...");
   bleManager.begin(DEVICE_NAME);
   #endif
 
-  Serial.println("Sistema Pronto.");
+  Serial.println("[SYSTEM] Sistema Pronto. Loop ativo.");
 }
 
 void loop() {
