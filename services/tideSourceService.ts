@@ -1,3 +1,4 @@
+
 import { DataSourceConfig, Keyframe, TideSourceType, MockWaveType, EffectType, WeatherData } from "../types";
 import { useAppStore } from '../store';
 
@@ -10,24 +11,33 @@ const uid = () => Math.random().toString(36).substr(2, 9);
 // We use a public proxy to act as the "Backend" for these requests, solving the CORS issue.
 const CORS_PROXY = "https://api.allorigins.win/raw?url=";
 
-// Robust Base URL Builder (Replaces sanitizeBaseUrl)
+// Robust Base URL Builder
 const buildApiBase = (customBase?: string): string => {
-    const defaultBase = 'https://tabuamare.devtu.qzz.io/api/v1';
-    if (!customBase || customBase.trim() === '') return defaultBase;
+    const defaultBase = "https://tabuamare.devtu.qzz.io/api/v1";
+
+    if (!customBase || customBase.trim() === "") return defaultBase;
 
     let url = customBase.trim();
-    
-    // Normalize protocol to https:// and remove potential duplicate slashes at start
-    url = url.replace(/^https?:\/+/i, 'https://');
-    
-    // Remove trailing slashes
-    url = url.replace(/\/+$/, '');
 
-    // If user provided just the root domain without path, append default path
-    if (url === 'https://tabuamare.devtu.qzz.io') {
-        return defaultBase;
+    // 1. Remove internal duplicate slashes (e.g. domain//api) keeping protocol intact
+    // Captures (anything that is not a colon followed by a slash) then multiple slashes
+    url = url.replace(/([^:]\/)\/+/g, "$1");
+
+    // 2. Ensure Protocol is https://
+    // Remove existing protocol if present (http or https) then prepend https://
+    if (!url.startsWith("https://")) {
+        url = "https://" + url.replace(/^https?:\/\//, "");
     }
-    
+
+    // 3. Remove trailing slashes
+    url = url.replace(/\/+$/, "");
+
+    // 4. Heuristic: If path doesn't look like it has /api, append /api/v1
+    // This handles "tabuamare.devtu.qzz.io" -> "https://tabuamare.devtu.qzz.io/api/v1"
+    if (!url.includes("/api")) {
+        url += "/api/v1";
+    }
+
     return url;
 };
 
@@ -212,11 +222,11 @@ export const tideSourceService = {
         
         // Correct endpoint: /harbor/{id} (Singular)
         const targetUrl = `${apiBase}/harbor/${harborId}`;
+        safeLog(`[API] Target URL: ${targetUrl}`);
         
         // PROXY IMPLEMENTATION
         const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
-        
-        safeLog(`[API] Harbor ID (Proxy): ${proxyUrl}`);
+        safeLog(`[API] Proxy URL: ${proxyUrl}`);
         
         const res = await fetch(proxyUrl, { 
             headers: { 'Accept': 'application/json' },
@@ -224,7 +234,13 @@ export const tideSourceService = {
         });
         
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json();
+        
+        const text = await res.text();
+        if (text.trim().startsWith("<")) {
+            throw new Error("Proxy devolveu HTML (provável erro no endpoint/URL)");
+        }
+
+        const json = JSON.parse(text);
         
         if (json.data && json.data.length > 0) return { id: json.data[0].id, name: json.data[0].harbor_name };
         
@@ -236,13 +252,12 @@ export const tideSourceService = {
          const apiBase = buildApiBase(baseUrl);
          
          const latLngParam = `[${lat},${lng}]`;
-         
          const targetUrl = `${apiBase}/nearested-harbor/${uf.toLowerCase()}/${latLngParam}`;
+         safeLog(`[API] Target URL: ${targetUrl}`);
 
          // PROXY IMPLEMENTATION
          const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
-         
-         safeLog(`[API] Nearest (Proxy): ${proxyUrl}`);
+         safeLog(`[API] Proxy URL: ${proxyUrl}`);
          
          const res = await fetch(proxyUrl, { 
              headers: { 'Accept': 'application/json' },
@@ -250,7 +265,13 @@ export const tideSourceService = {
          });
          
          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-         const json = await res.json();
+
+         const text = await res.text();
+         if (text.trim().startsWith("<")) {
+             throw new Error("Proxy devolveu HTML (provável erro no endpoint/URL)");
+         }
+
+         const json = JSON.parse(text);
          
          // Handle both single object return (seen in logs) and data array (standard)
          let p = null;
@@ -296,10 +317,11 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
         targetUrl = `${apiBase}/geo-tabua-mare/${latLngParam}/${uf.toLowerCase()}/${month}/${daysParam}`;
     }
     
+    safeLog(`[API] Target URL: ${targetUrl}`);
+
     // PROXY IMPLEMENTATION
     const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
-
-    safeLog(`[API] Req Proxy URL: ${proxyUrl}`);
+    safeLog(`[API] Proxy URL: ${proxyUrl}`);
     
     const res = await fetch(proxyUrl, {
         headers: { 'Accept': 'application/json' },
@@ -309,13 +331,17 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     if (!res.ok) throw new Error(`Erro HTTP ${res.status} - ${res.statusText}`);
     
     const text = await res.text();
+
+    if (text.trim().startsWith("<")) {
+        throw new Error("Proxy devolveu HTML (provável erro no endpoint/URL)");
+    }
+
     let json;
     try {
         json = JSON.parse(text);
     } catch (e) {
-        // If parsing fails, it's likely HTML error page due to malformed URL
         console.error("Failed to parse JSON:", text.substring(0, 100));
-        throw new Error("API retornou resposta inválida (Provável erro no formato da URL).");
+        throw new Error("API retornou resposta inválida (JSON Parse Error).");
     }
     
     safeLog(`[API] Resp JSON OK`);
