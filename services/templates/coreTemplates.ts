@@ -51,6 +51,7 @@ export const generateConfigH = (config: FirmwareConfig) => `
 #define AUTO_LINK_SPEED_TIDE ${config.autonomous.linkSpeedToTide ? 'true' : 'false'}
 #define AUTO_LINK_BRIGHT_TIDE ${config.autonomous.linkBrightnessToTide ? 'true' : 'false'}
 #define AUTO_LINK_PALETTE_TIME ${config.autonomous.linkPaletteToTime ? 'true' : 'false'}
+#define AUTO_LINK_WEATHER ${config.autonomous.linkWeatherToLeds ? 'true' : 'false'}
 
 // Night Mode
 #define NIGHT_MODE_ENABLED ${config.nightMode.enabled ? 'true' : 'false'}
@@ -161,10 +162,16 @@ void loop() {
   engine.update();
   serialManager.handle(); 
   
+  // Variables for Logic
+  float currentWindSpeed = 0.0f;
+  int currentHumidity = 0;
+
   #if WEATHER_API_ENABLED
   weatherManager.update();
   WeatherData w = weatherManager.getData();
   display.setWeatherData(w.temp, w.humidity, w.windSpeed, w.windDir);
+  currentWindSpeed = w.windSpeed;
+  currentHumidity = w.humidity;
   #endif
 
   // --- HIERARCHY INTEGRATION ---
@@ -177,8 +184,8 @@ void loop() {
 
   // 3. Update LEDs (Animations Module)
   // The Run() method in Animations now handles Autonomous Logic based on config.h flags
-  // We pass the current Animation Mode string from config manager
-  WS2812BAnimations::run(WS2812BConfigManager::config.mode, tideNorm);
+  // We pass the current Animation Mode string from config manager AND weather data
+  WS2812BAnimations::run(WS2812BConfigManager::config.mode, tideNorm, currentWindSpeed, currentHumidity);
   
   // --- LOW POWER ---
   int frameDelay = 30; 

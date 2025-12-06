@@ -12,7 +12,7 @@ import {
     generateWs2812bControllerH, generateWs2812bControllerCpp,
     generateWs2812bAnimationsH, generateWs2812bAnimationsCpp
 } from '../services/firmwareTemplates';
-import { Download, Cpu, Code, Wifi, Package, FileCode, Bluetooth, Usb, Sun, Moon, CloudSun, FolderTree, Database, Check, BrainCircuit, Activity, Zap } from 'lucide-react';
+import { Download, Cpu, Code, Wifi, Package, FileCode, Bluetooth, Usb, Sun, Moon, CloudSun, FolderTree, Database, Check, BrainCircuit, Activity, Zap, Wind } from 'lucide-react';
 import JSZip from 'jszip';
 
 export const FirmwareBuilder: React.FC = () => {
@@ -150,6 +150,23 @@ export const FirmwareBuilder: React.FC = () => {
                                  </div>
                                  <input type="checkbox" checked={firmwareConfig.autonomous.linkPaletteToTime} onChange={e => updateFirmwareConfig({ autonomous: {...firmwareConfig.autonomous, linkPaletteToTime: e.target.checked} })} />
                              </div>
+                             
+                             {/* NEW WEATHER SYNC TOGGLE */}
+                             <div className="flex items-center justify-between">
+                                 <div className="flex items-center gap-2">
+                                     <Wind size={12} className="text-blue-400"/>
+                                     <label className="text-[10px] text-slate-400">Clima (Vento = Vel, Umid = Int)</label>
+                                 </div>
+                                 <input 
+                                    type="checkbox" 
+                                    checked={firmwareConfig.autonomous.linkWeatherToLeds} 
+                                    disabled={!firmwareConfig.weatherApi.enabled}
+                                    onChange={e => updateFirmwareConfig({ autonomous: {...firmwareConfig.autonomous, linkWeatherToLeds: e.target.checked} })} 
+                                 />
+                             </div>
+                             {!firmwareConfig.weatherApi.enabled && (
+                                <p className="text-[9px] text-slate-600 pl-5">Requer WeatherAPI ativado</p>
+                             )}
                          </div>
                      )}
                 </div>

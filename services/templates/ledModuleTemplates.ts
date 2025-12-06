@@ -198,7 +198,8 @@ public:
     static void attachController(WS2812BController* controller);
     
     // Main Dispatcher (Called by loop)
-    static void run(String mode, float tideLevel);
+    // Accepts weather params for autonomous logic
+    static void run(String mode, float tideLevel, float windSpeed = 0, int humidity = 0);
     
     // Standard Modes
     static void idleAmbient();
@@ -240,7 +241,7 @@ CRGBPalette16 WS2812BAnimations::getPaletteById(int id) {
     return OceanColors_p; // Default 0
 }
 
-void WS2812BAnimations::run(String mode, float tideLevel) {
+void WS2812BAnimations::run(String mode, float tideLevel, float windSpeed, int humidity) {
     if (!_ctrl) return;
     
     // Construct Params from Config + Live Data
@@ -263,6 +264,23 @@ void WS2812BAnimations::run(String mode, float tideLevel) {
            // Low Tide = Dimmer (Energy saving/Visual cue)
            // Scale intensity between 0.4 and 1.0 based on tide
            p.intensity = p.intensity * (0.4f + (tideLevel * 0.6f));
+        #endif
+        
+        #if AUTO_LINK_WEATHER
+           // Wind (0-50km/h) scales Speed (0.1x to 5.0x)
+           // Clamp wind for safety
+           float safeWind = windSpeed;
+           if (safeWind > 50) safeWind = 50;
+           float windMult = safeWind / 10.0f; 
+           if (windMult < 0.1f) windMult = 0.1f;
+           if (windMult > 5.0f) windMult = 5.0f;
+           p.speed = windMult;
+
+           // Humidity (0-100%) scales Intensity (0.2x to 1.0x)
+           float humMult = humidity / 100.0f;
+           if (humMult < 0.2f) humMult = 0.2f;
+           if (humMult > 1.0f) humMult = 1.0f;
+           p.intensity = humMult;
         #endif
         
         // Note: Palette linkage would require RTC time check, omitted for simplicity in this loop

@@ -112,7 +112,8 @@ export const useAppStore = create<AppState>((set) => ({
         enabled: true,
         linkSpeedToTide: true,
         linkBrightnessToTide: false,
-        linkPaletteToTime: false
+        linkPaletteToTime: false,
+        linkWeatherToLeds: true
     },
     
     // Animation Engine Defaults

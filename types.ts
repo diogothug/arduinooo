@@ -218,6 +218,7 @@ export interface AutonomousConfig {
     linkSpeedToTide: boolean; // High Tide = Faster Animation
     linkBrightnessToTide: boolean; // Low Tide = Dimmer
     linkPaletteToTime: boolean; // Day/Night palette shift
+    linkWeatherToLeds: boolean; // New: Link Wind/Humidity to animation params
 }
 
 export interface FirmwareConfig {
