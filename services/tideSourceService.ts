@@ -37,6 +37,7 @@ const HARDCODED_TIDE_DATA = {
 
 // Robust Base URL Builder
 const buildApiBase = (customBase?: string): string => {
+    // FIXED: Ensure no trailing space
     const defaultBase = "https://tabuamare.devtu.qzz.io/api/v1";
 
     if (!customBase || customBase.trim() === "") return defaultBase;
@@ -116,6 +117,7 @@ export const tideSourceService = {
                  throw new Error("Tábua Maré vazia.");
              } catch (error: any) {
                  console.error("[TideSource] Tábua Maré Failure:", error);
+                 safeLog(`[TideSource] ERRO FATAL API: ${error.message}`);
                  throw new Error(`Falha Tábua Maré: ${error.message}`); 
              }
         }
@@ -317,15 +319,14 @@ export const tideSourceService = {
 // --- UPDATED FETCH LOGIC ---
 async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: number): Promise<Keyframe[]> {
     // START WITH 3 DAYS AS REQUESTED FOR STABILITY
-    // If it works, user can manually trigger longer fetches later or we can upgrade this logic
     const INITIAL_FETCH_DAYS = 3;
 
     try {
-        safeLog(`[API] Tentando buscar ${INITIAL_FETCH_DAYS} dias (Teste inicial)...`);
+        safeLog(`[API] Tentando buscar ${INITIAL_FETCH_DAYS} dias...`);
         return await fetchTabuaMareDataDuration(config, INITIAL_FETCH_DAYS);
     } catch (e: any) {
         console.warn(`[TideSource] Falha em ${INITIAL_FETCH_DAYS} dias: ${e.message}`);
-        safeLog(`[API] ERRO: Falha na busca inicial (${e.message}).`);
+        safeLog(`[API] ERRO: Falha na busca (${e.message}).`);
         throw new Error(`Falha na API Maré: ${e.message}`);
     }
 }
@@ -352,9 +353,8 @@ async function fetchTabuaMareDataDuration(config: DataSourceConfig, totalDays: n
 
     // 2. Fetch function for a single batch
     const fetchBatch = async (year: number, month: number, days: number[]) => {
-         // IMPORTANT: Use plain brackets: [ ... ]
+         // IMPORTANT: Use plain brackets: [ ... ] NO SPACES
          // encodeURIComponent will perform the single encoding to %5B...%5D
-         // DO NOT manually double encode here.
          const daysParam = `[${days.join(',')}]`;
          
          let targetUrl = "";
@@ -396,65 +396,60 @@ async function fetchTabuaMareDataDuration(config: DataSourceConfig, totalDays: n
             throw new Error(msg);
         }
 
-        const rawData = json.data || [];
+        // Updated Parsing Logic for 2025 API Structure
+        const records = Array.isArray(json.data) ? json.data : [json.data].filter(Boolean);
 
-        // Updated Parsing Logic for New API Structure
-        rawData.forEach((item: any) => {
-             const monthsList = item.months || [];
-             monthsList.forEach((m: any) => {
-                 const daysList = m.days || [];
-                 daysList.forEach((d: any) => {
-                     const dateStr = d.date; // "YYYY-MM-DD"
-                     const hoursList = d.hours || [];
+        for (const record of records) {
+            const months = record.months || [];
+            for (const m of months) {
+                const daysList = m.days || [];
+                for (const day of daysList) {
+                    // Normalize date format YYYY-MM-DD
+                    const dateStr = day.date || `${year}-${month.toString().padStart(2,'0')}-${(day.day||1).toString().padStart(2,'0')}`;
+                    
+                    // Handle field name variation (hours vs tides)
+                    const hoursList = day.hours || day.tides || [];
 
-                     const parsedHours = hoursList.map((hObj: any) => {
-                         const parts = (hObj.hour || "").split(':');
-                         const hh = parseInt(parts[0], 10) || 0;
-                         const mm = parseInt(parts[1], 10) || 0;
-                         const t = hh + (mm / 60);
-                         const val = parseFloat(hObj.level);
-                         return { ...hObj, hh, mm, t, val };
-                     }).sort((a: any, b: any) => a.t - b.t);
+                    hoursList.forEach((h: any) => {
+                         const hourStr = (h.hour || h.time || "").trim();
+                         if (!hourStr) return;
 
-                     if (parsedHours.length === 0) return;
+                         const [hh, mm] = hourStr.split(':').map((s: string) => parseInt(s, 10) || 0);
+                         const val = parseFloat(h.level || h.height || h.value);
 
-                     // Determine Day Mean Level
-                     const levels = parsedHours.map((x: any) => x.val).filter((v: number) => !isNaN(v));
-                     const minL = Math.min(...levels);
-                     const maxL = Math.max(...levels);
-                     const midL = (minL + maxL) / 2;
-                     
-                     parsedHours.forEach((hObj: any) => {
-                         const { hh, mm, val } = hObj;
+                         if (isNaN(val) || isNaN(hh)) return;
+
+                         const tideDate = new Date(dateStr); 
+                         // To calculate offset relative to TODAY "now"
+                         const d1 = new Date(tideDate.toISOString().split('T')[0]);
+                         const d2 = new Date(now.toISOString().split('T')[0]);
+                         const diffMs = d1.getTime() - d2.getTime();
+                         const diffDays = Math.round(diffMs / 86400000);
                          
-                         if (!isNaN(hh) && !isNaN(mm) && !isNaN(val)) {
-                            const today = new Date(now.toISOString().split('T')[0]); 
-                            const tideDate = new Date(dateStr); 
+                         const timeOffset = (diffDays * 24) + hh + (mm / 60);
 
-                            const diffMs = tideDate.getTime() - today.getTime();
-                            const diffDays = Math.round(diffMs / 86400000);
-                            
-                            const timeOffset = (diffDays * 24) + hh + (mm / 60);
-
-                            if (timeOffset >= -2 && timeOffset <= (totalDays * 24) + 24) {
-                                let pct = ((val + 0.2) / 2.9) * 100;
-                                pct = Math.max(0, Math.min(100, pct));
-                                const isHigh = val > midL;
-                                
-                                allFrames.push({
-                                    id: uid(),
-                                    timeOffset: parseFloat(timeOffset.toFixed(2)),
-                                    height: parseFloat(pct.toFixed(1)),
-                                    color: isHigh ? '#00eebb' : '#004488',
-                                    intensity: 100,
-                                    effect: isHigh ? EffectType.WAVE : EffectType.STATIC
-                                });
-                            }
+                         // Filter data within our cycle window (+buffer)
+                         if (timeOffset >= -2 && timeOffset <= (totalDays * 24) + 24) {
+                             // Normalize height (approx -0.2m to 2.8m range for BR coast)
+                             let pct = ((val + 0.2) / 3.0) * 100;
+                             pct = Math.max(0, Math.min(100, pct));
+                             
+                             // Detect High/Low
+                             const isHigh = val > 1.3; 
+                             
+                             allFrames.push({
+                                 id: uid(),
+                                 timeOffset: parseFloat(timeOffset.toFixed(2)),
+                                 height: parseFloat(pct.toFixed(1)),
+                                 color: isHigh ? '#00eebb' : '#004488',
+                                 intensity: 100,
+                                 effect: isHigh ? EffectType.WAVE : EffectType.STATIC
+                             });
                          }
-                     });
-                 });
-             });
-         });
+                    });
+                }
+            }
+        }
     };
 
     // 3. Execute Batches sequentially
