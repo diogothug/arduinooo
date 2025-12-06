@@ -276,7 +276,11 @@ export const tideSourceService = {
          const { baseUrl, uf, lat, lng } = config.tabuaMare;
          const apiBase = buildApiBase(baseUrl);
          
-         const latLngParam = `[${lat},${lng}]`;
+         // Fix: Array parameters must be URL Encoded for the API to accept them via Proxy
+         // [lat,lng] -> %5Blat%2Clng%5D
+         const rawLatLng = `[${lat},${lng}]`;
+         const latLngParam = encodeURIComponent(rawLatLng);
+         
          const targetUrl = `${apiBase}/nearested-harbor/${uf.toLowerCase()}/${latLngParam}`;
          safeLog(`[API] Target URL: ${targetUrl}`);
 
@@ -356,14 +360,18 @@ async function fetchTabuaMareDataDuration(config: DataSourceConfig, totalDays: n
 
     // 2. Fetch function for a single batch
     const fetchBatch = async (year: number, month: number, days: number[]) => {
-         // IMPORTANT: No spaces in the array string to avoid proxy encoding issues
-         const daysParam = `[${days.join(',')}]`;
+         // IMPORTANT: Manually encode brackets [] and commas for the API path
+         // API expects: /.../%5B1%2C2%2C3%5D
+         const rawDays = `[${days.join(',')}]`;
+         const daysParam = encodeURIComponent(rawDays);
+         
          let targetUrl = "";
 
          if (harborId) {
             targetUrl = `${apiBase}/tabua-mare/${harborId}/${month}/${daysParam}`;
         } else {
-            const latLngParam = `[${lat},${lng}]`;
+            const rawLatLng = `[${lat},${lng}]`;
+            const latLngParam = encodeURIComponent(rawLatLng);
             targetUrl = `${apiBase}/geo-tabua-mare/${latLngParam}/${uf.toLowerCase()}/${month}/${daysParam}`;
         }
 
