@@ -10,11 +10,25 @@ const uid = () => Math.random().toString(36).substr(2, 9);
 // We use a public proxy to act as the "Backend" for these requests, solving the CORS issue.
 const CORS_PROXY = "https://api.allorigins.win/raw?url=";
 
-// Helper to sanitize base URLs
-const sanitizeBaseUrl = (url: string) => {
-    if (!url) return '';
-    // Simply remove trailing slashes. Do NOT enforce double slash '//api' as it breaks some proxies/backends.
-    return url.replace(/\/+$/, '');
+// Robust Base URL Builder (Replaces sanitizeBaseUrl)
+const buildApiBase = (customBase?: string): string => {
+    const defaultBase = 'https://tabuamare.devtu.qzz.io/api/v1';
+    if (!customBase || customBase.trim() === '') return defaultBase;
+
+    let url = customBase.trim();
+    
+    // Normalize protocol to https:// and remove potential duplicate slashes at start
+    url = url.replace(/^https?:\/+/i, 'https://');
+    
+    // Remove trailing slashes
+    url = url.replace(/\/+$/, '');
+
+    // If user provided just the root domain without path, append default path
+    if (url === 'https://tabuamare.devtu.qzz.io') {
+        return defaultBase;
+    }
+    
+    return url;
 };
 
 // Safe logger helper
@@ -194,7 +208,7 @@ export const tideSourceService = {
         const { baseUrl, harborId } = config.tabuaMare;
         if (!harborId) throw new Error("ID do porto não definido");
         
-        const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io/api/v1');
+        const apiBase = buildApiBase(baseUrl);
         
         // Correct endpoint: /harbor/{id} (Singular)
         const targetUrl = `${apiBase}/harbor/${harborId}`;
@@ -219,15 +233,13 @@ export const tideSourceService = {
 
     findNearestHarbor: async (config: DataSourceConfig): Promise<{ id: number, name: string, distance: number }> => {
          const { baseUrl, uf, lat, lng } = config.tabuaMare;
-         const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io/api/v1'); 
+         const apiBase = buildApiBase(baseUrl);
          
-         // Fix: Do not encode internal parameters here. We encode the full URL later for the proxy.
          const latLngParam = `[${lat},${lng}]`;
          
          const targetUrl = `${apiBase}/nearested-harbor/${uf.toLowerCase()}/${latLngParam}`;
 
          // PROXY IMPLEMENTATION
-         // The proxy expects the target URL to be fully encoded as a parameter
          const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
          
          safeLog(`[API] Nearest (Proxy): ${proxyUrl}`);
@@ -258,7 +270,7 @@ export const tideSourceService = {
 
 async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: number): Promise<Keyframe[]> {
     const { baseUrl, uf, lat, lng, harborId } = config.tabuaMare;
-    const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io/api/v1');
+    const apiBase = buildApiBase(baseUrl);
 
     const now = new Date();
     const month = now.getMonth() + 1; 
@@ -272,8 +284,7 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     }
     if (daysArray.length === 0) daysArray.push(now.getDate());
     
-    // Fix: Do not double encode. The brackets and commas should remain as part of the raw URL path string
-    // before the whole URL is encoded for the AllOrigins proxy.
+    // Create params without spaces to avoid encoding issues
     const daysParam = `[${daysArray.join(',')}]`;
     
     let targetUrl = "";
@@ -286,7 +297,6 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     }
     
     // PROXY IMPLEMENTATION
-    // Finally, encode the ENTIRE target URL to pass it as the 'url' query param to AllOrigins
     const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
 
     safeLog(`[API] Req Proxy URL: ${proxyUrl}`);
