@@ -212,6 +212,7 @@ public:
     static void deepSeaParticles(AnimationParams p, uint32_t t);
     static void stormSurge(AnimationParams p, uint32_t t);
     static void neonPulse(AnimationParams p, uint32_t t);
+    static void coralReef(AnimationParams p, uint32_t t);
     
     // Helpers
     static CRGBPalette16 getPaletteById(int id);
@@ -289,6 +290,7 @@ void WS2812BAnimations::run(String mode, float tideLevel, float windSpeed, int h
     uint32_t t = millis();
 
     if (mode == "oceanCaustics") oceanCaustics(p, t);
+    else if (mode == "coralReef") coralReef(p, t);
     else if (mode == "tideFill2") tideFill2(p, t);
     else if (mode == "aurora") auroraWaves(p, t);
     else if (mode == "deepSea") deepSeaParticles(p, t);
@@ -458,6 +460,60 @@ void WS2812BAnimations::stormSurge(AnimationParams p, uint32_t t) {
     }
 }
 
+// ==========================================
+// 🏖 ALGORITHM F: CORAL REEF & BEACH
+// ==========================================
+void WS2812BAnimations::coralReef(AnimationParams p, uint32_t t) {
+    int w = _ctrl->getWidth();
+    int h = _ctrl->getHeight();
+    
+    // Colors Definitions
+    CRGB C_SAND  = CRGB(244, 215, 155);
+    CRGB C_BLUE1 = CRGB(90, 200, 250);  // Light
+    CRGB C_BLUE2 = CRGB(0, 119, 190);   // Medium
+    CRGB C_CORAL = CRGB(255, 107, 107);
+    CRGB C_ROCK  = CRGB(139, 90, 43);
+
+    // Assuming h=16 or similar.
+    // Logic: p.tideLevel (0.0 to 1.0) maps to how high the water is.
+    // Let's assume y=0 is TOP (common matrix convention).
+    // So water fills from bottom (y=h-1) upwards.
+    // Water height in pixels:
+    int waterH = p.tideLevel * h; 
+    
+    for(int y=0; y<h; y++) {
+        for(int x=0; x<w; x++) {
+            CRGB pixelColor = C_SAND;
+            
+            // Check if this pixel is underwater
+            // If y=0 is top, bottom is h-1.
+            // Pixel is underwater if y >= (h - waterH).
+            bool isUnderwater = (y >= (h - waterH));
+            
+            if (isUnderwater) {
+                // Gradient of blue based on depth
+                if (y < 4) pixelColor = C_BLUE1; // Surfaceish (if water reaches high)
+                else pixelColor = C_BLUE2;
+                
+                // Add shimmer
+                if (random8() < 10) pixelColor += CRGB(20, 20, 20);
+            }
+            
+            // Draw Coral/Rocks (Fixed positions at bottom rows 8-11 usually)
+            // We scale 8-11 to relative height if matrix is large, but sticking to 16x16 logic:
+            if (y >= 8 && y <= 11) {
+                if (x % 4 == 2) pixelColor = C_CORAL; 
+                if (x % 7 == 0) pixelColor = C_ROCK;
+            }
+            
+            // Apply intensity
+            pixelColor.nscale8(p.intensity * 255);
+            _ctrl->setPixelXY(x, y, pixelColor);
+        }
+    }
+}
+
+
 void WS2812BAnimations::neonPulse(AnimationParams p, uint32_t t) {
      uint8_t hue = (t / 10) * p.speed;
      int num = _ctrl->getNumLeds();
@@ -466,3 +522,4 @@ void WS2812BAnimations::neonPulse(AnimationParams p, uint32_t t) {
      }
 }
 `;
+};

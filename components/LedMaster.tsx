@@ -3,7 +3,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useAppStore } from '../store';
 import { ConnectionType } from '../types';
-import { Zap, Lightbulb, Grid, Upload, Code, Image as ImageIcon, Check, Wind, Moon, Activity, Waves, Sun, BrainCircuit, Thermometer, Shield, Terminal, Network, Search, PlayCircle, AlertCircle, RefreshCw, Send, LayoutTemplate, RotateCw, AlignVerticalJustifyCenter, Circle, Spline, Mountain, Palette, Shuffle, Link2, Eye, GitBranch, Cpu, Radio } from 'lucide-react';
+import { Zap, Lightbulb, Grid, Upload, Code, Image as ImageIcon, Check, Wind, Moon, Activity, Waves, Sun, BrainCircuit, Thermometer, Shield, Terminal, Network, Search, PlayCircle, AlertCircle, RefreshCw, Send, LayoutTemplate, RotateCw, AlignVerticalJustifyCenter, Circle, Spline, Mountain, Palette, Shuffle, Link2, Eye, GitBranch, Cpu, Radio, Anchor } from 'lucide-react';
 import { hardwareBridge } from '../services/hardwareBridge';
 import omggif from 'omggif';
 
@@ -11,6 +11,7 @@ import omggif from 'omggif';
 const PRESETS = [
     { id: 'tideFill2', label: 'Maré Alta Viva', icon: <Waves size={16} className="text-cyan-400"/>, desc: 'Gradiente dinâmico com ondas na superfície.', matrixOnly: false },
     { id: 'oceanCaustics', label: 'Moreré Lagoon', icon: <Sun size={16} className="text-yellow-400"/>, desc: 'Reflexos de luz no fundo do mar (Simplex Noise).', matrixOnly: true },
+    { id: 'coralReef', label: 'Coral Reef & Beach', icon: <Anchor size={16} className="text-red-400"/>, desc: 'Animação de maré com areia, corais e rochas.', matrixOnly: true },
     { id: 'storm', label: 'Tempestade Forte', icon: <Zap size={16} className="text-slate-400"/>, desc: 'Turbulência, raios e mar agitado.', matrixOnly: false }, 
     { id: 'aurora', label: 'Ambiente Aurora', icon: <Wind size={16} className="text-green-400"/>, desc: 'Ondas suaves estilo Boreal para relaxamento.', matrixOnly: true },
     { id: 'deepSea', label: 'Profundezas', icon: <Moon size={16} className="text-indigo-400"/>, desc: 'Partículas flutuantes e plâncton brilhante.', matrixOnly: false },
@@ -313,6 +314,37 @@ export const LedMaster: React.FC = () => {
                          const n = (Math.sin(x*0.05 + time*0.002*speed) + 1)/2;
                          r*=n; g*=n; b*=n;
                      }
+                } else if (activePresetId === 'coralReef') {
+                    // Coral Reef logic simulation (simplified for 2D visualizer)
+                    // Visualizer coordinates are x,y px. Need to map to matrix row/col
+                    const mw = firmwareConfig.ledMatrixWidth || 10;
+                    // Approx logic:
+                    let row = Math.floor(i / mw);
+                    let col = i % mw;
+                    if (firmwareConfig.ledSerpentine && row%2!==0) col = (mw-1)-col;
+                    const mh = Math.ceil(count/mw);
+                    
+                    // Logic from C++: y=0 is top? In visualizer usually y=0 is top.
+                    // Map tide level to water height.
+                    const waterRows = Math.floor((tide/100) * mh);
+                    // Standard visualizer: y grows downwards.
+                    // If row 0 is top.
+                    // Water is bottom-up. So rows >= (mh - waterRows).
+                    
+                    const isWater = row >= (mh - waterRows);
+                    if (isWater) {
+                        if (row < 4) { r=90; g=200; b=250; } // Light Blue
+                        else { r=0; g=119; b=190; } // Medium Blue
+                    } else {
+                        r=244; g=215; b=155; // Sand
+                    }
+                    
+                    // Coral bands (fixed rows 8-11)
+                    if (row >= 8 && row <= 11) {
+                         if(col % 4 === 2) { r=255; g=107; b=107; } // Coral
+                         if(col % 7 === 0) { r=139; g=90; b=43; } // Rock
+                    }
+                    
                 } else if (activePresetId === 'neon') {
                     const hue = (time*0.1*speed + i*5)%360;
                     if(hue<120){r=255-hue*2;g=hue*2;b=0;} else if(hue<240){r=0;g=255-(hue-120)*2;b=(hue-120)*2;} else {r=(hue-240)*2;g=0;b=255-(hue-240)*2;}
@@ -371,7 +403,71 @@ export const LedMaster: React.FC = () => {
             url = `${cleanBase}/tabua-mare/${pid}/${month}/${encodedBracket}`;
             
             // Generate the ROBUST C++ DEBUG CODE requested
-            snippet = `// --- ROBUST HTTP DEBUG (Tabua Mare) ---\n#include <WiFi.h>\n#include <HTTPClient.h>\n\n// 1. URL com Encoding de Colchetes\nString url = "${url}";\n\nSerial.println("URL usada:");\nSerial.println(url);\n\nHTTPClient http;\n\n// 2. Habilita Debug Interno do HTTPClient (Verbose)\nhttp.setDebugOutput(true);\n\n// 3. Headers Explicitos\nhttp.begin(url);\nhttp.addHeader("User-Agent", "ESP32-Debug-Client");\nhttp.addHeader("Accept", "application/json");\n\nSerial.println("\\nEnviando GET...");\nint httpCode = http.GET();\n\nSerial.print("Código HTTP recebido: ");\nSerial.println(httpCode);\n\nif (httpCode > 0) {\n    Serial.println("\\n=== Headers Recebidos ===");\n    int hCount = http.headers();\n    for(int i = 0; i < hCount; i++){\n        Serial.print(http.headerName(i));\n        Serial.print(": ");\n        Serial.println(http.header(i));\n    }\n\n    Serial.println("\\n=== Corpo da Resposta ===");\n    String payload = http.getString();\n    Serial.println(payload);\n} else {\n    Serial.print("Erro na requisição: ");\n    Serial.println(http.errorToString(httpCode));\n}\n\nhttp.end();`;
+            snippet = `#include <WiFi.h>
+#include <HTTPClient.h>
+
+const char* ssid = "SEU_SSID";
+const char* password = "SUA_SENHA";
+
+void setup() {
+  Serial.begin(115200);
+  WiFi.begin(ssid, password);
+  Serial.print("Conectando WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\\nWiFi conectado!");
+
+  // URL codificada
+  String url = "${url}";
+  Serial.println("URL usada:");
+  Serial.println(url);
+
+  HTTPClient http;
+
+  // Habilita debug interno do HTTPClient
+  http.setDebugOutput(true);
+
+  // Inicia a conexão
+  if (http.begin(url)) {
+    // Cabeçalhos opcionais (se houver)
+    http.addHeader("User-Agent", "ESP32-Debug-Client");
+    http.addHeader("Accept", "application/json");
+
+    Serial.println("\\nEnviando GET...");
+    int httpCode = http.GET();
+
+    Serial.print("Código HTTP recebido: ");
+    Serial.println(httpCode);
+
+    if (httpCode > 0) {
+      Serial.println("\\n=== Headers Recebidos ===");
+      int hCount = http.headers();
+      for(int i = 0; i < hCount; i++){
+        Serial.print(http.headerName(i));
+        Serial.print(": ");
+        Serial.println(http.header(i));
+      }
+
+      Serial.println("\\n=== Corpo da Resposta ===");
+      String payload = http.getString();
+      Serial.println(payload);
+
+    } else {
+      Serial.print("Erro na requisição: ");
+      Serial.println(http.errorToString(httpCode));
+    }
+
+    http.end();
+  } else {
+    Serial.println("Falha ao iniciar conexão HTTP");
+  }
+}
+
+void loop() {
+  // Nada no loop
+}`;
         }
         
         setDebugUrl(url);

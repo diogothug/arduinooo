@@ -1,4 +1,5 @@
 
+
 import React, { useEffect, useRef, useMemo } from 'react';
 import { useAppStore } from '../../store';
 import { WidgetType, DisplayTheme } from '../../types';
@@ -30,6 +31,9 @@ export const DisplayCanvas: React.FC<DisplayCanvasProps> = ({ selectedWidgetId, 
     } = useAppStore();
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const imageCache = useRef<Record<string, HTMLImageElement>>({});
+    
+    // Theme Random Seeds
+    const randomSeed = useRef(new Array(50).fill(0).map(() => Math.random()));
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -106,6 +110,18 @@ export const DisplayCanvas: React.FC<DisplayCanvasProps> = ({ selectedWidgetId, 
                      bgGrad.addColorStop(0, '#0f172a');
                      bgGrad.addColorStop(1, '#020617');
                      break;
+                case DisplayTheme.DIGITAL_RAIN:
+                     bgGrad.addColorStop(0, '#020e02');
+                     bgGrad.addColorStop(1, '#000000');
+                     break;
+                case DisplayTheme.NEON_RIPPLES:
+                     bgGrad.addColorStop(0, '#000000');
+                     bgGrad.addColorStop(1, '#0a0a0a');
+                     break;
+                case DisplayTheme.RETRO_SUNSET:
+                     bgGrad.addColorStop(0, '#2a0a2a');
+                     bgGrad.addColorStop(1, '#1a051a');
+                     break;
                 default:
                     bgGrad.addColorStop(0, '#1a1a1a');
                     bgGrad.addColorStop(1, '#000000');
@@ -181,6 +197,66 @@ export const DisplayCanvas: React.FC<DisplayCanvasProps> = ({ selectedWidgetId, 
                      ctx.strokeStyle = ctx.fillStyle;
                      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y+15); ctx.stroke();
                  }
+            }
+            else if (displayConfig.theme === DisplayTheme.DIGITAL_RAIN) {
+                ctx.font = '10px monospace';
+                const cols = 24;
+                for(let i=0; i<cols; i++) {
+                    const speed = 1 + randomSeed.current[i];
+                    const y = ((time * 40 * speed) % 300) - 50;
+                    const x = i * 10;
+                    ctx.fillStyle = '#0f0';
+                    ctx.globalAlpha = 0.8;
+                    ctx.fillText(String.fromCharCode(0x30A0 + Math.floor(Math.random()*96)), x, y);
+                    ctx.fillStyle = '#050';
+                    ctx.globalAlpha = 0.4;
+                    for(let j=1; j<5; j++) ctx.fillText(String.fromCharCode(0x30A0 + Math.floor(Math.random()*96)), x, y - j*12);
+                }
+            }
+            else if (displayConfig.theme === DisplayTheme.NEON_RIPPLES) {
+                const ripples = 6;
+                ctx.lineWidth = 2;
+                for(let i=0; i<ripples; i++) {
+                    const r = ((time * 30) + i * (120/ripples)) % 140;
+                    const alpha = 1 - (r/140);
+                    ctx.strokeStyle = `rgba(0, 255, 255, ${alpha})`;
+                    ctx.beginPath(); ctx.arc(120, 120, r, 0, Math.PI*2); ctx.stroke();
+                }
+            }
+            else if (displayConfig.theme === DisplayTheme.RETRO_SUNSET) {
+                // Sun
+                const sunY = 160;
+                const sunSize = 50;
+                const grad = ctx.createLinearGradient(0, sunY-sunSize, 0, sunY+sunSize);
+                grad.addColorStop(0, '#fcd34d');
+                grad.addColorStop(1, '#dc2626');
+                ctx.fillStyle = grad;
+                ctx.beginPath(); ctx.arc(120, sunY, sunSize, 0, Math.PI*2); ctx.fill();
+                
+                // Cuts in sun
+                ctx.fillStyle = '#1a051a'; // Background color
+                for(let i=0; i<8; i++) {
+                    const h = 2 + i;
+                    const y = sunY - 10 + i * 8;
+                    ctx.fillRect(120 - sunSize, y, sunSize*2, h);
+                }
+
+                // Grid Floor
+                ctx.strokeStyle = '#ec4899';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                // Verticals
+                for(let i=-10; i<=10; i++) {
+                    ctx.moveTo(120, 160);
+                    ctx.lineTo(120 + i*40, 240);
+                }
+                // Horizontals
+                const speed = (time * 0.5) % 1;
+                for(let i=0; i<6; i++) {
+                    const y = 160 + Math.pow((i+speed)/6, 2) * 80;
+                    ctx.moveTo(0, y); ctx.lineTo(240, y);
+                }
+                ctx.stroke();
             }
 
             // 4. WIDGETS

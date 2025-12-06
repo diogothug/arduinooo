@@ -136,7 +136,12 @@ export enum DisplayTheme {
   // V2.4 New Animated Themes
   CYBER_GRID = 'CYBER_GRID',
   VORTEX = 'VORTEX',
-  JELLYFISH_JAM = 'JELLYFISH_JAM'
+  JELLYFISH_JAM = 'JELLYFISH_JAM',
+
+  // V2.5 Extra Animated Themes
+  DIGITAL_RAIN = 'DIGITAL_RAIN',
+  NEON_RIPPLES = 'NEON_RIPPLES',
+  RETRO_SUNSET = 'RETRO_SUNSET'
 }
 
 export enum RenderMode {

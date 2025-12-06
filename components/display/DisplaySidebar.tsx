@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { useAppStore } from '../../store';
 import { DisplayTheme, WidgetType, ViewState } from '../../types';
@@ -218,6 +219,9 @@ export const DisplaySidebar: React.FC = () => {
                     <option value={DisplayTheme.CYBER_GRID}>Cyber Grid (Animado)</option>
                     <option value={DisplayTheme.VORTEX}>Vortex (Animado)</option>
                     <option value={DisplayTheme.JELLYFISH_JAM}>Jellyfish Jam (Animado)</option>
+                    <option value={DisplayTheme.DIGITAL_RAIN}>Matrix Rain (Animado)</option>
+                    <option value={DisplayTheme.NEON_RIPPLES}>Neon Ripples (Animado)</option>
+                    <option value={DisplayTheme.RETRO_SUNSET}>Retro Sunset (Animado)</option>
                 </select>
 
                 <p className="text-[10px] text-slate-500 uppercase font-bold mt-2">Presets Rápidos</p>
