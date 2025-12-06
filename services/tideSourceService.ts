@@ -246,8 +246,8 @@ export const tideSourceService = {
         
         const apiBase = buildApiBase(baseUrl);
         
-        // Correct endpoint: /harbor/{id} (Singular)
-        const targetUrl = `${apiBase}/harbor/${harborId}`;
+        // Correct endpoint: /harbors/{id} (Plural)
+        const targetUrl = `${apiBase}/harbors/${harborId}`;
         safeLog(`[API] Target URL: ${targetUrl}`);
         
         // PROXY IMPLEMENTATION
@@ -361,7 +361,6 @@ async function fetchTabuaMareDataDuration(config: DataSourceConfig, totalDays: n
     // 2. Fetch function for a single batch
     const fetchBatch = async (year: number, month: number, days: number[]) => {
          // IMPORTANT: Use manual encoding for brackets: %5B ... %5D
-         // This survives the CORS proxy encoding better than literal [ ]
          const daysParam = `%5B${days.join(',')}%5D`;
          
          let targetUrl = "";
@@ -383,61 +382,75 @@ async function fetchTabuaMareDataDuration(config: DataSourceConfig, totalDays: n
         if (text.trim().startsWith("<")) throw new Error(`Proxy returned HTML error for month ${month}/${year}`);
 
         const json = JSON.parse(text);
-        if (json.error && json.error.msg) throw new Error(json.error.msg);
+        
+        // Handle API Level Errors
+        if (json.error) {
+            const msg = typeof json.error === 'string' ? json.error : (json.error.message || json.error.msg || "Unknown API Error");
+            throw new Error(msg);
+        }
 
         const rawData = json.data || [];
 
-        // Process Data
+        // Updated Parsing Logic for New API Structure
+        // Expected: item -> months -> days -> hours -> { hour: "HH:MM:SS", level: "2.1" }
         rawData.forEach((item: any) => {
-             const processTidesList = (tides: any[], dateStr: string) => {
-                 if (!tides) return;
-                 tides.forEach((t: any) => {
-                    // Support both "14:20" and "2023-10-10 14:20" formats if API changes
-                    const timePart = (t.hour || t.time || "00:00").includes(' ') ? (t.hour || t.time).split(' ')[1] : (t.hour || t.time || "00:00");
-                    const [hh, mm] = timePart.split(':').map(Number);
-                    
-                    const today = new Date(now.toISOString().split('T')[0]); // Midnight today (Local)
-                    // Use date provided by API item
-                    const tideDate = new Date(dateStr); 
+             const monthsList = item.months || [];
+             
+             monthsList.forEach((m: any) => {
+                 const daysList = m.days || [];
+                 
+                 daysList.forEach((d: any) => {
+                     const dateStr = d.date; // "YYYY-MM-DD"
+                     const hoursList = d.hours || [];
+                     
+                     hoursList.forEach((hObj: any) => {
+                         // New fields: hour, level (no type)
+                         const timeStr = hObj.hour;
+                         if (!timeStr) return;
+                         
+                         // Parse "HH:MM:SS" or "HH:MM"
+                         const parts = timeStr.split(':');
+                         const hh = parseInt(parts[0], 10);
+                         const mm = parseInt(parts[1], 10);
+                         
+                         const levelVal = parseFloat(hObj.level);
+                         
+                         if (!isNaN(hh) && !isNaN(mm) && !isNaN(levelVal)) {
+                            // Date math (Local vs UTC handling)
+                            // We treat "YYYY-MM-DD" + Hour as relative time from "now"
+                            
+                            // Reference: Today Midnight
+                            const today = new Date(now.toISOString().split('T')[0]); 
+                            const tideDate = new Date(dateStr); 
 
-                    // Calculate offset in hours relative to Today 00:00
-                    const diffMs = tideDate.getTime() - today.getTime();
-                    const diffDays = Math.round(diffMs / 86400000);
-                    
-                    const timeOffset = (diffDays * 24) + hh + (mm / 60);
+                            const diffMs = tideDate.getTime() - today.getTime();
+                            const diffDays = Math.round(diffMs / 86400000);
+                            
+                            const timeOffset = (diffDays * 24) + hh + (mm / 60);
 
-                    // Allow range: 0 to totalDays days + small buffer
-                    if (timeOffset >= -2 && timeOffset <= (totalDays * 24) + 24) {
-                        const hVal = parseFloat(t.level || t.height);
-                         if (!isNaN(hVal)) {
-                            // Normalize (Approx: -0.2 to 2.9m -> 0 to 100%)
-                            let pct = ((hVal + 0.2) / 2.9) * 100;
-                            pct = Math.max(0, Math.min(100, pct));
-                            const isHigh = (t.type || "").toLowerCase().includes('high') || (t.type || "").toLowerCase().includes('alta');
-                            allFrames.push({
-                                id: uid(),
-                                timeOffset: parseFloat(timeOffset.toFixed(2)),
-                                height: parseFloat(pct.toFixed(1)),
-                                color: isHigh ? '#00eebb' : '#004488',
-                                intensity: 100,
-                                effect: isHigh ? EffectType.WAVE : EffectType.STATIC
-                            });
+                            // Filter valid window
+                            if (timeOffset >= -2 && timeOffset <= (totalDays * 24) + 24) {
+                                // Normalize (Approx: -0.2 to 2.9m -> 0 to 100%)
+                                let pct = ((levelVal + 0.2) / 2.9) * 100;
+                                pct = Math.max(0, Math.min(100, pct));
+                                
+                                // Infer High/Low since 'type' is missing
+                                // Heuristic: Above 50% = High/Wave, Below = Low/Static
+                                const isHigh = pct > 50;
+                                
+                                allFrames.push({
+                                    id: uid(),
+                                    timeOffset: parseFloat(timeOffset.toFixed(2)),
+                                    height: parseFloat(pct.toFixed(1)),
+                                    color: isHigh ? '#00eebb' : '#004488',
+                                    intensity: 100,
+                                    effect: isHigh ? EffectType.WAVE : EffectType.STATIC
+                                });
+                            }
                          }
-                    }
-                 });
-             };
-
-             // Handle different API structures (some endpoints wrap in 'months', others flat 'tides')
-             if (item.months) {
-                 item.months.forEach((m: any) => {
-                     if (m.days) m.days.forEach((d: any) => {
-                         if (d.hours) processTidesList(d.hours, d.date);
-                         else if (d.tides) processTidesList(d.tides, d.date);
                      });
                  });
-             } else if (item.tides) {
-                 processTidesList(item.tides, item.date || item.date_time?.split(' ')[0]);
-             }
+             });
          });
     };
 
