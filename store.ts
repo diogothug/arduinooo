@@ -1,3 +1,5 @@
+
+
 import { create } from 'zustand';
 import { Keyframe, Device, ViewState, EffectType, FirmwareConfig, DisplayConfig, DisplayWidget, WidgetType, DisplayDriver, ConnectionType, DisplayTheme, RenderMode, DataSourceConfig, TideSourceType, MockWaveType, WeatherData, Notification } from './types';
 
@@ -80,12 +82,16 @@ export const useAppStore = create<AppState>((set) => ({
   firmwareConfig: {
     ssid: 'Moreré_WiFi',
     password: '',
-    ledCount: 60,
+    ledCount: 64,
     ledPin: 18,
     ledBrightness: 160,
     ledColorOrder: 'GRB',
-    ledLayoutType: 'STRIP',
-    ledMatrixWidth: 10,
+    ledLayoutType: 'MATRIX',
+    ledMatrixWidth: 8,
+    ledMatrixHeight: 8,
+    ledSerpentine: true,
+    ledSpiralTurns: 3,
+    customColors: ['#000044', '#004488', '#0099cc', '#00ffcc', '#ffffff'], // Default Ocean Palette
     deviceName: 'MareFlux_ESP32',
     enableBLE: true,
     enableSerial: true,

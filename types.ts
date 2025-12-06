@@ -238,8 +238,12 @@ export interface FirmwareConfig {
   ledPin: number;
   ledBrightness: number; // 0-255
   ledColorOrder: 'GRB' | 'RGB';
-  ledLayoutType: 'STRIP' | 'MATRIX' | 'RING';
+  ledLayoutType: 'STRIP' | 'MATRIX' | 'RING' | 'SPIRAL' | 'MOUNTAIN' | 'CUSTOM'; // Expanded
   ledMatrixWidth?: number; // Only for matrix
+  ledMatrixHeight?: number; // New: Explicit height
+  ledSerpentine?: boolean; // New: ZigZag wiring
+  ledSpiralTurns?: number; // New: For spiral layout
+  customColors?: string[]; // New: User defined palette (Up to 5 hex codes)
   
   // Animation Engine 2.0
   animationMode: string;

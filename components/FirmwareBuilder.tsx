@@ -1,5 +1,3 @@
-
-
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
 import { 
@@ -12,7 +10,7 @@ import {
     generateWs2812bControllerH, generateWs2812bControllerCpp,
     generateWs2812bAnimationsH, generateWs2812bAnimationsCpp
 } from '../services/firmwareTemplates';
-import { Download, Cpu, Code, Wifi, Package, FileCode, Bluetooth, Usb, Sun, Moon, CloudSun, FolderTree, Database, Check, BrainCircuit, Activity, Zap, Wind } from 'lucide-react';
+import { Download, Cpu, Code, Wifi, Package, FileCode, Bluetooth, Usb, Sun, Moon, CloudSun, FolderTree, Database, Check, BrainCircuit, Activity, Zap, Wind, Lock, Terminal } from 'lucide-react';
 import JSZip from 'jszip';
 
 export const FirmwareBuilder: React.FC = () => {
@@ -59,12 +57,9 @@ export const FirmwareBuilder: React.FC = () => {
 
   const handleDownloadZip = async () => {
       const zip = new JSZip();
-      
       Object.entries(files).forEach(([path, content]) => {
-         // Create folders automatically based on path
          zip.file(path, content);
       });
-
       const blob = await zip.generateAsync({type: "blob"});
       const element = document.createElement("a");
       element.href = URL.createObjectURL(blob);
@@ -113,111 +108,65 @@ export const FirmwareBuilder: React.FC = () => {
                         />
                     </div>
                 </div>
+
+                {/* Device Options */}
+                 <div className="pt-4 border-t border-slate-700">
+                    <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
+                       <Usb size={14} className="text-white" /> Interfaces
+                    </h3>
+                    <div className="space-y-2">
+                        <div className="flex items-center justify-between bg-slate-900 p-3 rounded border border-slate-700">
+                             <div className="flex items-center gap-2">
+                                 <Bluetooth size={16} className={firmwareConfig.enableBLE ? "text-blue-400" : "text-slate-500"} />
+                                 <span className="text-xs font-bold text-slate-300">Bluetooth (BLE)</span>
+                             </div>
+                             <input 
+                                type="checkbox" 
+                                checked={firmwareConfig.enableBLE}
+                                onChange={e => updateFirmwareConfig({ enableBLE: e.target.checked })}
+                                className="w-4 h-4"
+                             />
+                        </div>
+                        <div className="flex items-center justify-between bg-slate-900 p-3 rounded border border-slate-700">
+                             <div className="flex items-center gap-2">
+                                 <Terminal size={16} className={firmwareConfig.enableSerial ? "text-green-400" : "text-slate-500"} />
+                                 <span className="text-xs font-bold text-slate-300">Serial Debug</span>
+                             </div>
+                             <input 
+                                type="checkbox" 
+                                checked={firmwareConfig.enableSerial}
+                                onChange={e => updateFirmwareConfig({ enableSerial: e.target.checked })}
+                                className="w-4 h-4"
+                             />
+                        </div>
+                    </div>
+                 </div>
                 
-                {/* Autonomous Logic Section */}
-                <div className="pt-4 border-t border-slate-700">
-                    <div className="flex justify-between items-center mb-2">
-                        <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
-                           <BrainCircuit size={14} className="text-pink-400" /> Lógica Autônoma (Chip)
-                        </h3>
-                        <input 
-                            type="checkbox" 
-                            checked={firmwareConfig.autonomous.enabled} 
-                            onChange={e => updateFirmwareConfig({ autonomous: {...firmwareConfig.autonomous, enabled: e.target.checked} })} 
-                        />
-                     </div>
-                     
-                     {firmwareConfig.autonomous.enabled && (
-                         <div className="bg-slate-900 p-3 rounded space-y-3">
-                             <div className="flex items-center justify-between">
-                                 <div className="flex items-center gap-2">
-                                     <Activity size={12} className="text-cyan-400"/>
-                                     <label className="text-[10px] text-slate-400">Maré Alta = Mais Rápido</label>
-                                 </div>
-                                 <input type="checkbox" checked={firmwareConfig.autonomous.linkSpeedToTide} onChange={e => updateFirmwareConfig({ autonomous: {...firmwareConfig.autonomous, linkSpeedToTide: e.target.checked} })} />
-                             </div>
-                             <div className="flex items-center justify-between">
-                                 <div className="flex items-center gap-2">
-                                     <Zap size={12} className="text-yellow-400"/>
-                                     <label className="text-[10px] text-slate-400">Maré Baixa = Menor Brilho</label>
-                                 </div>
-                                 <input type="checkbox" checked={firmwareConfig.autonomous.linkBrightnessToTide} onChange={e => updateFirmwareConfig({ autonomous: {...firmwareConfig.autonomous, linkBrightnessToTide: e.target.checked} })} />
-                             </div>
-                             <div className="flex items-center justify-between">
-                                 <div className="flex items-center gap-2">
-                                     <Sun size={12} className="text-orange-400"/>
-                                     <label className="text-[10px] text-slate-400">Paleta Dia/Noite (Horário)</label>
-                                 </div>
-                                 <input type="checkbox" checked={firmwareConfig.autonomous.linkPaletteToTime} onChange={e => updateFirmwareConfig({ autonomous: {...firmwareConfig.autonomous, linkPaletteToTime: e.target.checked} })} />
-                             </div>
-                             
-                             {/* NEW WEATHER SYNC TOGGLE */}
-                             <div className="flex items-center justify-between">
-                                 <div className="flex items-center gap-2">
-                                     <Wind size={12} className="text-blue-400"/>
-                                     <label className="text-[10px] text-slate-400">Clima (Vento = Vel, Umid = Int)</label>
-                                 </div>
-                                 <input 
-                                    type="checkbox" 
-                                    checked={firmwareConfig.autonomous.linkWeatherToLeds} 
-                                    disabled={!firmwareConfig.weatherApi.enabled}
-                                    onChange={e => updateFirmwareConfig({ autonomous: {...firmwareConfig.autonomous, linkWeatherToLeds: e.target.checked} })} 
-                                 />
-                             </div>
-                             {!firmwareConfig.weatherApi.enabled && (
-                                <p className="text-[9px] text-slate-600 pl-5">Requer WeatherAPI ativado</p>
-                             )}
-                         </div>
-                     )}
-                </div>
-
-                {/* Night Mode Config */}
-                <div className="pt-4 border-t border-slate-700">
-                     <div className="flex justify-between items-center mb-2">
-                        <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
-                           <Moon size={14} className="text-indigo-400" /> Modo Noturno
-                        </h3>
-                        <input type="checkbox" checked={firmwareConfig.nightMode.enabled} onChange={e => updateFirmwareConfig({ nightMode: {...firmwareConfig.nightMode, enabled: e.target.checked} })} />
-                     </div>
-                     
-                     {firmwareConfig.nightMode.enabled && (
-                         <div className="grid grid-cols-2 gap-2 bg-slate-900 p-3 rounded">
-                             <div>
-                                <label className="text-[10px] text-slate-500">Início (Hora)</label>
-                                <input type="number" step="0.5" value={firmwareConfig.nightMode.startHour} onChange={e => updateFirmwareConfig({ nightMode: {...firmwareConfig.nightMode, startHour: parseFloat(e.target.value)} })} className="w-full bg-slate-800 border border-slate-700 rounded p-1 text-xs text-white"/>
-                             </div>
-                             <div>
-                                <label className="text-[10px] text-slate-500">Fim (Hora)</label>
-                                <input type="number" step="0.5" value={firmwareConfig.nightMode.endHour} onChange={e => updateFirmwareConfig({ nightMode: {...firmwareConfig.nightMode, endHour: parseFloat(e.target.value)} })} className="w-full bg-slate-800 border border-slate-700 rounded p-1 text-xs text-white"/>
-                             </div>
-                             <div className="col-span-2">
-                                <label className="text-[10px] text-slate-500">Brilho ({Math.round(firmwareConfig.nightMode.brightnessFactor * 100)}%)</label>
-                                <input type="range" min="0" max="1" step="0.1" value={firmwareConfig.nightMode.brightnessFactor} onChange={e => updateFirmwareConfig({ nightMode: {...firmwareConfig.nightMode, brightnessFactor: parseFloat(e.target.value)} })} className="w-full"/>
-                             </div>
-                         </div>
-                     )}
-                </div>
-
-                {/* Summary of Data Source Injection */}
+                {/* Logic Summary (Read-Only) */}
                 <div className="pt-4 border-t border-slate-700">
                     <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
-                        <Database size={16} className="text-purple-400" /> Dados Embutidos
+                       <BrainCircuit size={14} className="text-pink-400" /> Resumo da Lógica (Read-Only)
                     </h3>
-                    <div className="bg-slate-900/50 p-3 rounded border border-slate-700 text-xs text-slate-400 space-y-2">
-                         <div className="flex items-center gap-2">
-                             <Check size={12} className="text-green-500"/> 
-                             <span>Maré Offline: {keyframes.length} pontos (Calculado/Backup)</span>
+                    <div className="bg-slate-900 p-4 rounded border border-slate-700 space-y-3">
+                         <div className="flex items-center justify-between text-xs">
+                             <span className="text-slate-400">Modo Autônomo</span>
+                             <span className={`font-bold ${firmwareConfig.autonomous.enabled ? 'text-green-400' : 'text-slate-500'}`}>
+                                 {firmwareConfig.autonomous.enabled ? 'ATIVO' : 'INATIVO'}
+                             </span>
                          </div>
-                         <div className="flex items-center gap-2">
-                             <Check size={12} className="text-green-500"/>
-                             <span>Config. Tábua Maré: {dataSourceConfig.tabuaMare.harborId ? `Porto ID ${dataSourceConfig.tabuaMare.harborId}` : `Lat ${dataSourceConfig.tabuaMare.lat}, Lng ${dataSourceConfig.tabuaMare.lng}`}</span>
+                         <div className="flex items-center justify-between text-xs">
+                             <span className="text-slate-400">Layout</span>
+                             <span className="font-bold text-cyan-400">{firmwareConfig.ledLayoutType}</span>
                          </div>
-                         {firmwareConfig.weatherApi.enabled && (
-                             <div className="flex items-center gap-2">
-                                 <Check size={12} className="text-green-500"/>
-                                 <span>WeatherAPI Habilitada (Online)</span>
-                             </div>
-                         )}
+                         <div className="flex items-center justify-between text-xs">
+                             <span className="text-slate-400">Link Climático</span>
+                             <span className={`font-bold ${firmwareConfig.autonomous.linkWeatherToLeds ? 'text-orange-400' : 'text-slate-500'}`}>
+                                 {firmwareConfig.autonomous.linkWeatherToLeds ? 'ATIVO' : 'OFF'}
+                             </span>
+                         </div>
+                         <div className="mt-2 text-[10px] text-slate-500 italic flex items-center gap-1">
+                             <Lock size={10}/> Ajuste estas opções na aba 'LED Master'.
+                         </div>
                     </div>
                 </div>
 
