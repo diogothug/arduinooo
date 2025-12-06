@@ -6,14 +6,11 @@ console.log("🟦 [TideService] Module Loading...");
 // Helper to generate a random ID
 const uid = () => Math.random().toString(36).substr(2, 9);
 
-// Helper to sanitize base URLs and ensure valid structure
+// Helper to sanitize base URLs but ALLOW double slashes if intentional (as per API docs)
 const sanitizeBaseUrl = (url: string) => {
     if (!url) return '';
-    // Fix common double slash issues if present in middle of path
-    let clean = url.replace(/([^:]\/)\/+/g, "$1"); 
-    // Remove trailing slash
-    clean = clean.replace(/\/+$/, '');
-    return clean;
+    // Only remove trailing slashes, do NOT merge internal slashes as some APIs like tabuamare use //api
+    return url.replace(/\/+$/, '');
 };
 
 // Safe logger helper
@@ -59,7 +56,7 @@ export const tideSourceService = {
              try {
                  resultFrames = await fetchTabuaMareData(config, cycleDuration);
                  // Note: Tábua Maré API currently only provides tide data, not weather.
-                 // The TideEditor manual sliders will be the authority for weather data in this mode.
+                 // We return frames, weather remains undefined (controlled manually)
                  if (resultFrames.length > 0) {
                      return { frames: resultFrames, sourceUsed: TideSourceType.TABUA_MARE, weather: undefined };
                  }
@@ -102,7 +99,7 @@ export const tideSourceService = {
                 const url = `${baseUrl}?key=${token}&q=${encodeURIComponent(locationId)}&days=3&tides=yes&lang=pt`;
                 
                 safeLog(`[API] GET ${url}`);
-                const response = await fetch(url); // Direct browser fetch
+                const response = await fetch(url, { referrerPolicy: 'no-referrer' });
                 safeLog(`[API] Status: ${response.status} ${response.statusText}`);
                 
                 if (!response.ok) throw new Error(`WeatherAPI Erro HTTP ${response.status}`);
@@ -194,7 +191,11 @@ export const tideSourceService = {
         if (!harborId) throw new Error("ID do porto não definido");
         const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io/api/v1');
         const url = `${apiBase}/harbors/${harborId}`;
-        const res = await fetch(url);
+        
+        safeLog(`[API] Harbor ID: ${url}`);
+        
+        const res = await fetch(url, { referrerPolicy: 'no-referrer' });
+        
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
         if (json.data && json.data.length > 0) return { id: json.data[0].id, name: json.data[0].harbor_name };
@@ -204,9 +205,18 @@ export const tideSourceService = {
     findNearestHarbor: async (config: DataSourceConfig): Promise<{ id: number, name: string, distance: number }> => {
          const { baseUrl, uf, lat, lng } = config.tabuaMare;
          const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io/api/v1'); 
-         const latLngParam = `[${lat},${lng}]`;
+         
+         // Use strict JSON stringify + Encode to ensure [lat,lng] -> %5Blat%2Clng%5D
+         const latLngParam = encodeURIComponent(JSON.stringify([lat, lng]));
          const url = `${apiBase}/nearested-harbor/${uf.toLowerCase()}/${latLngParam}`;
-         const res = await fetch(url);
+         
+         safeLog(`[API] Nearest: ${url}`);
+         
+         // Simple fetch, no headers to avoid WAF/CORS preflight issues on public API
+         const res = await fetch(url, { 
+             referrerPolicy: 'no-referrer'
+         });
+         
          if (!res.ok) throw new Error(`HTTP ${res.status}`);
          const json = await res.json();
          if (json.data && json.data.length > 0) {
@@ -233,33 +243,28 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     }
     if (daysArray.length === 0) daysArray.push(now.getDate());
     
-    // CRITICAL: Format days explicitly using URL Encoded Brackets %5B and %5D 
-    // This allows direct browser fetch without proxy issues
-    const daysParam = `%5B${daysArray.join(',')}%5D`;
+    // CRITICAL: Encode brackets/commas correctly for this API
+    const daysParam = encodeURIComponent(JSON.stringify(daysArray));
     
     let url = "";
     if (harborId) {
         url = `${apiBase}/tabua-mare/${harborId}/${month}/${daysParam}`;
     } else {
-        const latLngParam = `%5B${lat},${lng}%5D`;
+        const latLngParam = encodeURIComponent(JSON.stringify([lat, lng]));
         url = `${apiBase}/geo-tabua-mare/${latLngParam}/${uf.toLowerCase()}/${month}/${daysParam}`;
     }
     
     safeLog(`[API] Req URL: ${url}`);
     
-    // Direct fetch from browser, no headers needed for this public API
-    const res = await fetch(url);
-    const textRes = await res.text();
-    safeLog(`[API] Resp (${textRes.length} chars)`);
-
-    if (!res.ok) throw new Error(`Erro HTTP ${res.status}`);
-
-    let json: any;
-    try {
-        json = JSON.parse(textRes);
-    } catch(e) {
-        throw new Error("JSON Parse Error: Resposta inválida.");
-    }
+    // Use simple GET without extra headers to avoid 403 Forbidden
+    const res = await fetch(url, {
+        referrerPolicy: 'no-referrer'
+    });
+    
+    if (!res.ok) throw new Error(`Erro HTTP ${res.status} - ${res.statusText}`);
+    
+    const json = await res.json();
+    safeLog(`[API] Resp JSON OK`);
 
     if (json.error && json.error.msg) throw new Error(`API Error: ${json.error.msg}`);
     
@@ -279,6 +284,7 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
              if (timeOffset >= 0 && timeOffset <= cycleDuration + 24) {
                 const h = parseFloat(t.height);
                 if (!isNaN(h)) {
+                    // Normalize (Approx: -0.2 to 2.9m -> 0 to 100%)
                     let pct = ((h + 0.2) / 2.9) * 100;
                     pct = Math.max(0, Math.min(100, pct));
                     const isHigh = (t.type || "").toLowerCase().includes('high') || (t.type || "").toLowerCase().includes('alta');

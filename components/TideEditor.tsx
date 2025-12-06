@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAppStore } from '../store';
 import { EffectType, Keyframe, ConnectionType, TideSourceType, MockWaveType } from '../types';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot } from 'recharts';
-import { Wand2, Play, Pause, Trash2, Plus, RefreshCw, UploadCloud, Usb, Bluetooth, Wifi, CalendarClock, Zap, Server, Activity, Calculator, Database, MapPin, Search, AlertCircle, CheckCircle, Terminal, Clipboard, CloudSun, Thermometer, Wind, Droplets, Battery, Moon, Sliders } from 'lucide-react';
+import { Wand2, Play, Pause, Trash2, Plus, RefreshCw, UploadCloud, Usb, Bluetooth, Wifi, CalendarClock, Zap, Server, Activity, Calculator, Database, MapPin, Search, AlertCircle, CheckCircle, Terminal, Clipboard, CloudSun, Thermometer, Wind, Droplets, Battery, Moon, Sliders, Sun } from 'lucide-react';
 import { generateTideCurveWithAI } from '../services/geminiService';
 import { hardwareBridge } from '../services/hardwareBridge';
 import { generateSevenDayForecast } from '../utils/tideLogic';
@@ -243,7 +243,7 @@ export const TideEditor: React.FC = () => {
               Editor Manual
           </button>
           <button onClick={() => setActiveTab('SOURCE')} className={`pb-2 px-4 text-sm font-medium ${activeTab === 'SOURCE' ? 'border-b-2 border-purple-500 text-white' : 'text-slate-400'}`}>
-              Fonte de Dados & Simulação
+              Fonte de Dados & Clima
           </button>
       </div>
 
@@ -366,7 +366,7 @@ export const TideEditor: React.FC = () => {
                        <span className="font-bold text-sm">2. Tábua Maré (Brasil)</span>
                    </div>
                    <p className="text-[10px] text-slate-400 mb-3 leading-tight">
-                       API direta via navegador. Requer ID do porto ou Lat/Lng.
+                       API direta via navegador (Client-side Fetch).
                    </p>
                    <div className="space-y-3 opacity-90">
                        <div className="flex gap-2">
@@ -390,7 +390,6 @@ export const TideEditor: React.FC = () => {
                            </button>
                        </div>
                        
-                       {/* Validation Status */}
                        {dataSourceConfig.tabuaMare.lastFoundHarbor && (
                            <div className={`text-[10px] p-2 rounded border flex items-start gap-2 ${dataSourceConfig.tabuaMare.lastFoundHarbor.startsWith("Erro") ? 'bg-red-900/20 border-red-900/30 text-red-300' : 'bg-green-900/20 border-green-900/30 text-green-400'}`}>
                                {dataSourceConfig.tabuaMare.lastFoundHarbor.startsWith("Erro") ? <AlertCircle size={14} className="shrink-0 mt-0.5"/> : <CheckCircle size={14} className="shrink-0 mt-0.5"/>}
@@ -449,15 +448,15 @@ export const TideEditor: React.FC = () => {
                </div>
 
                 {/* 4. Manual Weather Controls (Centralized) */}
-               <div className={`p-4 rounded-lg border border-slate-600 bg-slate-900/50`}>
+               <div className={`p-4 rounded-lg border border-slate-600 bg-slate-900/50 md:col-span-2 lg:col-span-3`}>
                    <div className="flex items-center justify-between mb-3">
                        <div className="flex items-center gap-2">
                            <Sliders size={16} className="text-orange-400"/>
-                           <span className="font-bold text-sm">Controles de Clima (Global)</span>
+                           <span className="font-bold text-sm">Controles de Clima & Ambiente (Global)</span>
                        </div>
                        <span className="text-[9px] bg-slate-800 px-2 py-0.5 rounded text-slate-400">Tempo Real</span>
                    </div>
-                   <div className="grid grid-cols-2 gap-3">
+                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div>
                             <label className="text-[10px] text-slate-500 block mb-1 flex items-center gap-1"><Thermometer size={10} className="text-orange-400"/> Temp ({weatherData.temp}°C)</label>
                             <input type="range" min="15" max="40" value={weatherData.temp} onChange={e => setWeatherData({temp: parseInt(e.target.value)})} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer" />
@@ -481,6 +480,14 @@ export const TideEditor: React.FC = () => {
                         <div>
                             <label className="text-[10px] text-slate-500 block mb-1 flex items-center gap-1"><Moon size={10} className="text-purple-400"/> Ilum. Lua ({weatherData.moonIllumination}%)</label>
                             <input type="range" min="0" max="100" value={weatherData.moonIllumination} onChange={e => setWeatherData({moonIllumination: parseInt(e.target.value)})} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer" />
+                        </div>
+                        <div>
+                            <label className="text-[10px] text-slate-500 block mb-1 flex items-center gap-1"><Sun size={10} className="text-yellow-400"/> UV ({weatherData.uv})</label>
+                            <input type="range" min="0" max="15" value={weatherData.uv} onChange={e => setWeatherData({uv: parseInt(e.target.value)})} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer" />
+                        </div>
+                        <div>
+                            <label className="text-[10px] text-slate-500 block mb-1 flex items-center gap-1"><CloudSun size={10} className="text-slate-400"/> Nuvens ({weatherData.cloud}%)</label>
+                            <input type="range" min="0" max="100" value={weatherData.cloud} onChange={e => setWeatherData({cloud: parseInt(e.target.value)})} className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer" />
                         </div>
                    </div>
                </div>

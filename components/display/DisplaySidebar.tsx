@@ -133,7 +133,7 @@ export const DisplaySidebar: React.FC = () => {
 
                     {/* Environmental Grid */}
                     <div>
-                        <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2 flex items-center gap-1"><Gauge size={12}/> Métricas Atuais</h4>
+                        <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2 flex items-center gap-1"><Gauge size={12}/> Métricas Atuais (Leitura)</h4>
                         <div className="grid grid-cols-2 gap-2">
                              <div className="bg-slate-900 p-2 rounded flex flex-col items-center justify-center border border-slate-700">
                                  <span className="text-[9px] text-slate-500 uppercase">Sensação</span>
@@ -142,6 +142,14 @@ export const DisplaySidebar: React.FC = () => {
                              <div className="bg-slate-900 p-2 rounded flex flex-col items-center justify-center border border-slate-700">
                                  <span className="text-[9px] text-slate-500 uppercase flex items-center gap-1"><Sun size={8}/> UV Index</span>
                                  <span className={`text-sm font-bold ${weatherData.uv > 5 ? 'text-purple-400' : 'text-green-400'}`}>{weatherData.uv}</span>
+                             </div>
+                             <div className="bg-slate-900 p-2 rounded flex flex-col items-center justify-center border border-slate-700">
+                                 <span className="text-[9px] text-slate-500 uppercase flex items-center gap-1"><Wind size={8}/> Vento</span>
+                                 <span className="text-sm font-bold text-slate-300">{weatherData.windSpeed}kph</span>
+                             </div>
+                             <div className="bg-slate-900 p-2 rounded flex flex-col items-center justify-center border border-slate-700">
+                                 <span className="text-[9px] text-slate-500 uppercase flex items-center gap-1"><Droplets size={8}/> Umidade</span>
+                                 <span className="text-sm font-bold text-blue-400">{weatherData.humidity}%</span>
                              </div>
                         </div>
                     </div>
@@ -219,6 +227,8 @@ export const DisplaySidebar: React.FC = () => {
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <Zap size={14} className="text-yellow-400" /> Widgets de Clima
             </h3>
+            
+            <p className="text-[10px] text-slate-500 mb-3">Adicione widgets ao canvas. Os dados são controlados no módulo de Fontes.</p>
 
             {/* Weather Widget Buttons */}
             <div className="grid grid-cols-2 gap-2 mb-4">
@@ -235,7 +245,6 @@ export const DisplaySidebar: React.FC = () => {
                     <CloudSun size={16} className="text-yellow-400" /> Condição (Txt)
                 </button>
             </div>
-            {/* Note: Manual sliders removed. Use Tide Editor > Source to simulate weather. */}
         </div>
 
         {/* Themes */}
