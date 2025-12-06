@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useMemo } from 'react';
 import { useAppStore } from '../../store';
 import { WidgetType, DisplayTheme } from '../../types';
@@ -66,7 +67,8 @@ export const DisplayCanvas: React.FC<DisplayCanvasProps> = ({ selectedWidgetId, 
             
             // Draw Background Gradient (clipped automatically by arc shape if we fill)
             let bgGrad = ctx.createRadialGradient(120, 120, 0, 120, 120, 120);
-            
+            const time = Date.now() / 1000;
+
             switch(displayConfig.theme) {
                 case DisplayTheme.SOL_MORERE:
                 case DisplayTheme.SUNSET_BAHIA:
@@ -92,6 +94,18 @@ export const DisplayCanvas: React.FC<DisplayCanvasProps> = ({ selectedWidgetId, 
                     bgGrad.addColorStop(0, '#000000');
                     bgGrad.addColorStop(1, '#000000');
                     break;
+                case DisplayTheme.CYBER_GRID:
+                    bgGrad.addColorStop(0, '#220022');
+                    bgGrad.addColorStop(1, '#110011');
+                    break;
+                case DisplayTheme.VORTEX:
+                    bgGrad.addColorStop(0, '#1a1a2e');
+                    bgGrad.addColorStop(1, '#000000');
+                    break;
+                case DisplayTheme.JELLYFISH_JAM:
+                     bgGrad.addColorStop(0, '#0f172a');
+                     bgGrad.addColorStop(1, '#020617');
+                     break;
                 default:
                     bgGrad.addColorStop(0, '#1a1a1a');
                     bgGrad.addColorStop(1, '#000000');
@@ -102,17 +116,71 @@ export const DisplayCanvas: React.FC<DisplayCanvasProps> = ({ selectedWidgetId, 
             // Apply Clip for everything else
             ctx.clip();
             
-            // Starry Night Particles (Draw AFTER clip to ensure they don't bleed, though clip handles it)
+            // --- ANIMATED BACKGROUNDS ---
+
             if (displayConfig.theme === DisplayTheme.STARRY_NIGHT) {
-                const time = Date.now() / 1000;
                 ctx.fillStyle = '#ffffff';
                 for(let i=0; i<40; i++) {
-                    // Simple deterministic pseudo-random positions based on index
                     const x = (Math.sin(i * 132 + time * 0.05) + 1) * 120;
                     const y = (Math.cos(i * 45 + time * 0.05) + 1) * 120;
                     const size = (Math.sin(time * 2 + i) + 1.5) * 0.8;
                     ctx.beginPath(); ctx.arc(x,y, size, 0, Math.PI*2); ctx.fill();
                 }
+            }
+            else if (displayConfig.theme === DisplayTheme.CYBER_GRID) {
+                // Retro Grid
+                ctx.strokeStyle = '#d946ef'; // Fuchsia
+                ctx.lineWidth = 1;
+                const perspective = (Date.now() % 1000) / 1000;
+                
+                // Horizon lines moving down
+                for(let i=0; i<8; i++) {
+                    const y = 120 + Math.pow((i + perspective)/8, 2) * 120;
+                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(240, y); 
+                    ctx.globalAlpha = 0.2 + (i/10); ctx.stroke();
+                }
+                
+                // Vertical perspective lines
+                ctx.beginPath();
+                for(let i=-6; i<=6; i++) {
+                    ctx.moveTo(120, 120); 
+                    ctx.lineTo(120 + i*60, 240);
+                }
+                ctx.stroke();
+                
+                // Sun
+                ctx.fillStyle = '#f59e0b';
+                ctx.globalAlpha = 1;
+                ctx.beginPath(); ctx.arc(120, 100, 30, Math.PI, 0); ctx.fill();
+            }
+            else if (displayConfig.theme === DisplayTheme.VORTEX) {
+                const spirals = 5;
+                const rot = time;
+                for(let i=0; i<spirals; i++) {
+                    ctx.strokeStyle = i%2===0 ? '#3b82f6' : '#8b5cf6';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    for(let j=0; j<50; j++) {
+                        const angle = (j * 0.5) + rot + (i * (Math.PI*2/spirals));
+                        const radius = j * 3;
+                        const x = 120 + Math.cos(angle) * radius;
+                        const y = 120 + Math.sin(angle) * radius;
+                        if(j===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+                    }
+                    ctx.stroke();
+                }
+            }
+            else if (displayConfig.theme === DisplayTheme.JELLYFISH_JAM) {
+                 // Floating Particles
+                 for(let i=0; i<15; i++) {
+                     const y = ((time * 20 + i * 30) % 260) - 10;
+                     const x = 120 + Math.sin(time + i) * 50;
+                     ctx.fillStyle = `hsla(${time*10 + i*20}, 70%, 60%, 0.5)`;
+                     ctx.beginPath(); ctx.arc(x, y, 4 + Math.sin(time*2 + i)*2, 0, Math.PI*2); ctx.fill();
+                     // Tail
+                     ctx.strokeStyle = ctx.fillStyle;
+                     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y+15); ctx.stroke();
+                 }
             }
 
             // 4. WIDGETS

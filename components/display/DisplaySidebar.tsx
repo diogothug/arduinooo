@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useAppStore } from '../../store';
 import { DisplayTheme, WidgetType, ViewState } from '../../types';
@@ -81,7 +82,7 @@ export const DisplaySidebar: React.FC = () => {
               { id: 'p7_1', type: WidgetType.CLOCK_DIGITAL, x: 120, y: 120, scale: 1.2, color: '#00ffcc', visible: true, zIndex: 10 },
               { id: 'p7_2', type: WidgetType.TEXT_LABEL, x: 120, y: 160, scale: 0.8, color: '#ff00ff', label: 'NEURAL SYNC', visible: true, zIndex: 10 },
           ]);
-          setDisplayConfig({ ...baseConfig, theme: DisplayTheme.STARRY_NIGHT });
+          setDisplayConfig({ ...baseConfig, theme: DisplayTheme.CYBER_GRID });
           break;
     }
   };
@@ -214,6 +215,9 @@ export const DisplaySidebar: React.FC = () => {
                     <option value={DisplayTheme.SUNSET_BAHIA}>Pôr do Sol da Bahia (V2)</option>
                     <option value={DisplayTheme.STARRY_NIGHT}>Noite Estrelada (Animado)</option>
                     <option value={DisplayTheme.TROPICAL_STORM}>Tempestade Tropical</option>
+                    <option value={DisplayTheme.CYBER_GRID}>Cyber Grid (Animado)</option>
+                    <option value={DisplayTheme.VORTEX}>Vortex (Animado)</option>
+                    <option value={DisplayTheme.JELLYFISH_JAM}>Jellyfish Jam (Animado)</option>
                 </select>
 
                 <p className="text-[10px] text-slate-500 uppercase font-bold mt-2">Presets Rápidos</p>

@@ -358,10 +358,20 @@ export const LedMaster: React.FC = () => {
             const day = new Date().getDate();
             const month = new Date().getMonth() + 1;
             
-            // Generate clean URL without brackets (HTTP)
-            url = `${base.replace('https','http')}/tabua-mare/${pid}/${month}/${day}`;
+            // Format URL with encoded brackets as requested in prompt for robust debugging
+            // e.g. /tabua-mare/8/12/[6] becomes /tabua-mare/8/12/%5B6%5D
+            // We'll simulate fetching for next 6 days as per the example logic
+            const encodedBracket = "%5B6%5D"; // [6]
             
-            snippet = `// C++ Snippet for Tábua Maré (Robust)\n// Use WiFiClient (HTTP) for speed and no brackets in URL\nString url = "${url}";\n\nWiFiClient client;\nHTTPClient http;\n\nhttp.begin(client, url);\nhttp.setConnectTimeout(10000);\nhttp.setTimeout(10000);\n\nSerial.print("[HTTP] GET "); Serial.println(url);\nint code = http.GET();\n\nif(code > 0) {\n    String payload = http.getString();\n    if(code == 200) {\n        // Parse JSON\n        Serial.println(payload);\n    } else {\n        Serial.printf("Error %d: %s\\n", code, payload.c_str());\n    }\n} else {\n    Serial.printf("Failed: %s\\n", http.errorToString(code).c_str());\n}\nhttp.end();`;
+            // Ensure base has no trailing slash and protocol is correct
+            let cleanBase = base.replace(/\/+$/, "");
+            if(!cleanBase.startsWith('http')) cleanBase = 'https://' + cleanBase;
+
+            // Robust Debug Logic Construction
+            url = `${cleanBase}/tabua-mare/${pid}/${month}/${encodedBracket}`;
+            
+            // Generate the ROBUST C++ DEBUG CODE requested
+            snippet = `// --- ROBUST HTTP DEBUG (Tabua Mare) ---\n#include <WiFi.h>\n#include <HTTPClient.h>\n\n// 1. URL com Encoding de Colchetes\nString url = "${url}";\n\nSerial.println("URL usada:");\nSerial.println(url);\n\nHTTPClient http;\n\n// 2. Habilita Debug Interno do HTTPClient (Verbose)\nhttp.setDebugOutput(true);\n\n// 3. Headers Explicitos\nhttp.begin(url);\nhttp.addHeader("User-Agent", "ESP32-Debug-Client");\nhttp.addHeader("Accept", "application/json");\n\nSerial.println("\\nEnviando GET...");\nint httpCode = http.GET();\n\nSerial.print("Código HTTP recebido: ");\nSerial.println(httpCode);\n\nif (httpCode > 0) {\n    Serial.println("\\n=== Headers Recebidos ===");\n    int hCount = http.headers();\n    for(int i = 0; i < hCount; i++){\n        Serial.print(http.headerName(i));\n        Serial.print(": ");\n        Serial.println(http.header(i));\n    }\n\n    Serial.println("\\n=== Corpo da Resposta ===");\n    String payload = http.getString();\n    Serial.println(payload);\n} else {\n    Serial.print("Erro na requisição: ");\n    Serial.println(http.errorToString(httpCode));\n}\n\nhttp.end();`;
         }
         
         setDebugUrl(url);
@@ -376,7 +386,7 @@ export const LedMaster: React.FC = () => {
             const txt = await res.text();
             
             if (res.ok) {
-                setDebugResult(`HTTP ${res.status} OK (${(t1-t0).toFixed(0)}ms)\n\n--- PAYLOAD PREVIEW ---\n${txt.substring(0,600)}...`);
+                setDebugResult(`HTTP ${res.status} OK (${(t1-t0).toFixed(0)}ms)\n\n--- PAYLOAD PREVIEW ---\n${txt.substring(0,800)}...`);
             } else {
                 setDebugResult(`HTTP ${res.status} ERROR\n${txt}`);
             }
@@ -518,12 +528,16 @@ export const LedMaster: React.FC = () => {
                         <div className="space-y-6 animate-in fade-in">
                             <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2"><Network size={14}/> Teste de Conectividade</h3>
                             <div className="space-y-2">
-                                <button onClick={()=>handleCheckApi('WEATHER')} className="w-full bg-slate-900 hover:bg-slate-800 border border-slate-600 rounded p-2 text-xs text-white text-left flex justify-between">Check WeatherAPI <span>GET</span></button>
-                                <button onClick={()=>handleCheckApi('TABUA_MARE')} className="w-full bg-slate-900 hover:bg-slate-800 border border-slate-600 rounded p-2 text-xs text-white text-left flex justify-between">Check Tábua Maré <span>GET</span></button>
+                                <button onClick={()=>handleCheckApi('TABUA_MARE')} className="w-full bg-slate-900 hover:bg-slate-800 border border-slate-600 rounded p-2 text-xs text-white text-left flex justify-between">
+                                    <span>Check Tábua Maré (Robust Debug)</span> <span>GET</span>
+                                </button>
+                                <button onClick={()=>handleCheckApi('WEATHER')} className="w-full bg-slate-900 hover:bg-slate-800 border border-slate-600 rounded p-2 text-xs text-white text-left flex justify-between">
+                                    <span>Check WeatherAPI</span> <span>GET</span>
+                                </button>
                             </div>
                             
                             <div className="bg-slate-900 rounded border border-slate-700 p-2">
-                                <label className="text-[9px] text-slate-500 font-bold block mb-1">URL Gerada (Simulação Firmware)</label>
+                                <label className="text-[9px] text-slate-500 font-bold block mb-1">URL (Teste Browser/Proxy)</label>
                                 <div className="text-[10px] font-mono text-slate-300 break-all bg-black/50 p-1 rounded">{debugUrl || '// Selecione um teste'}</div>
                             </div>
                             
@@ -558,9 +572,20 @@ export const LedMaster: React.FC = () => {
             <div className="lg:col-span-9 bg-slate-900 border border-slate-800 rounded-lg flex flex-col overflow-hidden relative">
                 {activeTab === 'LAB' && cppSnippet ? (
                     <div className="p-6 h-full font-mono text-xs text-slate-300 overflow-auto">
-                        <h3 className="text-sm font-bold text-white mb-4 border-b border-slate-700 pb-2 flex items-center gap-2"><Code size={16}/> C++ HTTPClient Code Preview</h3>
-                        <pre className="bg-black p-4 rounded border border-slate-700 text-green-400 whitespace-pre-wrap leading-relaxed">{cppSnippet}</pre>
-                        <p className="mt-4 text-slate-500">Este é o código exato que será gerado no <code>WeatherManager.cpp</code> para esta requisição.</p>
+                        <div className="flex justify-between items-center mb-4 border-b border-slate-700 pb-2">
+                            <h3 className="text-sm font-bold text-white flex items-center gap-2"><Code size={16}/> Código de Debug Gerado (C++)</h3>
+                            <span className="text-[10px] text-slate-500">Copie e cole no main.cpp para teste isolado</span>
+                        </div>
+                        <pre className="bg-black p-4 rounded border border-slate-700 text-green-400 whitespace-pre-wrap leading-relaxed shadow-inner">{cppSnippet}</pre>
+                        
+                        <div className="mt-4 p-3 bg-blue-900/20 border border-blue-900/50 rounded flex gap-3">
+                            <AlertCircle size={16} className="text-blue-400 shrink-0 mt-0.5"/>
+                            <div className="text-[10px] text-blue-300">
+                                <strong className="block mb-1">Nota sobre Colchetes e Encodings</strong>
+                                O ESP32 pode falhar se a URL contiver colchetes "[]" crus. O código gerado acima usa <code>%5B</code> e <code>%5D</code> explicitamente.
+                                <br/>O <code>http.setDebugOutput(true)</code> vai imprimir o handshake SSL e headers brutos no Serial Monitor.
+                            </div>
+                        </div>
                     </div>
                 ) : (
                     <>

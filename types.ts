@@ -132,6 +132,11 @@ export enum DisplayTheme {
   STARRY_NIGHT = 'STARRY_NIGHT',
   TROPICAL_STORM = 'TROPICAL_STORM',
   MORERE_MINIMAL = 'MORERE_MINIMAL',
+
+  // V2.4 New Animated Themes
+  CYBER_GRID = 'CYBER_GRID',
+  VORTEX = 'VORTEX',
+  JELLYFISH_JAM = 'JELLYFISH_JAM'
 }
 
 export enum RenderMode {
