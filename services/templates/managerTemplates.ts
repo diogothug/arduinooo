@@ -100,12 +100,16 @@ export const generateSerialManagerH = () => `
 #define SERIAL_MANAGER_H
 #include "MareEngine.h"
 
+class WeatherManager; // Forward declaration
+
 class SerialManager {
 public:
     SerialManager(MareEngine* engine);
     void handle();
+    void setWeatherManager(WeatherManager* wm) { _weather = wm; }
 private:
     MareEngine* _engine;
+    WeatherManager* _weather = nullptr;
     String _inputBuffer;
     void processCommand(String json);
 };
@@ -114,6 +118,7 @@ private:
 
 export const generateSerialManagerCpp = () => `
 #include "SerialManager.h"
+#include "WeatherManager.h"
 #include <ArduinoJson.h>
 
 SerialManager::SerialManager(MareEngine* engine) : _engine(engine) {}
@@ -138,6 +143,13 @@ void SerialManager::processCommand(String json) {
         Serial.println("Erro: JSON Invalido");
         return;
     }
+    
+    // Update Harbor ID if provided
+    if (doc.containsKey("harborId") && _weather != nullptr) {
+        int pid = doc["harborId"];
+        _weather->setHarborId(pid);
+        Serial.print("Port Updated: "); Serial.println(pid);
+    }
 
     std::vector<TideKeyframe> newFrames;
     JsonArray frames;
@@ -151,23 +163,25 @@ void SerialManager::processCommand(String json) {
         }
     }
 
-    for (JsonObject k : frames) {
-        float t = k["timeOffset"];
-        uint8_t h = k["height"];
-        String c = k["color"]; 
-        uint8_t i = k["intensity"];
-        String e = k["effect"];
-        
-        uint8_t effectType = 0;
-        if(e == "WAVE") effectType = 1;
-        else if(e == "PULSE") effectType = 2;
-        else if(e == "GLOW") effectType = 3;
+    if (!frames.isNull()) {
+        for (JsonObject k : frames) {
+            float t = k["timeOffset"];
+            uint8_t h = k["height"];
+            String c = k["color"]; 
+            uint8_t i = k["intensity"];
+            String e = k["effect"];
+            
+            uint8_t effectType = 0;
+            if(e == "WAVE") effectType = 1;
+            else if(e == "PULSE") effectType = 2;
+            else if(e == "GLOW") effectType = 3;
 
-        uint32_t colorInt = strtoul(c.c_str() + 1, NULL, 16);
-        
-        newFrames.push_back({t, h, colorInt, i, effectType});
+            uint32_t colorInt = strtoul(c.c_str() + 1, NULL, 16);
+            
+            newFrames.push_back({t, h, colorInt, i, effectType});
+        }
+        _engine->setKeyframes(newFrames);
     }
-    _engine->setKeyframes(newFrames);
     Serial.println("OK: Config Atualizada");
 }
 `;
@@ -179,12 +193,17 @@ export const generateBleManagerH = () => `
 #include <NimBLEDevice.h>
 #include "MareEngine.h"
 
+class WeatherManager;
+
 class BleManager {
 public:
     BleManager(MareEngine* engine);
     void begin(String deviceName);
+    void setWeatherManager(WeatherManager* wm) { _weather = wm; }
+    WeatherManager* getWeatherManager() { return _weather; }
 private:
     MareEngine* _engine;
+    WeatherManager* _weather = nullptr;
 };
 #endif
 `;
@@ -192,12 +211,13 @@ private:
 export const generateBleManagerCpp = () => `
 #include "BleManager.h"
 #include "config.h"
+#include "WeatherManager.h"
 #include <ArduinoJson.h>
 
 class ConfigCallbacks: public NimBLECharacteristicCallbacks {
-    MareEngine* _engine;
+    BleManager* _manager;
 public:
-    ConfigCallbacks(MareEngine* e) : _engine(e) {}
+    ConfigCallbacks(BleManager* m) : _manager(m) {}
     
     void onWrite(NimBLECharacteristic* pCharacteristic) {
         std::string value = pCharacteristic->getValue();
@@ -205,8 +225,11 @@ public:
             String json = String(value.c_str());
             DynamicJsonDocument doc(8192);
             if (!deserializeJson(doc, json)) {
-                 if (doc.is<JsonArray>()) {
+                 if (doc.containsKey("harborId")) {
+                    WeatherManager* w = _manager->getWeatherManager();
+                    if (w) w->setHarborId(doc["harborId"]);
                  }
+                 // Frames logic omitted for brevity in this callback for now, usually handled same as Serial
             }
         }
     }
@@ -224,7 +247,7 @@ void BleManager::begin(String deviceName) {
                                             NIMBLE_PROPERTY::WRITE
                                         );
     
-    pConfigChar->setCallbacks(new ConfigCallbacks(_engine));
+    pConfigChar->setCallbacks(new ConfigCallbacks(this));
     pService->start();
     NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(SERVICE_UUID);
@@ -252,11 +275,14 @@ public:
     WeatherManager(MareEngine* engine);
     void update();
     WeatherData getData() { return _data; }
+    void setHarborId(int id);
+    int getHarborId();
 private:
     MareEngine* _engine;
     WeatherData _data;
     unsigned long _lastUpdate;
     bool _firstRun;
+    int _harborId;
     
     String urlEncode(String str);
     void fetchWeatherData();
@@ -270,26 +296,54 @@ export const generateWeatherManagerCpp = (config: FirmwareConfig, dataSrc: DataS
     const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
     const latLng = `[${dataSrc.tabuaMare.lat},${dataSrc.tabuaMare.lng}]`;
     const uf = dataSrc.tabuaMare.uf.toLowerCase();
-    const useId = !!dataSrc.tabuaMare.harborId;
-    const harborId = dataSrc.tabuaMare.harborId || 0;
+    
+    // Default build-time harbor ID if available, else 0
+    const buildTimeHarborId = dataSrc.tabuaMare.harborId || 0;
 
     return `
 #include "WeatherManager.h"
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
+#include <Preferences.h>
 #include "time.h"
 
 #define TABUA_MARE_BASE "${cleanBaseUrl}"
 #define TABUA_MARE_COORDS "${latLng}"
 #define TABUA_MARE_STATE "${uf}"
-#define TABUA_MARE_USE_ID ${useId ? 'true' : 'false'}
-#define TABUA_MARE_HARBOR_ID ${harborId}
 
 WeatherManager::WeatherManager(MareEngine* engine) : _engine(engine) {
     _data = {0.0f, 0, 0.0f, 0, false};
     _lastUpdate = 0;
     _firstRun = true;
+    
+    // Load Port ID from NVS
+    Preferences prefs;
+    prefs.begin("tide", true); // Read-only
+    _harborId = prefs.getInt("port", ${buildTimeHarborId});
+    prefs.end();
+    
+    Serial.print("WeatherManager Init. Active Harbor ID: ");
+    Serial.println(_harborId);
+}
+
+void WeatherManager::setHarborId(int id) {
+    if (id != _harborId) {
+        _harborId = id;
+        Preferences prefs;
+        prefs.begin("tide", false); // R/W
+        prefs.putInt("port", id);
+        prefs.end();
+        Serial.print("Saved New Harbor ID to NVS: "); Serial.println(id);
+        
+        // Force update on next cycle
+        _firstRun = true;
+        update();
+    }
+}
+
+int WeatherManager::getHarborId() {
+    return _harborId;
 }
 
 String WeatherManager::urlEncode(String str) {
@@ -371,9 +425,11 @@ void WeatherManager::fetchTabuaMareData() {
     
     String url;
     
-    if (TABUA_MARE_USE_ID) {
-        url = String(TABUA_MARE_BASE) + "/tabua-mare/" + String(TABUA_MARE_HARBOR_ID) + "/" + String(month) + "/[" + String(day) + "]";
+    // Dynamic Port Logic
+    if (_harborId > 0) {
+        url = String(TABUA_MARE_BASE) + "/tabua-mare/" + String(_harborId) + "/" + String(month) + "/[" + String(day) + "]";
     } else {
+        // Fallback to build-time Geo if no port set
         url = String(TABUA_MARE_BASE) + "/geo-tabua-mare/" + TABUA_MARE_COORDS + "/" + TABUA_MARE_STATE + "/" + String(month) + "/[" + String(day) + "]";
     }
 
@@ -455,13 +511,17 @@ export const generateRestServerH = () => `
 #include <ArduinoJson.h>
 #include "MareEngine.h"
 
+class WeatherManager;
+
 class RestServer {
 public:
     RestServer(MareEngine* engine);
     void begin();
     void handle();
+    void setWeatherManager(WeatherManager* wm) { _weather = wm; }
 private:
     MareEngine* _engine;
+    WeatherManager* _weather = nullptr;
     WebServer _server;
     void handleConfig();
     void handleStatus();
@@ -473,6 +533,7 @@ private:
 export const generateRestServerCpp = () => `
 #include "RestServer.h"
 #include "config.h"
+#include "WeatherManager.h"
 
 RestServer::RestServer(MareEngine* engine) : _engine(engine), _server(API_PORT) {}
 
@@ -513,6 +574,10 @@ void RestServer::handleConfig() {
         return;
     }
     
+    if (doc.containsKey("harborId") && _weather != nullptr) {
+        _weather->setHarborId(doc["harborId"]);
+    }
+    
     std::vector<TideKeyframe> newFrames;
     JsonArray frames;
 
@@ -544,7 +609,12 @@ void RestServer::handleConfig() {
          _engine->setKeyframes(newFrames);
          _server.send(200, "application/json", "{\\"status\\":\\"ok\\"}");
     } else {
-         _server.send(400, "application/json", "{\\"error\\":\\"Invalid format\\"}");
+         // It might be just a config update (port) without frames
+         if (doc.containsKey("harborId")) {
+             _server.send(200, "application/json", "{\\"status\\":\\"ok\\"}");
+         } else {
+             _server.send(400, "application/json", "{\\"error\\":\\"Invalid format\\"}");
+         }
     }
 }
 

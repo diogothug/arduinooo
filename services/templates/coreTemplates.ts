@@ -61,6 +61,7 @@ export const generateConfigH = (config: FirmwareConfig) => `
 #define WEATHER_API_KEY "${config.weatherApi?.apiKey || ''}"
 #define WEATHER_LOCATION "${config.weatherApi?.location || ''}"
 #define WEATHER_INTERVAL ${config.weatherApi?.intervalMinutes || 15}
+#define TABUA_MARE_HARBOR_ID_DEFAULT ${config.weatherApi?.enabled ? 0 : 8} // Placeholder logic
 
 #define API_PORT 80
 #define DEFAULT_CYCLE_DURATION ${config.cycleDuration}.0f
@@ -128,6 +129,15 @@ void setup() {
   display.setBrightness(${displayConfig.brightness});
   display.showSplashScreen();
   delay(2000);
+
+  // --- Dependency Injection for Weather/Port Config ---
+  #if WEATHER_API_ENABLED
+  serialManager.setWeatherManager(&weatherManager);
+  server.setWeatherManager(&weatherManager);
+  #ifdef ENABLE_BLE
+  bleManager.setWeatherManager(&weatherManager);
+  #endif
+  #endif
 
   wifiManager.connect();
   server.begin();

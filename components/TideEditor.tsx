@@ -114,12 +114,20 @@ export const TideEditor: React.FC = () => {
     setIsSyncing(true);
     try {
         updateFirmwareConfig({ cycleDuration: cycleLimit });
+        
+        // Prepare Payload with Firmware 2.0 structure
+        const payload = {
+            frames: useSevenDayMode ? activeData : keyframes,
+            cycleDuration: cycleLimit,
+            harborId: dataSourceConfig.tabuaMare.harborId || 0
+        };
+
         await hardwareBridge.sendData(
-          useSevenDayMode ? activeData : keyframes, 
+          payload, 
           connectionType, 
           activeDevice?.ip
         );
-        setNotification('success', `Sincronizado: ${useSevenDayMode ? '7 Dias' : '24h'} via ${connectionType}`);
+        setNotification('success', `Sincronizado: ${useSevenDayMode ? '7 Dias' : '24h'} + Porto ID ${payload.harborId}`);
     } catch (error: any) {
         console.error(error);
         setNotification('error', `Falha no Sync: ${error.message}`);
