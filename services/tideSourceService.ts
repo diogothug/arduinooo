@@ -10,18 +10,11 @@ const uid = () => Math.random().toString(36).substr(2, 9);
 // We use a public proxy to act as the "Backend" for these requests, solving the CORS issue.
 const CORS_PROXY = "https://api.allorigins.win/raw?url=";
 
-// Helper to sanitize base URLs but ALLOW double slashes if intentional (as per API docs)
+// Helper to sanitize base URLs
 const sanitizeBaseUrl = (url: string) => {
     if (!url) return '';
-    let cleaned = url.replace(/\/+$/, '');
-    
-    // CRITICAL FIX: The API requires a double slash before /api/v1 due to reverse proxy routing
-    // If we detect the domain but missing double slash, enforce it.
-    if (cleaned.includes('tabuamare.devtu.qzz.io') && !cleaned.includes('//api')) {
-         cleaned = cleaned.replace('/api', '//api');
-    }
-    
-    return cleaned;
+    // Simply remove trailing slashes. Do NOT enforce double slash '//api' as it breaks some proxies/backends.
+    return url.replace(/\/+$/, '');
 };
 
 // Safe logger helper
@@ -200,8 +193,8 @@ export const tideSourceService = {
     getHarborById: async (config: DataSourceConfig): Promise<{ id: number, name: string }> => {
         const { baseUrl, harborId } = config.tabuaMare;
         if (!harborId) throw new Error("ID do porto não definido");
-        // Default to the provided base URL with double slash if needed
-        const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io//api/v1');
+        
+        const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io/api/v1');
         
         // Correct endpoint: /harbor/{id} (Singular)
         const targetUrl = `${apiBase}/harbor/${harborId}`;
@@ -226,10 +219,11 @@ export const tideSourceService = {
 
     findNearestHarbor: async (config: DataSourceConfig): Promise<{ id: number, name: string, distance: number }> => {
          const { baseUrl, uf, lat, lng } = config.tabuaMare;
-         const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io//api/v1'); 
+         const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io/api/v1'); 
          
          // Fix: Encode parameters for AllOrigins proxy (Double Encode logic)
          // We must manually encode brackets here so they survive the second encodeURIComponent later
+         // [lat,lng] -> %5Blat%2Clng%5D
          const latLngParam = encodeURIComponent(`[${lat},${lng}]`);
          
          const targetUrl = `${apiBase}/nearested-harbor/${uf.toLowerCase()}/${latLngParam}`;
@@ -266,7 +260,7 @@ export const tideSourceService = {
 
 async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: number): Promise<Keyframe[]> {
     const { baseUrl, uf, lat, lng, harborId } = config.tabuaMare;
-    const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io//api/v1');
+    const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io/api/v1');
 
     const now = new Date();
     const month = now.getMonth() + 1; 
@@ -283,6 +277,7 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     // Fix: Double Encode Logic for AllOrigins
     // First, encode the array string: [1,2,3] -> %5B1%2C2%2C3%5D
     // This is required because this string becomes part of the target URL path.
+    // This results in the final URL sent to AllOrigins having %255B (double encoded bracket)
     const daysParam = encodeURIComponent(`[${daysArray.join(',')}]`);
     
     let targetUrl = "";
@@ -296,7 +291,6 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     
     // PROXY IMPLEMENTATION
     // Finally, encode the ENTIRE target URL to pass it as the 'url' query param to AllOrigins
-    // This results in the brackets being double-encoded (%5B -> %255B) in the final request
     const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
 
     safeLog(`[API] Req Proxy URL: ${proxyUrl}`);
@@ -308,7 +302,16 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     
     if (!res.ok) throw new Error(`Erro HTTP ${res.status} - ${res.statusText}`);
     
-    const json = await res.json();
+    const text = await res.text();
+    let json;
+    try {
+        json = JSON.parse(text);
+    } catch (e) {
+        // If parsing fails, it's likely HTML error page due to malformed URL
+        console.error("Failed to parse JSON:", text.substring(0, 100));
+        throw new Error("API retornou resposta inválida (Provável erro no formato da URL).");
+    }
+    
     safeLog(`[API] Resp JSON OK`);
 
     if (json.error && json.error.msg) throw new Error(`API Error: ${json.error.msg}`);
