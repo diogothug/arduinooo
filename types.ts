@@ -141,7 +141,8 @@ export enum DisplayTheme {
   // V2.5 Extra Animated Themes
   DIGITAL_RAIN = 'DIGITAL_RAIN',
   NEON_RIPPLES = 'NEON_RIPPLES',
-  RETRO_SUNSET = 'RETRO_SUNSET'
+  RETRO_SUNSET = 'RETRO_SUNSET',
+  CORAL_REEF = 'CORAL_REEF'
 }
 
 export enum RenderMode {

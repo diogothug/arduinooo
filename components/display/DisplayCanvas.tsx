@@ -122,6 +122,10 @@ export const DisplayCanvas: React.FC<DisplayCanvasProps> = ({ selectedWidgetId, 
                      bgGrad.addColorStop(0, '#2a0a2a');
                      bgGrad.addColorStop(1, '#1a051a');
                      break;
+                case DisplayTheme.CORAL_REEF:
+                     bgGrad.addColorStop(0, '#0077BE');
+                     bgGrad.addColorStop(1, '#004488');
+                     break;
                 default:
                     bgGrad.addColorStop(0, '#1a1a1a');
                     bgGrad.addColorStop(1, '#000000');
@@ -142,6 +146,29 @@ export const DisplayCanvas: React.FC<DisplayCanvasProps> = ({ selectedWidgetId, 
                     const size = (Math.sin(time * 2 + i) + 1.5) * 0.8;
                     ctx.beginPath(); ctx.arc(x,y, size, 0, Math.PI*2); ctx.fill();
                 }
+            }
+            else if (displayConfig.theme === DisplayTheme.CORAL_REEF) {
+                // Bubbles and Sand
+                ctx.fillStyle = 'rgba(255,255,255,0.2)';
+                for(let i=0; i<20; i++) {
+                    const x = 120 + Math.sin(time + i) * (i*5);
+                    const y = ((time * 50 + i * 40) % 260) - 20; // Upwards
+                    ctx.beginPath(); ctx.arc(x, 240-y, 2 + (i%3), 0, Math.PI*2); ctx.fill();
+                }
+                // Sand dune
+                ctx.fillStyle = '#F4D79B';
+                ctx.beginPath();
+                ctx.moveTo(0, 240);
+                for(let x=0; x<=240; x+=10) {
+                     ctx.lineTo(x, 210 + Math.sin(x*0.03)*10);
+                }
+                ctx.lineTo(240, 240);
+                ctx.fill();
+                // Coral
+                ctx.fillStyle = '#FF6B6B';
+                ctx.beginPath(); ctx.arc(180, 200, 15, 0, Math.PI, true); ctx.fill();
+                ctx.fillStyle = '#8B5A2B';
+                ctx.beginPath(); ctx.rect(40, 215, 30, 20); ctx.fill();
             }
             else if (displayConfig.theme === DisplayTheme.CYBER_GRID) {
                 // Retro Grid

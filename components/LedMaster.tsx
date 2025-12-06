@@ -317,32 +317,39 @@ export const LedMaster: React.FC = () => {
                 } else if (activePresetId === 'coralReef') {
                     // Coral Reef logic simulation (simplified for 2D visualizer)
                     // Visualizer coordinates are x,y px. Need to map to matrix row/col
-                    const mw = firmwareConfig.ledMatrixWidth || 10;
-                    // Approx logic:
+                    const mw = firmwareConfig.ledMatrixWidth || 16;
+                    // Logic from prompt: 0-16 height. 
+                    // Map visualizer pixel index to matrix coordinate
+                    // Approx logic for visualizer:
                     let row = Math.floor(i / mw);
                     let col = i % mw;
+                    
+                    // Handle Serpentine in simulation mapping
                     if (firmwareConfig.ledSerpentine && row%2!==0) col = (mw-1)-col;
+                    
                     const mh = Math.ceil(count/mw);
                     
-                    // Logic from C++: y=0 is top? In visualizer usually y=0 is top.
-                    // Map tide level to water height.
-                    const waterRows = Math.floor((tide/100) * mh);
-                    // Standard visualizer: y grows downwards.
-                    // If row 0 is top.
-                    // Water is bottom-up. So rows >= (mh - waterRows).
+                    // Logic: nivelMare 0..16.
+                    // Assuming user's 0 = Low Tide (Sand visible) -> 16 = High Tide (Water visible)
+                    // But their code: y < HEIGHT - nivelMare -> Water.
+                    // If nivelMare=0. y < 16. All Water. So 0 is Max Water.
+                    // In our app `tide` is 0..100.
+                    // Let's map 100% tide -> 0 (Max Water). 0% tide -> 16 (Max Sand).
+                    const nivelMare = Math.floor((1.0 - (tide/100)) * mh);
                     
-                    const isWater = row >= (mh - waterRows);
+                    const isWater = row < (mh - nivelMare); // User logic: y < HEIGHT - nivelMare
+                    
                     if (isWater) {
-                        if (row < 4) { r=90; g=200; b=250; } // Light Blue
-                        else { r=0; g=119; b=190; } // Medium Blue
+                         if (row < 4) { r=90; g=200; b=250; } // AZUL_CLARO
+                         else { r=0; g=119; b=190; } // AZUL_MEDIO
                     } else {
-                        r=244; g=215; b=155; // Sand
+                         r=244; g=215; b=155; // AREIA
                     }
                     
-                    // Coral bands (fixed rows 8-11)
+                    // Fixed objects (Coral/Rock) - rows 8-11
                     if (row >= 8 && row <= 11) {
-                         if(col % 4 === 2) { r=255; g=107; b=107; } // Coral
-                         if(col % 7 === 0) { r=139; g=90; b=43; } // Rock
+                         if (col % 4 === 2) { r=255; g=107; b=107; } // CORAL
+                         if (col % 7 === 0) { r=139; g=90; b=43; } // ROCHA
                     }
                     
                 } else if (activePresetId === 'neon') {

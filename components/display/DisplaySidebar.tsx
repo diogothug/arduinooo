@@ -222,6 +222,7 @@ export const DisplaySidebar: React.FC = () => {
                     <option value={DisplayTheme.DIGITAL_RAIN}>Matrix Rain (Animado)</option>
                     <option value={DisplayTheme.NEON_RIPPLES}>Neon Ripples (Animado)</option>
                     <option value={DisplayTheme.RETRO_SUNSET}>Retro Sunset (Animado)</option>
+                    <option value={DisplayTheme.CORAL_REEF}>Coral Reef (Animado)</option>
                 </select>
 
                 <p className="text-[10px] text-slate-500 uppercase font-bold mt-2">Presets Rápidos</p>

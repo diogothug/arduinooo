@@ -1,4 +1,5 @@
 
+
 import { DataSourceConfig, Keyframe, TideSourceType, MockWaveType, EffectType, WeatherData } from "../types";
 import { useAppStore } from '../store';
 
@@ -276,8 +277,9 @@ export const tideSourceService = {
          const { baseUrl, uf, lat, lng } = config.tabuaMare;
          const apiBase = buildApiBase(baseUrl);
          
-         // Fix: Use literal brackets as per API requirement, do NOT encode them
-         const latLngParam = `[${lat},${lng}]`;
+         // Fix: Use manual encoding for brackets to avoid proxy/encoding issues
+         // Wanted: [lat,lng] -> %5Blat,lng%5D
+         const latLngParam = `%5B${lat},${lng}%5D`;
          
          const targetUrl = `${apiBase}/nearested-harbor/${uf.toLowerCase()}/${latLngParam}`;
          safeLog(`[API] Target URL: ${targetUrl}`);
@@ -358,15 +360,16 @@ async function fetchTabuaMareDataDuration(config: DataSourceConfig, totalDays: n
 
     // 2. Fetch function for a single batch
     const fetchBatch = async (year: number, month: number, days: number[]) => {
-         // IMPORTANT: Use literal brackets, API expects [1,2,3] in path
-         const daysParam = `[${days.join(',')}]`;
+         // IMPORTANT: Use manual encoding for brackets: %5B ... %5D
+         // This survives the CORS proxy encoding better than literal [ ]
+         const daysParam = `%5B${days.join(',')}%5D`;
          
          let targetUrl = "";
 
          if (harborId) {
             targetUrl = `${apiBase}/tabua-mare/${harborId}/${month}/${daysParam}`;
         } else {
-            const latLngParam = `[${lat},${lng}]`;
+            const latLngParam = `%5B${lat},${lng}%5D`;
             targetUrl = `${apiBase}/geo-tabua-mare/${latLngParam}/${uf.toLowerCase()}/${month}/${daysParam}`;
         }
 
