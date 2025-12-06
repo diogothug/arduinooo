@@ -344,27 +344,31 @@ export const LedMaster: React.FC = () => {
     const handleCheckApi = async (type: 'WEATHER' | 'TABUA_MARE') => {
         setDebugLoading(true); setDebugResult(null);
         let url = '';
+        let snippet = '';
+
         if (type === 'WEATHER') {
             const k = firmwareConfig.weatherApi?.apiKey || 'KEY';
             const q = encodeURIComponent(firmwareConfig.weatherApi?.location || 'Moreré');
             url = `https://api.weatherapi.com/v1/current.json?key=${k}&q=${q}&lang=pt`;
-            setCppSnippet(`// C++ Snippet\nString url = "https://api.weatherapi.com/v1/current.json?key=${k}&q=${q}&lang=pt";\n\nWiFiClientSecure client;\nclient.setInsecure(); // Bypass SSL\nHTTPClient http;\nhttp.begin(client, url);\nint code = http.GET();\nif(code>0) payload = http.getString();`);
+            
+            snippet = `// C++ Snippet for WeatherAPI\nString url = "${url}";\n\nWiFiClientSecure client;\nclient.setInsecure(); // Bypass SSL verification\nHTTPClient http;\nhttp.begin(client, url);\nhttp.setTimeout(10000);\n\nint code = http.GET();\nif(code > 0) {\n    String payload = http.getString();\n    Serial.println(payload);\n}`;
         } else {
             const base = dataSourceConfig.tabuaMare.baseUrl;
             const pid = dataSourceConfig.tabuaMare.harborId || 8;
             const day = new Date().getDate();
             const month = new Date().getMonth() + 1;
             
-            // IMPORTANT: Simulate the encoding needed by ESP32 HTTPClient
-            url = `${base}/tabua-mare/${pid}/${month}/%5B${day}%5D`;
-            setCppSnippet(`// C++ Snippet for Tábua Maré\n// IMPORTANT: Encoded brackets %5B and %5D required for ESP32 HTTPClient\nString url = "${url}";\n\nWiFiClientSecure client;\nclient.setInsecure(); // Bypass SSL\nHTTPClient http;\nhttp.begin(client, url);\nint code = http.GET();\nif(code > 0) String payload = http.getString();`);
+            // Generate clean URL without brackets (HTTP)
+            url = `${base.replace('https','http')}/tabua-mare/${pid}/${month}/${day}`;
+            
+            snippet = `// C++ Snippet for Tábua Maré (Robust)\n// Use WiFiClient (HTTP) for speed and no brackets in URL\nString url = "${url}";\n\nWiFiClient client;\nHTTPClient http;\n\nhttp.begin(client, url);\nhttp.setConnectTimeout(10000);\nhttp.setTimeout(10000);\n\nSerial.print("[HTTP] GET "); Serial.println(url);\nint code = http.GET();\n\nif(code > 0) {\n    String payload = http.getString();\n    if(code == 200) {\n        // Parse JSON\n        Serial.println(payload);\n    } else {\n        Serial.printf("Error %d: %s\\n", code, payload.c_str());\n    }\n} else {\n    Serial.printf("Failed: %s\\n", http.errorToString(code).c_str());\n}\nhttp.end();`;
         }
         
         setDebugUrl(url);
+        setCppSnippet(snippet);
         
         try {
-            // For browser test via proxy, we might need valid encoding or not depending on proxy behavior
-            // We use the proxy to bypass CORS
+            // Browser uses proxy to bypass CORS
             const proxy = "https://api.allorigins.win/raw?url=" + encodeURIComponent(url);
             const t0 = performance.now();
             const res = await fetch(proxy);

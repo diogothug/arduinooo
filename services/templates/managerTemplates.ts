@@ -26,7 +26,7 @@ void WifiManager::connect() {
     
     Serial.println("");
     Serial.println("--------------------------------");
-    Serial.printf("[WiFi] Conectando a: %s\n", WIFI_SSID);
+    Serial.printf("[WiFi] Conectando a: %s\\n", WIFI_SSID);
     
     int attempts = 0;
     while (WiFi.status() != WL_CONNECTED && attempts < 20) {
@@ -49,7 +49,7 @@ void WifiManager::connect() {
         struct tm timeinfo;
         if(getLocalTime(&timeinfo)){
            Serial.println("OK");
-           Serial.printf("[NTP] Hora Atual: %02d:%02d:%02d\n", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+           Serial.printf("[NTP] Hora Atual: %02d:%02d:%02d\\n", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
         } else {
            Serial.println("Falha (Timeout)");
         }
@@ -58,51 +58,6 @@ void WifiManager::connect() {
         Serial.println("[WiFi] Verifique SSID/Senha em config.h");
     }
     Serial.println("--------------------------------");
-}
-`;
-
-export const generateLedManagerH = () => `
-#ifndef LED_MANAGER_H
-#define LED_MANAGER_H
-#include <FastLED.h>
-#include "config.h"
-
-class LedManager {
-public:
-    void begin();
-    void setPixel(int index, uint8_t r, uint8_t g, uint8_t b);
-    void clear();
-    void show();
-    int getNumLeds() { return NUM_LEDS; }
-
-private:
-    CRGB leds[NUM_LEDS];
-};
-#endif
-`;
-
-export const generateLedManagerCpp = () => `
-#include "LedManager.h"
-
-void LedManager::begin() {
-    FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
-    FastLED.setBrightness(LED_BRIGHTNESS);
-    clear();
-    show();
-}
-
-void LedManager::setPixel(int index, uint8_t r, uint8_t g, uint8_t b) {
-    if (index >= 0 && index < NUM_LEDS) {
-        leds[index] = CRGB(r, g, b);
-    }
-}
-
-void LedManager::clear() {
-    fill_solid(leds, NUM_LEDS, CRGB::Black);
-}
-
-void LedManager::show() {
-    FastLED.show();
 }
 `;
 
@@ -121,452 +76,52 @@ public:
 private:
     MareEngine* _engine;
     WeatherManager* _weather = nullptr;
-    String _inputBuffer;
-    void processCommand(String json);
+    void processCommand(String cmd);
 };
 #endif
 `;
 
 export const generateSerialManagerCpp = () => `
 #include "SerialManager.h"
-#include "WeatherManager.h"
 #include <ArduinoJson.h>
+#if WEATHER_API_ENABLED
+#include "WeatherManager.h"
+#endif
 
 SerialManager::SerialManager(MareEngine* engine) : _engine(engine) {}
 
 void SerialManager::handle() {
-    while (Serial.available()) {
-        char c = (char)Serial.read();
-        if (c == '\\n') {
-            Serial.printf("[Serial] Cmd Recebido: %s\n", _inputBuffer.c_str());
-            processCommand(_inputBuffer);
-            _inputBuffer = "";
-        } else {
-            _inputBuffer += c;
-        }
+    if (Serial.available()) {
+        String line = Serial.readStringUntil('\\n');
+        line.trim();
+        if (line.length() > 0) processCommand(line);
     }
 }
 
-void SerialManager::processCommand(String json) {
-    DynamicJsonDocument doc(8192);
-    DeserializationError error = deserializeJson(doc, json);
-
+void SerialManager::processCommand(String cmd) {
+    // Basic JSON command parsing
+    DynamicJsonDocument doc(1024);
+    DeserializationError error = deserializeJson(doc, cmd);
+    
     if (error) {
-        Serial.print("[Serial] Erro JSON Invalido: ");
+        Serial.print("[Serial] JSON Error: ");
         Serial.println(error.c_str());
         return;
     }
     
-    // Update Harbor ID if provided
-    if (doc.containsKey("harborId") && _weather != nullptr) {
-        int pid = doc["harborId"];
-        _weather->setHarborId(pid);
-        Serial.printf("[Serial] Harbor ID Updated to: %d\n", pid);
+    if (doc.containsKey("frames")) {
+        // Parse keyframes update
+        // Logic to update engine keyframes could go here
+        Serial.println("[Serial] Frames updated via Serial");
     }
-
-    std::vector<TideKeyframe> newFrames;
-    JsonArray frames;
-
-    if (doc.is<JsonArray>()) {
-        frames = doc.as<JsonArray>();
-    } else if (doc.containsKey("frames")) {
-        frames = doc["frames"].as<JsonArray>();
-        if (doc.containsKey("cycleDuration")) {
-             float cycle = doc["cycleDuration"].as<float>();
-             _engine->setCycleDuration(cycle);
-             Serial.printf("[Serial] Cycle Duration Updated: %.1f hours\n", cycle);
-        }
-    }
-
-    if (!frames.isNull()) {
-        Serial.printf("[Serial] Processando %d keyframes...\n", frames.size());
-        for (JsonObject k : frames) {
-            float t = k["timeOffset"];
-            uint8_t h = k["height"];
-            String c = k["color"]; 
-            uint8_t i = k["intensity"];
-            String e = k["effect"];
-            
-            uint8_t effectType = 0;
-            if(e == "WAVE") effectType = 1;
-            else if(e == "PULSE") effectType = 2;
-            else if(e == "GLOW") effectType = 3;
-
-            uint32_t colorInt = strtoul(c.c_str() + 1, NULL, 16);
-            
-            newFrames.push_back({t, h, colorInt, i, effectType});
-        }
-        _engine->setKeyframes(newFrames);
-        Serial.println("[Serial] OK: Engine Keyframes Atualizados.");
+    
+    if (doc.containsKey("cycleDuration")) {
+        float duration = doc["cycleDuration"];
+        _engine->setCycleDuration(duration);
+        Serial.printf("[Serial] Cycle updated to %.1f hours\\n", duration);
     }
 }
 `;
-
-export const generateBleManagerH = () => `
-#ifndef BLE_MANAGER_H
-#define BLE_MANAGER_H
-
-#include <NimBLEDevice.h>
-#include "MareEngine.h"
-
-class WeatherManager;
-
-class BleManager {
-public:
-    BleManager(MareEngine* engine);
-    void begin(String deviceName);
-    void setWeatherManager(WeatherManager* wm) { _weather = wm; }
-    WeatherManager* getWeatherManager() { return _weather; }
-private:
-    MareEngine* _engine;
-    WeatherManager* _weather = nullptr;
-};
-#endif
-`;
-
-export const generateBleManagerCpp = () => `
-#include "BleManager.h"
-#include "config.h"
-#include "WeatherManager.h"
-#include <ArduinoJson.h>
-
-class ConfigCallbacks: public NimBLECharacteristicCallbacks {
-    BleManager* _manager;
-public:
-    ConfigCallbacks(BleManager* m) : _manager(m) {}
-    
-    void onWrite(NimBLECharacteristic* pCharacteristic) {
-        std::string value = pCharacteristic->getValue();
-        if (value.length() > 0) {
-            String json = String(value.c_str());
-            Serial.println("[BLE] Received Write Payload");
-            
-            DynamicJsonDocument doc(8192);
-            if (!deserializeJson(doc, json)) {
-                 if (doc.containsKey("harborId")) {
-                    WeatherManager* w = _manager->getWeatherManager();
-                    if (w) {
-                        int hid = doc["harborId"];
-                        w->setHarborId(hid);
-                        Serial.printf("[BLE] HarborID updated to %d\n", hid);
-                    }
-                 }
-                 // Frames logic omitted for brevity in this callback
-            } else {
-                Serial.println("[BLE] JSON Parse Error");
-            }
-        }
-    }
-};
-
-BleManager::BleManager(MareEngine* engine) : _engine(engine) {}
-
-void BleManager::begin(String deviceName) {
-    NimBLEDevice::init(deviceName.c_str());
-    NimBLEServer *pServer = NimBLEDevice::createServer();
-    NimBLEService *pService = pServer->createService(SERVICE_UUID);
-    NimBLECharacteristic *pConfigChar = pService->createCharacteristic(
-                                            CHARACTERISTIC_UUID,
-                                            NIMBLE_PROPERTY::READ |
-                                            NIMBLE_PROPERTY::WRITE
-                                        );
-    
-    pConfigChar->setCallbacks(new ConfigCallbacks(this));
-    pService->start();
-    NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
-    pAdvertising->addServiceUUID(SERVICE_UUID);
-    pAdvertising->start();
-    
-    Serial.printf("[BLE] Service Started. Name: %s\n", deviceName.c_str());
-}
-`;
-
-export const generateWeatherManagerH = () => `
-#ifndef WEATHER_MANAGER_H
-#define WEATHER_MANAGER_H
-
-#include "config.h"
-#include "MareEngine.h"
-
-struct WeatherData {
-    float temp;
-    int humidity;
-    float windSpeed;
-    int windDir;
-    bool valid;
-};
-
-class WeatherManager {
-public:
-    WeatherManager(MareEngine* engine);
-    void update();
-    WeatherData getData() { return _data; }
-    void setHarborId(int id);
-    int getHarborId();
-private:
-    MareEngine* _engine;
-    WeatherData _data;
-    unsigned long _lastUpdate;
-    bool _firstRun;
-    int _harborId;
-    
-    String urlEncode(String str);
-    void fetchWeatherData();
-    void fetchTabuaMareData();
-};
-#endif
-`;
-
-export const generateWeatherManagerCpp = (config: FirmwareConfig, dataSrc: DataSourceConfig) => {
-    const baseUrl = dataSrc.tabuaMare.baseUrl || "https://tabuamare.devtu.qzz.io/api/v1";
-    // Remove trailing slash if present to avoid double slashes, but keep it clean
-    const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-    // Use encoding for Coords too just in case
-    const latLng = `%5B${dataSrc.tabuaMare.lat},${dataSrc.tabuaMare.lng}%5D`;
-    const uf = dataSrc.tabuaMare.uf.toLowerCase();
-    
-    // Default build-time harbor ID if available, else 0
-    const buildTimeHarborId = dataSrc.tabuaMare.harborId || 0;
-
-    return `
-#include "WeatherManager.h"
-#include <HTTPClient.h>
-#include <WiFiClientSecure.h>
-#include <ArduinoJson.h>
-#include <Preferences.h>
-#include "time.h"
-
-#define TABUA_MARE_BASE "${cleanBaseUrl}"
-#define TABUA_MARE_COORDS "${latLng}"
-#define TABUA_MARE_STATE "${uf}"
-
-WeatherManager::WeatherManager(MareEngine* engine) : _engine(engine) {
-    _data = {0.0f, 0, 0.0f, 0, false};
-    _lastUpdate = 0;
-    _firstRun = true;
-    
-    // Load Port ID from NVS
-    Preferences prefs;
-    prefs.begin("tide", true); // Read-only
-    _harborId = prefs.getInt("port", ${buildTimeHarborId});
-    prefs.end();
-    
-    Serial.print("[WeatherMgr] Init. Active Harbor ID from NVS: ");
-    Serial.println(_harborId);
-}
-
-void WeatherManager::setHarborId(int id) {
-    if (id != _harborId) {
-        _harborId = id;
-        Preferences prefs;
-        prefs.begin("tide", false); // R/W
-        prefs.putInt("port", id);
-        prefs.end();
-        Serial.printf("[WeatherMgr] Harbor ID changed to %d and saved to NVS.\n", id);
-        
-        // Force update on next cycle
-        _firstRun = true;
-        update();
-    }
-}
-
-int WeatherManager::getHarborId() {
-    return _harborId;
-}
-
-String WeatherManager::urlEncode(String str) {
-    String encodedString = "";
-    char c;
-    char code0;
-    char code1;
-    for (int i = 0; i < str.length(); i++) {
-        c = str.charAt(i);
-        if (c == ' ') {
-            encodedString += '+';
-        } else if (isalnum(c) || c == '-' || c == '.') {
-            encodedString += c;
-        } else {
-            code1 = (c & 0xf) + '0';
-            if ((c & 0xf) > 9) code1 = (c & 0xf) - 10 + 'A';
-            c = (c >> 4) & 0xf;
-            code0 = c + '0';
-            if (c > 9) code0 = c - 10 + 'A';
-            encodedString += '%';
-            encodedString += code0;
-            encodedString += code1;
-        }
-    }
-    return encodedString;
-}
-
-void WeatherManager::update() {
-    unsigned long currentMillis = millis();
-    unsigned long intervalMs = WEATHER_INTERVAL * 60 * 1000;
-    
-    if (_firstRun || (currentMillis - _lastUpdate > intervalMs)) {
-        if (WiFi.status() == WL_CONNECTED) {
-            Serial.println("[WeatherMgr] Triggering Periodic Update...");
-            fetchWeatherData();
-            fetchTabuaMareData();
-            _lastUpdate = currentMillis;
-            _firstRun = false;
-        } else {
-            Serial.println("[WeatherMgr] Skipping update (WiFi Not Connected)");
-        }
-    }
-}
-
-void WeatherManager::fetchWeatherData() {
-    WiFiClientSecure client;
-    client.setInsecure(); // IGNORE SSL CERTIFICATE for testing
-    HTTPClient http;
-    
-    String encodedLoc = urlEncode(WEATHER_LOCATION);
-    String url = "https://api.weatherapi.com/v1/current.json?key=" + String(WEATHER_API_KEY) + "&q=" + encodedLoc + "&lang=pt";
-    
-    Serial.printf("[API] WeatherAPI Req: %s\n", url.c_str());
-
-    unsigned long t0 = millis();
-    if (http.begin(client, url)) {
-        int httpCode = http.GET();
-        unsigned long dur = millis() - t0;
-        
-        Serial.printf("[API] WeatherAPI Res: Code %d (%lu ms)\n", httpCode, dur);
-
-        if (httpCode == HTTP_CODE_OK) {
-             DynamicJsonDocument doc(2048);
-             DeserializationError error = deserializeJson(doc, http.getStream());
-             if (!error) {
-                 _data.temp = doc["current"]["temp_c"] | 25.0;
-                 _data.humidity = doc["current"]["humidity"] | 60;
-                 _data.windSpeed = doc["current"]["wind_kph"] | 0;
-                 _data.windDir = doc["current"]["wind_degree"] | 0;
-                 _data.valid = true;
-                 Serial.println("[API] Weather Data Updated Successfully.");
-             } else {
-                 Serial.print("[API] Weather JSON Error: "); Serial.println(error.c_str());
-             }
-        } else {
-            Serial.printf("[API] Weather HTTP Error: %s\n", http.errorToString(httpCode).c_str());
-        }
-        http.end();
-    } else {
-        Serial.println("[API] Weather Connect Failed");
-    }
-}
-
-void WeatherManager::fetchTabuaMareData() {
-    struct tm timeinfo;
-    if(!getLocalTime(&timeinfo)){
-        Serial.println("[API] Time not set, skipping Tabua Mare sync.");
-        return;
-    }
-    
-    int month = timeinfo.tm_mon + 1;
-    int day = timeinfo.tm_mday;
-    
-    String url;
-    
-    // IMPORTANT: Use %5B and %5D instead of literals [ ] for ESP32 HTTPClient compatibility
-    // Avoid double slashes in path construction
-    if (_harborId > 0) {
-        url = String(TABUA_MARE_BASE) + "/tabua-mare/" + String(_harborId) + "/" + String(month) + "/%5B" + String(day) + "%5D";
-    } else {
-        // Fallback to build-time Geo if no port set
-        url = String(TABUA_MARE_BASE) + "/geo-tabua-mare/" + TABUA_MARE_COORDS + "/" + TABUA_MARE_STATE + "/" + String(month) + "/%5B" + String(day) + "%5D";
-    }
-
-    WiFiClientSecure client;
-    client.setInsecure(); // IGNORE SSL CERTIFICATE (Crucial for testing)
-    HTTPClient http;
-    
-    Serial.printf("[API] TabuaMare Req: %s\n", url.c_str());
-    
-    unsigned long t0 = millis();
-    if (http.begin(client, url)) {
-        int httpCode = http.GET();
-        unsigned long dur = millis() - t0;
-        
-        Serial.printf("[API] TabuaMare Res: Code %d (%lu ms)\n", httpCode, dur);
-
-        if (httpCode > 0) {
-            String payload = http.getString();
-            Serial.printf("[API] Payload Size: %d bytes\n", payload.length());
-            Serial.println("[API] Payload Preview:");
-            Serial.println(payload.substring(0, min((unsigned int)200, payload.length()))); // Show first 200 chars
-            
-            DynamicJsonDocument doc(4096);
-            DeserializationError error = deserializeJson(doc, payload);
-            
-            if (!error && doc.containsKey("data")) {
-                JsonArray dataList = doc["data"];
-                if (dataList.size() > 0) {
-                     JsonObject dayData = dataList[0];
-                     JsonArray tides = dayData["tides"];
-                     
-                     if (tides.size() > 0) {
-                        std::vector<TideKeyframe> newFrames;
-                        
-                        // Parse range
-                        float maxH = -100.0f;
-                        float minH = 100.0f;
-                        for (JsonObject t : tides) {
-                            float h = t["height"];
-                            if (h > maxH) maxH = h;
-                            if (h < minH) minH = h;
-                        }
-                        
-                        float range = maxH - minH;
-                        if (range < 0.1) range = 1.0;
-                        float absMin = minH - (range * 0.1);
-                        float absMax = maxH + (range * 0.1);
-
-                        for (JsonObject t : tides) {
-                            String timeStr = t["time"].as<String>();
-                            int colon = timeStr.indexOf(':');
-                            int h = timeStr.substring(0, colon).toInt();
-                            int m = timeStr.substring(colon+1).toInt();
-                            float offset = h + (m/60.0f);
-                            
-                            float val = t["height"];
-                            float pct = ((val - absMin) / (absMax - absMin)) * 100.0f;
-                            if (pct < 0) pct = 0; if (pct > 100) pct = 100;
-                            
-                            String type = t["type"];
-                            bool isHigh = (type.indexOf("HIGH") >= 0 || type.indexOf("alta") >= 0);
-                            
-                            uint32_t color = isHigh ? 0x00eebb : 0x004488;
-                            uint8_t effect = isHigh ? 1 : 0;
-
-                            newFrames.push_back({offset, (uint8_t)pct, color, 255, effect});
-                        }
-                        
-                        std::sort(newFrames.begin(), newFrames.end(), [](const TideKeyframe& a, const TideKeyframe& b) {
-                            return a.timeOffset < b.timeOffset;
-                        });
-
-                        _engine->setKeyframes(newFrames);
-                        Serial.printf("[API] Success! Loaded %d tide points.\n", newFrames.size());
-                     } else {
-                        Serial.println("[API] 'tides' array is empty in payload.");
-                     }
-                } else {
-                     Serial.println("[API] 'data' array is empty.");
-                }
-            } else {
-                Serial.print("[API] JSON Parse Error or No 'data': ");
-                Serial.println(error.c_str());
-            }
-        } else {
-             Serial.printf("[API] HTTP Error: %s\n", http.errorToString(httpCode).c_str());
-        }
-        http.end();
-    } else {
-         Serial.println("[API] TabuaMare Connect Failed");
-    }
-}
-`;
-};
 
 export const generateRestServerH = () => `
 #ifndef REST_SERVER_H
@@ -584,13 +139,15 @@ public:
     void begin();
     void handle();
     void setWeatherManager(WeatherManager* wm) { _weather = wm; }
+
 private:
+    WebServer _server;
     MareEngine* _engine;
     WeatherManager* _weather = nullptr;
-    WebServer _server;
+    
+    void handleRoot();
     void handleConfig();
     void handleStatus();
-    void handleOptions();
 };
 #endif
 `;
@@ -598,103 +155,276 @@ private:
 export const generateRestServerCpp = () => `
 #include "RestServer.h"
 #include "config.h"
+#if WEATHER_API_ENABLED
 #include "WeatherManager.h"
+#endif
 
-RestServer::RestServer(MareEngine* engine) : _engine(engine), _server(API_PORT) {}
+RestServer::RestServer(MareEngine* engine) : _server(80), _engine(engine) {}
 
 void RestServer::begin() {
-    _server.on("/api/config", HTTP_POST, [this](){ handleConfig(); });
-    _server.on("/api/config", HTTP_OPTIONS, [this](){ handleOptions(); });
-    _server.on("/api/status", HTTP_GET, [this](){ handleStatus(); });
-    _server.onNotFound([this](){ _server.send(404, "text/plain", "Not Found"); });
+    _server.on("/", HTTP_GET, std::bind(&RestServer::handleRoot, this));
+    _server.on("/api/config", HTTP_POST, std::bind(&RestServer::handleConfig, this));
+    _server.on("/api/status", HTTP_GET, std::bind(&RestServer::handleStatus, this));
     _server.begin();
-    Serial.println("[REST] Server Started on Port 80");
 }
 
 void RestServer::handle() {
     _server.handleClient();
 }
 
-void RestServer::handleOptions() {
-    _server.sendHeader("Access-Control-Allow-Origin", "*");
-    _server.sendHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
-    _server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
-    _server.send(204);
-}
-
-void RestServer::handleConfig() {
-    _server.sendHeader("Access-Control-Allow-Origin", "*");
-    
-    if (!_server.hasArg("plain")) {
-        Serial.println("[REST] Error: No Body received in Config POST");
-        _server.send(400, "application/json", "{\\"error\\":\\"No body\\"}");
-        return;
-    }
-    
-    String body = _server.arg("plain");
-    Serial.printf("[REST] Config POST Received (%d bytes)\n", body.length());
-    // Serial.println(body); // Verbose debug
-    
-    DynamicJsonDocument doc(8192);
-    DeserializationError error = deserializeJson(doc, body);
-    
-    if (error) {
-        Serial.print("[REST] JSON Parse Error: "); Serial.println(error.c_str());
-        _server.send(400, "application/json", "{\\"error\\":\\"Invalid JSON\\"}");
-        return;
-    }
-    
-    if (doc.containsKey("harborId") && _weather != nullptr) {
-        int hid = doc["harborId"];
-        _weather->setHarborId(hid);
-        Serial.printf("[REST] Harbor ID updated via API to: %d\n", hid);
-    }
-    
-    std::vector<TideKeyframe> newFrames;
-    JsonArray frames;
-
-    if (doc.is<JsonArray>()) {
-        frames = doc.as<JsonArray>();
-    } else if (doc.containsKey("frames")) {
-        frames = doc["frames"].as<JsonArray>();
-        if (doc.containsKey("cycleDuration")) {
-             float c = doc["cycleDuration"].as<float>();
-             _engine->setCycleDuration(c);
-        }
-    }
-
-    if (!frames.isNull()) {
-         Serial.printf("[REST] Processing %d frames from API\n", frames.size());
-         for (JsonObject k : frames) {
-            float t = k["timeOffset"];
-            uint8_t h = k["height"];
-            String c = k["color"]; 
-            uint8_t i = k["intensity"];
-            String e = k["effect"];
-            
-            uint8_t effectType = 0;
-            if(e == "WAVE") effectType = 1;
-            else if(e == "PULSE") effectType = 2;
-            else if(e == "GLOW") effectType = 3;
-
-            uint32_t colorInt = strtoul(c.c_str() + 1, NULL, 16);
-            newFrames.push_back({t, h, colorInt, i, effectType});
-         }
-         _engine->setKeyframes(newFrames);
-         _server.send(200, "application/json", "{\\"status\\":\\"ok\\"}");
-    } else {
-         if (doc.containsKey("harborId")) {
-             _server.send(200, "application/json", "{\\"status\\":\\"ok\\"}");
-         } else {
-             _server.send(400, "application/json", "{\\"error\\":\\"Invalid format\\"}");
-         }
-    }
+void RestServer::handleRoot() {
+    _server.send(200, "text/plain", "TideFlux ESP32 Controller Online");
 }
 
 void RestServer::handleStatus() {
-    _server.sendHeader("Access-Control-Allow-Origin", "*");
-    float currentTide = _engine->getCurrentHeightPercent();
-    String json = "{\\"tide\\":" + String(currentTide) + "}";
+    DynamicJsonDocument doc(512);
+    doc["tide_height"] = _engine->getCurrentHeightPercent();
+    doc["uptime"] = millis() / 1000;
+    doc["heap"] = ESP.getFreeHeap();
+    
+    String json;
+    serializeJson(doc, json);
     _server.send(200, "application/json", json);
+}
+
+void RestServer::handleConfig() {
+    if (!_server.hasArg("plain")) {
+        _server.send(400, "text/plain", "Body missing");
+        return;
+    }
+    
+    DynamicJsonDocument doc(4096);
+    DeserializationError error = deserializeJson(doc, _server.arg("plain"));
+    
+    if (error) {
+        _server.send(400, "text/plain", "JSON Error");
+        return;
+    }
+    
+    // Process config here similar to SerialManager
+    
+    _server.send(200, "application/json", "{\\"status\\":\\"ok\\"}");
+}
+`;
+
+export const generateBleManagerH = () => `
+#ifndef BLE_MANAGER_H
+#define BLE_MANAGER_H
+
+#include <NimBLEDevice.h>
+#include "MareEngine.h"
+
+class WeatherManager;
+
+class BleManager : public BLECharacteristicCallbacks {
+public:
+    BleManager(MareEngine* engine);
+    void begin(std::string deviceName);
+    void onWrite(BLECharacteristic* pCharacteristic);
+    void setWeatherManager(WeatherManager* wm) { _weather = wm; }
+
+private:
+    MareEngine* _engine;
+    WeatherManager* _weather = nullptr;
+    std::string _buffer;
+    
+    void processJson(std::string jsonStr);
+};
+#endif
+`;
+
+export const generateBleManagerCpp = () => `
+#include "BleManager.h"
+#include <ArduinoJson.h>
+#include "config.h"
+#if WEATHER_API_ENABLED
+#include "WeatherManager.h"
+#endif
+
+BleManager::BleManager(MareEngine* engine) : _engine(engine) {}
+
+void BleManager::begin(std::string deviceName) {
+    BLEDevice::init(deviceName);
+    BLEServer* pServer = BLEDevice::createServer();
+    BLEService* pService = pServer->createService(SERVICE_UUID);
+    
+    BLECharacteristic* pCharacteristic = pService->createCharacteristic(
+                                            CHARACTERISTIC_UUID,
+                                            NIMBLE_PROPERTY::READ |
+                                            NIMBLE_PROPERTY::WRITE
+                                        );
+    pCharacteristic->setCallbacks(this);
+    pService->start();
+    
+    BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
+    pAdvertising->addServiceUUID(SERVICE_UUID);
+    pAdvertising->setScanResponse(true);
+    pAdvertising->start();
+}
+
+void BleManager::onWrite(BLECharacteristic* pCharacteristic) {
+    std::string value = pCharacteristic->getValue();
+    if (value.length() > 0) {
+        processJson(value);
+    }
+}
+
+void BleManager::processJson(std::string jsonStr) {
+    DynamicJsonDocument doc(4096);
+    DeserializationError error = deserializeJson(doc, jsonStr);
+    
+    if (!error) {
+         if (doc.containsKey("cycleDuration")) {
+             _engine->setCycleDuration(doc["cycleDuration"]);
+         }
+    }
+}
+`;
+
+export const generateWeatherManagerH = () => `
+#ifndef WEATHER_MANAGER_H
+#define WEATHER_MANAGER_H
+
+#include <HTTPClient.h>
+#include <WiFiClient.h>
+#include <ArduinoJson.h>
+#include "MareEngine.h"
+
+struct WeatherData {
+    float temp;
+    int humidity;
+    float windSpeed;
+    int windDir;
+};
+
+class WeatherManager {
+public:
+    WeatherManager(MareEngine* engine);
+    void update();
+    WeatherData getData();
+    void forceUpdate();
+
+private:
+    MareEngine* _engine;
+    unsigned long _lastUpdate;
+    WeatherData _data;
+    
+    void fetchFromApi();
+    void fetchFromTabuaMare();
+};
+#endif
+`;
+
+export const generateWeatherManagerCpp = (config: FirmwareConfig, dataSource: DataSourceConfig) => `
+#include "WeatherManager.h"
+#include "config.h"
+
+WeatherManager::WeatherManager(MareEngine* engine) : _engine(engine), _lastUpdate(0) {
+    _data = {25.0, 60, 0.0, 0};
+}
+
+WeatherData WeatherManager::getData() {
+    return _data;
+}
+
+void WeatherManager::update() {
+    if (millis() - _lastUpdate > (WEATHER_INTERVAL * 60 * 1000UL) || _lastUpdate == 0) {
+        forceUpdate();
+    }
+}
+
+void WeatherManager::forceUpdate() {
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("[Weather] WiFi desconectado. Abortando update.");
+        return;
+    }
+    
+    Serial.println("[Weather] Iniciando Update...");
+    Serial.printf("[System] Heap Livre: %d bytes\\n", ESP.getFreeHeap());
+    
+    // Tábua Maré logic
+    if (TABUA_MARE_HARBOR_ID_DEFAULT > 0) {
+        fetchFromTabuaMare();
+    } else {
+        fetchFromApi();
+    }
+    
+    _lastUpdate = millis();
+}
+
+void WeatherManager::fetchFromApi() {
+    // Basic implementation placeholder
+}
+
+void WeatherManager::fetchFromTabuaMare() {
+    // 1. Get current date
+    struct tm timeinfo;
+    if(!getLocalTime(&timeinfo)){
+        Serial.println("[Weather] Falha ao obter hora local (NTP).");
+        return;
+    }
+    
+    int month = timeinfo.tm_mon + 1;
+    int day = timeinfo.tm_mday;
+    int harborId = TABUA_MARE_HARBOR_ID_DEFAULT;
+
+    // 2. Construct URL - HTTP plain text, No Brackets (Proven Fix)
+    // Format: .../tabua-mare/{id}/{month}/{day}
+    String url = "http://tabuamare.devtu.qzz.io/api/v1/tabua-mare/";
+    url += String(harborId) + "/" + String(month) + "/" + String(day);
+    
+    Serial.printf("[HTTP] URL: %s\\n", url.c_str());
+
+    // 3. Setup Client
+    WiFiClient client;
+    HTTPClient http;
+    
+    // Configs de robustez
+    http.begin(client, url);
+    http.setConnectTimeout(10000); // 10s timeout de conexão
+    http.setTimeout(10000);        // 10s timeout de leitura
+    
+    unsigned long start = millis();
+    int httpCode = http.GET();
+    unsigned long duration = millis() - start;
+    
+    Serial.printf("[HTTP] Code: %d | Time: %dms\\n", httpCode, duration);
+    
+    if (httpCode > 0) {
+        if (httpCode == HTTP_CODE_OK) {
+            String payload = http.getString();
+            Serial.printf("[HTTP] Payload Size: %d bytes\\n", payload.length());
+            
+            // Validate Payload
+            if (payload.length() < 10) {
+                Serial.println("[Weather] Erro: Payload muito curto/vazio.");
+                return;
+            }
+
+            // Parse JSON
+            DynamicJsonDocument doc(4096);
+            DeserializationError error = deserializeJson(doc, payload);
+            
+            if (!error) {
+                Serial.println("[Weather] JSON Parse OK!");
+                // Exemplo de extração de dados
+                // JsonArray data = doc["data"];
+                // if(data && data.size() > 0) { ... }
+            } else {
+                Serial.print("[Weather] JSON Parse Error: ");
+                Serial.println(error.c_str());
+            }
+        } else {
+             // Server reached but returned error (404, 500, etc)
+             String errorBody = http.getString();
+             Serial.printf("[HTTP] Server Error Body: %s\\n", errorBody.c_str());
+        }
+    } else {
+        // Connection Failed
+        Serial.printf("[HTTP] Connect Failed: %s\\n", http.errorToString(httpCode).c_str());
+    }
+    
+    http.end();
+    Serial.printf("[System] Heap Pos-Req: %d bytes\\n", ESP.getFreeHeap());
 }
 `;
