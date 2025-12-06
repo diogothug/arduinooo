@@ -1,5 +1,6 @@
 
 
+
 import { DataSourceConfig, Keyframe, TideSourceType, MockWaveType, EffectType, WeatherData } from "../types";
 import { useAppStore } from '../store';
 
@@ -246,7 +247,7 @@ export const tideSourceService = {
         
         const apiBase = buildApiBase(baseUrl);
         
-        // Correct endpoint: /harbors/{id} (Plural based on fix request)
+        // Correct endpoint: /harbors/{id}
         const targetUrl = `${apiBase}/harbors/${harborId}`;
         safeLog(`[API] Target URL: ${targetUrl}`);
         
@@ -277,9 +278,8 @@ export const tideSourceService = {
          const { baseUrl, uf, lat, lng } = config.tabuaMare;
          const apiBase = buildApiBase(baseUrl);
          
-         // Use manual encoding for brackets to avoid proxy/encoding issues
-         // Wanted: [lat,lng] -> %5Blat,lng%5D
-         const latLngParam = `%5B${lat},${lng}%5D`;
+         // Use plain encoding for brackets to avoid double encoding by encodeURIComponent
+         const latLngParam = `[${lat},${lng}]`;
          
          const targetUrl = `${apiBase}/nearested-harbor/${uf.toLowerCase()}/${latLngParam}`;
          safeLog(`[API] Target URL: ${targetUrl}`);
@@ -360,15 +360,17 @@ async function fetchTabuaMareDataDuration(config: DataSourceConfig, totalDays: n
 
     // 2. Fetch function for a single batch
     const fetchBatch = async (year: number, month: number, days: number[]) => {
-         // IMPORTANT: Use manual encoding for brackets: %5B ... %5D
-         const daysParam = `%5B${days.join(',')}%5D`;
+         // IMPORTANT: Use plain brackets: [ ... ]
+         // encodeURIComponent will perform the single encoding to %5B...%5D
+         // If we manually put %5B here, encodeURIComponent turns it into %255B (double encoding)
+         const daysParam = `[${days.join(',')}]`;
          
          let targetUrl = "";
 
          if (harborId) {
             targetUrl = `${apiBase}/tabua-mare/${harborId}/${month}/${daysParam}`;
         } else {
-            const latLngParam = `%5B${lat},${lng}%5D`;
+            const latLngParam = `[${lat},${lng}]`;
             targetUrl = `${apiBase}/geo-tabua-mare/${latLngParam}/${uf.toLowerCase()}/${month}/${daysParam}`;
         }
 
@@ -376,9 +378,16 @@ async function fetchTabuaMareDataDuration(config: DataSourceConfig, totalDays: n
         safeLog(`[API] Batch ${month}/${year} (${days.length} days): ${targetUrl}`);
 
         const res = await fetch(proxyUrl, { headers: { 'Accept': 'application/json' }, referrerPolicy: 'no-referrer' });
-        if (!res.ok) throw new Error(`HTTP ${res.status} on month ${month}/${year}`);
+        
+        if (!res.ok) {
+            safeLog(`[API] HTTP Error ${res.status}`);
+            throw new Error(`HTTP ${res.status} on month ${month}/${year}`);
+        }
 
         const text = await res.text();
+        // Log raw text for debugging
+        safeLog(`[API] Raw Response (${text.length} chars): ${text.substring(0, 200)}...`);
+
         if (text.trim().startsWith("<")) throw new Error(`Proxy returned HTML error for month ${month}/${year}`);
 
         const json = JSON.parse(text);
@@ -470,6 +479,7 @@ async function fetchTabuaMareDataDuration(config: DataSourceConfig, totalDays: n
             await fetchBatch(y, m, days);
         } catch(e: any) {
             console.warn(`Batch failed for ${key}: ${e.message}`);
+            safeLog(`[API] Warn: Batch ${key} failed (${e.message}), skipping.`);
             // We continue to next batch to get partial data rather than crashing entire flow
         }
     }

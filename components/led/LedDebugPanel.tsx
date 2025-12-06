@@ -1,5 +1,6 @@
 
 
+
 import React, { useState } from 'react';
 import { useAppStore } from '../../store';
 import { Network, Code, AlertCircle } from 'lucide-react';
@@ -23,11 +24,11 @@ export const LedDebugPanel: React.FC = () => {
             snippet = `// WeatherAPI Snippet\nString url = "${url}";\nHTTPClient http;\nhttp.begin(url);\nint code = http.GET();`;
         } else {
             const base = dataSourceConfig.tabuaMare.baseUrl;
-            const pid = dataSourceConfig.tabuaMare.harborId || 8;
+            const pid = dataSourceConfig.tabuaMare.harborId || 7; // Default to 7 if undefined in store
             const month = new Date().getMonth() + 1;
             const today = new Date().getDate();
-            // Encoded [today, today+1, ...]
-            const encodedBracket = `%5B${today},${today+1},${today+2}%5D`; 
+            // Encoded [today, today+1, ...] - Use plain brackets for proxy safety
+            const encodedBracket = `[${today},${today+1},${today+2}]`; 
             let cleanBase = base.replace(/\/+$/, "");
             
             // Ensure HTTPS in snippet

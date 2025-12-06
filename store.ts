@@ -86,7 +86,8 @@ export const useAppStore = create<AppState>((set) => ({
   dataSourceConfig: {
     activeSource: TideSourceType.TABUA_MARE,
     api: { url: '', token: '', intervalMinutes: 60, locationId: '' },
-    tabuaMare: { baseUrl: 'https://tabuamare.devtu.qzz.io/api/v1', uf: 'ba', lat: -14.78, lng: -39.0167, harborId: 8 },
+    // Defaulting to Harbor ID 7 (Salvador) instead of 8 (Ilheus) as per correction
+    tabuaMare: { baseUrl: 'https://tabuamare.devtu.qzz.io/api/v1', uf: 'ba', lat: -12.97, lng: -38.50, harborId: 7 },
     mock: { minHeight: 10, maxHeight: 90, periodHours: 12.42, waveType: MockWaveType.SINE },
     lastValidData: null
   },
