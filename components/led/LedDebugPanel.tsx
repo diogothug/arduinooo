@@ -1,6 +1,4 @@
 
-
-
 import React, { useState } from 'react';
 import { useAppStore } from '../../store';
 import { Network, Code, AlertCircle } from 'lucide-react';
@@ -24,11 +22,14 @@ export const LedDebugPanel: React.FC = () => {
             snippet = `// WeatherAPI Snippet\nString url = "${url}";\nHTTPClient http;\nhttp.begin(url);\nint code = http.GET();`;
         } else {
             const base = dataSourceConfig.tabuaMare.baseUrl;
-            const pid = dataSourceConfig.tabuaMare.harborId || 7; // Default to 7 if undefined in store
+            const pid = dataSourceConfig.tabuaMare.harborId || 7; // Default to 7
             const month = new Date().getMonth() + 1;
             const today = new Date().getDate();
-            // Encoded [today, today+1, ...] - Use plain brackets for proxy safety
+            
+            // FIX: Use plain brackets. encodeURIComponent (via proxy) or ESP32 library will handle it.
+            // Do NOT use %5B manually if it triggers double encoding in some clients.
             const encodedBracket = `[${today},${today+1},${today+2}]`; 
+            
             let cleanBase = base.replace(/\/+$/, "");
             
             // Ensure HTTPS in snippet
@@ -50,7 +51,11 @@ void setup() {
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) delay(500);
   
-  String url = "${url}";
+  // Note: On ESP32, HTTPClient usually requires brackets to be encoded (%5B, %5D)
+  // But if using a proxy logic here in JS, we use raw. 
+  // For ESP32 direct connection:
+  String daysParam = "%5B${today},${today+1},${today+2}%5D"; 
+  String url = "${cleanBase}/tabua-mare/${pid}/${month}/" + daysParam;
   
   WiFiClientSecure client;
   client.setInsecure(); // Ignore SSL for testing
@@ -89,6 +94,7 @@ void loop() {}`;
         setCppSnippet(snippet);
         
         try {
+            // Test connection using the same proxy logic as the main service
             const proxy = "https://api.allorigins.win/raw?url=" + encodeURIComponent(url);
             const res = await fetch(proxy);
             const txt = await res.text();

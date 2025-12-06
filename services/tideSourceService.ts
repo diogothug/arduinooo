@@ -1,6 +1,4 @@
 
-
-
 import { DataSourceConfig, Keyframe, TideSourceType, MockWaveType, EffectType, WeatherData } from "../types";
 import { useAppStore } from '../store';
 
@@ -212,7 +210,7 @@ export const tideSourceService = {
                                     
                                     const h = parseFloat(t.tide_height_mt);
                                     if (!isNaN(h)) {
-                                        let pct = ((h + 0.2) / 2.7) * 100;
+                                        let pct = ((h + 2.0) / 4.5) * 100; // Adjusted for global variance
                                         pct = Math.max(0, Math.min(100, pct));
                                         
                                         const isHigh = t.tide_type === "HIGH";
@@ -249,11 +247,10 @@ export const tideSourceService = {
         
         // Correct endpoint: /harbors/{id}
         const targetUrl = `${apiBase}/harbors/${harborId}`;
-        safeLog(`[API] Target URL: ${targetUrl}`);
+        safeLog(`[API] Harbor Lookup: ${targetUrl}`);
         
         // PROXY IMPLEMENTATION
         const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
-        safeLog(`[API] Proxy URL: ${proxyUrl}`);
         
         const res = await fetch(proxyUrl, { 
             headers: { 'Accept': 'application/json' },
@@ -270,6 +267,7 @@ export const tideSourceService = {
         const json = JSON.parse(text);
         
         if (json.data && json.data.length > 0) return { id: json.data[0].id, name: json.data[0].harbor_name };
+        if (json.id) return { id: json.id, name: json.harbor_name || json.name }; // Alternative format
         
         throw new Error("Porto não encontrado (Dados vazios).");
     },
@@ -278,15 +276,14 @@ export const tideSourceService = {
          const { baseUrl, uf, lat, lng } = config.tabuaMare;
          const apiBase = buildApiBase(baseUrl);
          
-         // Use plain encoding for brackets to avoid double encoding by encodeURIComponent
+         // RAW BRACKETS FOR NEAREST SEARCH
          const latLngParam = `[${lat},${lng}]`;
          
          const targetUrl = `${apiBase}/nearested-harbor/${uf.toLowerCase()}/${latLngParam}`;
-         safeLog(`[API] Target URL: ${targetUrl}`);
+         safeLog(`[API] Nearest URL: ${targetUrl}`);
 
          // PROXY IMPLEMENTATION
          const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
-         safeLog(`[API] Proxy URL: ${proxyUrl}`);
          
          const res = await fetch(proxyUrl, { 
              headers: { 'Accept': 'application/json' },
@@ -302,7 +299,6 @@ export const tideSourceService = {
 
          const json = JSON.parse(text);
          
-         // Handle both single object return (seen in logs) and data array (standard)
          let p = null;
          if (json.data && Array.isArray(json.data) && json.data.length > 0) {
              p = json.data[0];
@@ -318,22 +314,19 @@ export const tideSourceService = {
     },
 };
 
-// --- UPDATED FETCH LOGIC: RETRY 30 DAYS -> 2 DAYS ---
+// --- UPDATED FETCH LOGIC ---
 async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: number): Promise<Keyframe[]> {
-    // Attempt 1: 30 Days (Standard)
+    // START WITH 3 DAYS AS REQUESTED FOR STABILITY
+    // If it works, user can manually trigger longer fetches later or we can upgrade this logic
+    const INITIAL_FETCH_DAYS = 3;
+
     try {
-        return await fetchTabuaMareDataDuration(config, 30);
+        safeLog(`[API] Tentando buscar ${INITIAL_FETCH_DAYS} dias (Teste inicial)...`);
+        return await fetchTabuaMareDataDuration(config, INITIAL_FETCH_DAYS);
     } catch (e: any) {
-        console.warn(`[TideSource] Falha ao buscar 30 dias: ${e.message}. Tentando fallback para 2 dias...`);
-        safeLog(`[API] Aviso: Falha em 30 dias (${e.message}). Tentando buscar apenas 2 dias...`);
-        
-        // Attempt 2: 2 Days (Fallback)
-        try {
-            return await fetchTabuaMareDataDuration(config, 2);
-        } catch (e2: any) {
-            // Throw original error or new error if both fail
-            throw new Error(`Falha na API Maré (30d e 2d): ${e2.message}`);
-        }
+        console.warn(`[TideSource] Falha em ${INITIAL_FETCH_DAYS} dias: ${e.message}`);
+        safeLog(`[API] ERRO: Falha na busca inicial (${e.message}).`);
+        throw new Error(`Falha na API Maré: ${e.message}`);
     }
 }
 
@@ -344,8 +337,7 @@ async function fetchTabuaMareDataDuration(config: DataSourceConfig, totalDays: n
     const now = new Date();
     const allFrames: Keyframe[] = [];
 
-    // 1. Organize days into Month buckets (to handle Month rollover)
-    // Example: Map { "2023-10": [28,29,30,31], "2023-11": [1,2,3...] }
+    // 1. Organize days into Month buckets
     const monthsMap = new Map<string, number[]>();
 
     for (let i = 0; i < totalDays; i++) {
@@ -356,13 +348,13 @@ async function fetchTabuaMareDataDuration(config: DataSourceConfig, totalDays: n
         monthsMap.get(key)!.push(d.getDate());
     }
 
-    safeLog(`[API] Preparing ${totalDays}-day fetch across ${monthsMap.size} month(s).`);
+    safeLog(`[API] Plan: ${totalDays} dias em ${monthsMap.size} lotes.`);
 
     // 2. Fetch function for a single batch
     const fetchBatch = async (year: number, month: number, days: number[]) => {
          // IMPORTANT: Use plain brackets: [ ... ]
          // encodeURIComponent will perform the single encoding to %5B...%5D
-         // If we manually put %5B here, encodeURIComponent turns it into %255B (double encoding)
+         // DO NOT manually double encode here.
          const daysParam = `[${days.join(',')}]`;
          
          let targetUrl = "";
@@ -374,8 +366,11 @@ async function fetchTabuaMareDataDuration(config: DataSourceConfig, totalDays: n
             targetUrl = `${apiBase}/geo-tabua-mare/${latLngParam}/${uf.toLowerCase()}/${month}/${daysParam}`;
         }
 
+        safeLog(`[API] TARGET (RAW): ${targetUrl}`);
+
+        // ENCODE ONCE FOR PROXY
         const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
-        safeLog(`[API] Batch ${month}/${year} (${days.length} days): ${targetUrl}`);
+        safeLog(`[API] PROXY REQ: ${proxyUrl}`);
 
         const res = await fetch(proxyUrl, { headers: { 'Accept': 'application/json' }, referrerPolicy: 'no-referrer' });
         
@@ -386,9 +381,12 @@ async function fetchTabuaMareDataDuration(config: DataSourceConfig, totalDays: n
 
         const text = await res.text();
         // Log raw text for debugging
-        safeLog(`[API] Raw Response (${text.length} chars): ${text.substring(0, 200)}...`);
+        safeLog(`[API] RAW RESP (${text.length} chars): ${text.substring(0, 150)}...`);
 
-        if (text.trim().startsWith("<")) throw new Error(`Proxy returned HTML error for month ${month}/${year}`);
+        if (text.trim().startsWith("<")) {
+            safeLog("[API] HTML ERROR DETECTED IN RESPONSE");
+            throw new Error(`Proxy returned HTML error for month ${month}/${year}`);
+        }
 
         const json = JSON.parse(text);
         
@@ -401,19 +399,14 @@ async function fetchTabuaMareDataDuration(config: DataSourceConfig, totalDays: n
         const rawData = json.data || [];
 
         // Updated Parsing Logic for New API Structure
-        // Expected: item -> months -> days -> hours -> { hour: "HH:MM:SS", level: "2.1" }
         rawData.forEach((item: any) => {
              const monthsList = item.months || [];
-             
              monthsList.forEach((m: any) => {
                  const daysList = m.days || [];
-                 
                  daysList.forEach((d: any) => {
                      const dateStr = d.date; // "YYYY-MM-DD"
                      const hoursList = d.hours || [];
 
-                     // Sort hours first to properly determine structure/extrema
-                     // And map to numeric time for simpler logic
                      const parsedHours = hoursList.map((hObj: any) => {
                          const parts = (hObj.hour || "").split(':');
                          const hh = parseInt(parts[0], 10) || 0;
@@ -425,8 +418,7 @@ async function fetchTabuaMareDataDuration(config: DataSourceConfig, totalDays: n
 
                      if (parsedHours.length === 0) return;
 
-                     // Determine Day Mean Level to infer High/Low
-                     // (Since 'type' field is missing in new API)
+                     // Determine Day Mean Level
                      const levels = parsedHours.map((x: any) => x.val).filter((v: number) => !isNaN(v));
                      const minL = Math.min(...levels);
                      const maxL = Math.max(...levels);
@@ -436,8 +428,6 @@ async function fetchTabuaMareDataDuration(config: DataSourceConfig, totalDays: n
                          const { hh, mm, val } = hObj;
                          
                          if (!isNaN(hh) && !isNaN(mm) && !isNaN(val)) {
-                            // Date math (Local vs UTC handling)
-                            // We treat "YYYY-MM-DD" + Hour as relative time from "now"
                             const today = new Date(now.toISOString().split('T')[0]); 
                             const tideDate = new Date(dateStr); 
 
@@ -446,14 +436,9 @@ async function fetchTabuaMareDataDuration(config: DataSourceConfig, totalDays: n
                             
                             const timeOffset = (diffDays * 24) + hh + (mm / 60);
 
-                            // Filter valid window
                             if (timeOffset >= -2 && timeOffset <= (totalDays * 24) + 24) {
-                                // Normalize (Approx: -0.2 to 2.9m -> 0 to 100%)
                                 let pct = ((val + 0.2) / 2.9) * 100;
                                 pct = Math.max(0, Math.min(100, pct));
-                                
-                                // Infer High/Low since 'type' is missing
-                                // Using day's median threshold
                                 const isHigh = val > midL;
                                 
                                 allFrames.push({
@@ -480,63 +465,51 @@ async function fetchTabuaMareDataDuration(config: DataSourceConfig, totalDays: n
         } catch(e: any) {
             console.warn(`Batch failed for ${key}: ${e.message}`);
             safeLog(`[API] Warn: Batch ${key} failed (${e.message}), skipping.`);
-            // We continue to next batch to get partial data rather than crashing entire flow
         }
     }
 
-    if (allFrames.length === 0) throw new Error(`Nenhum dado retornado para os próximos ${totalDays} dias (Verifique conexão ou ID do porto).`);
+    if (allFrames.length === 0) throw new Error(`Nenhum dado retornado para os próximos ${totalDays} dias.`);
 
     return allFrames.sort((a,b) => a.timeOffset - b.timeOffset);
 }
 
-// Replaced generic math generation with Hardcoded Data Parsing (Updated with better data)
 function generateMockData(config: DataSourceConfig, cycleDuration: number): Keyframe[] {
     safeLog("[TideSource] Usando dados estáticos (Moreré 2025 Melhorados)...");
     
     const frames: Keyframe[] = [];
     const tides = HARDCODED_TIDE_DATA.tides;
     
-    // Iterate over the days provided
     tides.forEach((dayData, dayIndex) => {
-        // Parse High Tides
         dayData.high.forEach((timeStr) => {
              const [hh, mm] = timeStr.split(':').map(Number);
              const timeOffset = (dayIndex * 24) + hh + (mm / 60);
-             
-             // High Tide = ~95%
              frames.push({
                  id: uid(),
                  timeOffset: parseFloat(timeOffset.toFixed(2)),
                  height: 95,
-                 color: '#00eebb', // Cyan/Green for High
+                 color: '#00eebb',
                  intensity: 200,
                  effect: EffectType.WAVE
              });
         });
-
-        // Parse Low Tides
         dayData.low.forEach((timeStr) => {
              const [hh, mm] = timeStr.split(':').map(Number);
              const timeOffset = (dayIndex * 24) + hh + (mm / 60);
-             
-             // Low Tide = ~15%
              frames.push({
                  id: uid(),
                  timeOffset: parseFloat(timeOffset.toFixed(2)),
                  height: 15,
-                 color: '#004488', // Dark Blue for Low
+                 color: '#004488',
                  intensity: 50,
                  effect: EffectType.STATIC
              });
         });
     });
     
-    // Sort frames by time
     return frames.sort((a,b) => a.timeOffset - b.timeOffset);
 }
 
 function calculateFallback(lastFrame: Keyframe | null, cycleDuration: number): Keyframe[] {
-    // Basic math fallback if even the hardcoded data fails
     const frames: Keyframe[] = [];
     const limit = Math.ceil(cycleDuration / 12) * 12 + 12;
     for (let i = 0; i <= limit; i++) {
