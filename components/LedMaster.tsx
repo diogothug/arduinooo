@@ -660,7 +660,7 @@ export const LedMaster: React.FC = () => {
                 {/* --- PIXEL ART MODE UI --- */}
                 {activeTab === 'PIXEL_ART' && (
                 <>
-                    <div className="lg:col-span-1 flex flex-col gap-6">
+                    <div className="lg:col-span-1 flex flex-col gap-6 overflow-y-auto pr-2 custom-scrollbar">
                          
                          {/* 1. UPLOAD & CONFIG */}
                          <div className="bg-slate-800 rounded-lg border border-slate-700 p-6">
@@ -729,7 +729,7 @@ export const LedMaster: React.FC = () => {
                          </div>
                     </div>
 
-                    <div className="lg:col-span-2 flex flex-col gap-6">
+                    <div className="lg:col-span-2 flex flex-col gap-6 overflow-y-auto pr-2 custom-scrollbar">
                          {/* 2. PREVIEW */}
                          <div className="bg-slate-800 rounded-lg border border-slate-700 p-6 flex flex-col items-center h-[400px] relative">
                             <div className="w-full flex justify-between items-center mb-4">
