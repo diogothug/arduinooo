@@ -228,9 +228,8 @@ export const tideSourceService = {
          const { baseUrl, uf, lat, lng } = config.tabuaMare;
          const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io//api/v1'); 
          
-         // Fix: Manual string construction to ensure strict formatting: [lat,lng]
-         // Do NOT use encodeURIComponent here, fetch will handle the URL.
-         const latLngParam = `[${lat},${lng}]`;
+         // Fix: Encode parameters for AllOrigins proxy (Double Encode logic)
+         const latLngParam = encodeURIComponent(`[${lat},${lng}]`);
          
          const targetUrl = `${apiBase}/nearested-harbor/${uf.toLowerCase()}/${latLngParam}`;
 
@@ -279,15 +278,14 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     }
     if (daysArray.length === 0) daysArray.push(now.getDate());
     
-    // Fix: Manual string construction to ensure correct format: [1,2,3]
-    // Do NOT use encodeURIComponent manually, it causes double encoding.
-    const daysParam = `[${daysArray.join(',')}]`;
+    // Fix: Encode parameters for AllOrigins proxy (Double Encode logic)
+    const daysParam = encodeURIComponent(`[${daysArray.join(',')}]`);
     
     let targetUrl = "";
     if (harborId) {
         targetUrl = `${apiBase}/tabua-mare/${harborId}/${month}/${daysParam}`;
     } else {
-        const latLngParam = `[${lat},${lng}]`;
+        const latLngParam = encodeURIComponent(`[${lat},${lng}]`);
         targetUrl = `${apiBase}/geo-tabua-mare/${latLngParam}/${uf.toLowerCase()}/${month}/${daysParam}`;
     }
     
