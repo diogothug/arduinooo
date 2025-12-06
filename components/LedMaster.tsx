@@ -1,4 +1,5 @@
 
+
 import React, { useRef, useEffect, useState } from 'react';
 import { useAppStore } from '../store';
 import { ConnectionType } from '../types';
@@ -347,24 +348,39 @@ export const LedMaster: React.FC = () => {
             const k = firmwareConfig.weatherApi?.apiKey || 'KEY';
             const q = encodeURIComponent(firmwareConfig.weatherApi?.location || 'Moreré');
             url = `https://api.weatherapi.com/v1/current.json?key=${k}&q=${q}&lang=pt`;
-            setCppSnippet(`// C++ Snippet\nString url = "https://api.weatherapi.com/v1/current.json?key=${k}&q=${q}&lang=pt";\nHTTPClient http;\nhttp.begin(client, url);\nint code = http.GET();\nif(code>0) payload = http.getString();`);
+            setCppSnippet(`// C++ Snippet\nString url = "https://api.weatherapi.com/v1/current.json?key=${k}&q=${q}&lang=pt";\n\nWiFiClientSecure client;\nclient.setInsecure(); // Bypass SSL\nHTTPClient http;\nhttp.begin(client, url);\nint code = http.GET();\nif(code>0) payload = http.getString();`);
         } else {
             const base = dataSourceConfig.tabuaMare.baseUrl;
             const pid = dataSourceConfig.tabuaMare.harborId || 8;
-            url = `${base}/tabua-mare/${pid}/${new Date().getMonth()+1}/[${new Date().getDate()}]`;
-            setCppSnippet(`// C++ Snippet\nString url = "${url}";\n// Note: Brackets [ ] must be URL Encoded as %5B %5D in some ESP32 libs\nHTTPClient http;\nhttp.begin(client, url);\nint code = http.GET();`);
+            const day = new Date().getDate();
+            const month = new Date().getMonth() + 1;
+            
+            // IMPORTANT: Simulate the encoding needed by ESP32 HTTPClient
+            url = `${base}/tabua-mare/${pid}/${month}/%5B${day}%5D`;
+            setCppSnippet(`// C++ Snippet for Tábua Maré\n// IMPORTANT: Encoded brackets %5B and %5D required for ESP32 HTTPClient\nString url = "${url}";\n\nWiFiClientSecure client;\nclient.setInsecure(); // Bypass SSL\nHTTPClient http;\nhttp.begin(client, url);\nint code = http.GET();\nif(code > 0) String payload = http.getString();`);
         }
+        
         setDebugUrl(url);
+        
         try {
+            // For browser test via proxy, we might need valid encoding or not depending on proxy behavior
+            // We use the proxy to bypass CORS
             const proxy = "https://api.allorigins.win/raw?url=" + encodeURIComponent(url);
             const t0 = performance.now();
             const res = await fetch(proxy);
             const t1 = performance.now();
             const txt = await res.text();
-            if (res.ok) setDebugResult(`HTTP ${res.status} OK (${(t1-t0).toFixed(0)}ms)\n\n${txt.substring(0,600)}...`);
-            else setDebugResult(`HTTP ${res.status} ERROR\n${txt}`);
-        } catch(e:any) { setDebugResult("FETCH EXCEPTION: " + e.message); } 
-        finally { setDebugLoading(false); }
+            
+            if (res.ok) {
+                setDebugResult(`HTTP ${res.status} OK (${(t1-t0).toFixed(0)}ms)\n\n--- PAYLOAD PREVIEW ---\n${txt.substring(0,600)}...`);
+            } else {
+                setDebugResult(`HTTP ${res.status} ERROR\n${txt}`);
+            }
+        } catch(e:any) { 
+            setDebugResult("FETCH EXCEPTION (BROWSER/PROXY): " + e.message); 
+        } finally { 
+            setDebugLoading(false); 
+        }
     };
 
     const handleColorChange = (idx: number, val: string) => {
@@ -539,7 +555,7 @@ export const LedMaster: React.FC = () => {
                 {activeTab === 'LAB' && cppSnippet ? (
                     <div className="p-6 h-full font-mono text-xs text-slate-300 overflow-auto">
                         <h3 className="text-sm font-bold text-white mb-4 border-b border-slate-700 pb-2 flex items-center gap-2"><Code size={16}/> C++ HTTPClient Code Preview</h3>
-                        <pre className="bg-black p-4 rounded border border-slate-700 text-green-400">{cppSnippet}</pre>
+                        <pre className="bg-black p-4 rounded border border-slate-700 text-green-400 whitespace-pre-wrap leading-relaxed">{cppSnippet}</pre>
                         <p className="mt-4 text-slate-500">Este é o código exato que será gerado no <code>WeatherManager.cpp</code> para esta requisição.</p>
                     </div>
                 ) : (

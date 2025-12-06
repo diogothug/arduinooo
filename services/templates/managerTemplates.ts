@@ -318,9 +318,11 @@ private:
 `;
 
 export const generateWeatherManagerCpp = (config: FirmwareConfig, dataSrc: DataSourceConfig) => {
-    const baseUrl = dataSrc.tabuaMare.baseUrl || "https://tabuamare.devtu.qzz.io//api/v1";
+    const baseUrl = dataSrc.tabuaMare.baseUrl || "https://tabuamare.devtu.qzz.io/api/v1";
+    // Remove trailing slash if present to avoid double slashes, but keep it clean
     const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-    const latLng = `[${dataSrc.tabuaMare.lat},${dataSrc.tabuaMare.lng}]`;
+    // Use encoding for Coords too just in case
+    const latLng = `%5B${dataSrc.tabuaMare.lat},${dataSrc.tabuaMare.lng}%5D`;
     const uf = dataSrc.tabuaMare.uf.toLowerCase();
     
     // Default build-time harbor ID if available, else 0
@@ -416,7 +418,7 @@ void WeatherManager::update() {
 
 void WeatherManager::fetchWeatherData() {
     WiFiClientSecure client;
-    client.setInsecure();
+    client.setInsecure(); // IGNORE SSL CERTIFICATE for testing
     HTTPClient http;
     
     String encodedLoc = urlEncode(WEATHER_LOCATION);
@@ -465,16 +467,17 @@ void WeatherManager::fetchTabuaMareData() {
     
     String url;
     
-    // Dynamic Port Logic using LITERAL Brackets for API compatibility
+    // IMPORTANT: Use %5B and %5D instead of literals [ ] for ESP32 HTTPClient compatibility
+    // Avoid double slashes in path construction
     if (_harborId > 0) {
-        url = String(TABUA_MARE_BASE) + "/tabua-mare/" + String(_harborId) + "/" + String(month) + "/[" + String(day) + "]";
+        url = String(TABUA_MARE_BASE) + "/tabua-mare/" + String(_harborId) + "/" + String(month) + "/%5B" + String(day) + "%5D";
     } else {
         // Fallback to build-time Geo if no port set
-        url = String(TABUA_MARE_BASE) + "/geo-tabua-mare/" + TABUA_MARE_COORDS + "/" + TABUA_MARE_STATE + "/" + String(month) + "/[" + String(day) + "]";
+        url = String(TABUA_MARE_BASE) + "/geo-tabua-mare/" + TABUA_MARE_COORDS + "/" + TABUA_MARE_STATE + "/" + String(month) + "/%5B" + String(day) + "%5D";
     }
 
     WiFiClientSecure client;
-    client.setInsecure();
+    client.setInsecure(); // IGNORE SSL CERTIFICATE (Crucial for testing)
     HTTPClient http;
     
     Serial.printf("[API] TabuaMare Req: %s\n", url.c_str());
@@ -486,10 +489,11 @@ void WeatherManager::fetchTabuaMareData() {
         
         Serial.printf("[API] TabuaMare Res: Code %d (%lu ms)\n", httpCode, dur);
 
-        if (httpCode == HTTP_CODE_OK) {
+        if (httpCode > 0) {
             String payload = http.getString();
             Serial.printf("[API] Payload Size: %d bytes\n", payload.length());
-            // Serial.println(payload); // Uncomment for verbose payload dump
+            Serial.println("[API] Payload Preview:");
+            Serial.println(payload.substring(0, min((unsigned int)200, payload.length()))); // Show first 200 chars
             
             DynamicJsonDocument doc(4096);
             DeserializationError error = deserializeJson(doc, payload);
@@ -555,8 +559,6 @@ void WeatherManager::fetchTabuaMareData() {
             }
         } else {
              Serial.printf("[API] HTTP Error: %s\n", http.errorToString(httpCode).c_str());
-             String err = http.getString();
-             if(err.length() > 0) Serial.printf("[API] Error Body: %s\n", err.c_str());
         }
         http.end();
     } else {
