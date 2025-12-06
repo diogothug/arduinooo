@@ -6,6 +6,10 @@ console.log("🟦 [TideService] Module Loading...");
 // Helper to generate a random ID
 const uid = () => Math.random().toString(36).substr(2, 9);
 
+// PROXY CONFIGURATION
+// We use a public proxy to act as the "Backend" for these requests, solving the CORS issue.
+const CORS_PROXY = "https://api.allorigins.win/raw?url=";
+
 // Helper to sanitize base URLs but ALLOW double slashes if intentional (as per API docs)
 const sanitizeBaseUrl = (url: string) => {
     if (!url) return '';
@@ -200,11 +204,14 @@ export const tideSourceService = {
         const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io//api/v1');
         
         // Correct endpoint: /harbor/{id} (Singular)
-        const url = `${apiBase}/harbor/${harborId}`;
+        const targetUrl = `${apiBase}/harbor/${harborId}`;
         
-        safeLog(`[API] Harbor ID: ${url}`);
+        // PROXY IMPLEMENTATION
+        const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
         
-        const res = await fetch(url, { 
+        safeLog(`[API] Harbor ID (Proxy): ${proxyUrl}`);
+        
+        const res = await fetch(proxyUrl, { 
             headers: { 'Accept': 'application/json' },
             referrerPolicy: 'no-referrer' 
         });
@@ -225,11 +232,14 @@ export const tideSourceService = {
          // Do NOT use encodeURIComponent here, fetch will handle the URL.
          const latLngParam = `[${lat},${lng}]`;
          
-         const url = `${apiBase}/nearested-harbor/${uf.toLowerCase()}/${latLngParam}`;
+         const targetUrl = `${apiBase}/nearested-harbor/${uf.toLowerCase()}/${latLngParam}`;
+
+         // PROXY IMPLEMENTATION
+         const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
          
-         safeLog(`[API] Nearest: ${url}`);
+         safeLog(`[API] Nearest (Proxy): ${proxyUrl}`);
          
-         const res = await fetch(url, { 
+         const res = await fetch(proxyUrl, { 
              headers: { 'Accept': 'application/json' },
              referrerPolicy: 'no-referrer'
          });
@@ -250,7 +260,7 @@ export const tideSourceService = {
          }
          
          throw new Error("Nenhum porto encontrado.");
-    }
+    },
 };
 
 async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: number): Promise<Keyframe[]> {
@@ -273,17 +283,20 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     // Do NOT use encodeURIComponent manually, it causes double encoding.
     const daysParam = `[${daysArray.join(',')}]`;
     
-    let url = "";
+    let targetUrl = "";
     if (harborId) {
-        url = `${apiBase}/tabua-mare/${harborId}/${month}/${daysParam}`;
+        targetUrl = `${apiBase}/tabua-mare/${harborId}/${month}/${daysParam}`;
     } else {
         const latLngParam = `[${lat},${lng}]`;
-        url = `${apiBase}/geo-tabua-mare/${latLngParam}/${uf.toLowerCase()}/${month}/${daysParam}`;
+        targetUrl = `${apiBase}/geo-tabua-mare/${latLngParam}/${uf.toLowerCase()}/${month}/${daysParam}`;
     }
     
-    safeLog(`[API] Req URL: ${url}`);
+    // PROXY IMPLEMENTATION
+    const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
+
+    safeLog(`[API] Req Proxy URL: ${proxyUrl}`);
     
-    const res = await fetch(url, {
+    const res = await fetch(proxyUrl, {
         headers: { 'Accept': 'application/json' },
         referrerPolicy: 'no-referrer'
     });
