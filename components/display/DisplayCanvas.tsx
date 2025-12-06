@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useMemo } from 'react';
 import { useAppStore } from '../../store';
 import { WidgetType, DisplayTheme } from '../../types';
@@ -55,10 +54,17 @@ export const DisplayCanvas: React.FC<DisplayCanvasProps> = ({ selectedWidgetId, 
         }
 
         const render = () => {
-            // 1. CLEAR & BACKGROUND
+            // 1. CLEAR
             ctx.clearRect(0, 0, 240, 240);
             
-            // Theme Backgrounds
+            // 2. SAVE STATE BEFORE CLIPPING
+            ctx.save();
+
+            // 3. DEFINE CIRCULAR MASK & BACKGROUND
+            ctx.beginPath();
+            ctx.arc(120, 120, 120, 0, Math.PI * 2);
+            
+            // Draw Background Gradient (clipped automatically by arc shape if we fill)
             let bgGrad = ctx.createRadialGradient(120, 120, 0, 120, 120, 120);
             
             switch(displayConfig.theme) {
@@ -90,27 +96,26 @@ export const DisplayCanvas: React.FC<DisplayCanvasProps> = ({ selectedWidgetId, 
                     bgGrad.addColorStop(0, '#1a1a1a');
                     bgGrad.addColorStop(1, '#000000');
             }
-            
-            ctx.beginPath();
-            ctx.arc(120, 120, 120, 0, Math.PI * 2);
             ctx.fillStyle = bgGrad;
             ctx.fill();
+
+            // Apply Clip for everything else
+            ctx.clip();
             
-            // Starry Night Particles
+            // Starry Night Particles (Draw AFTER clip to ensure they don't bleed, though clip handles it)
             if (displayConfig.theme === DisplayTheme.STARRY_NIGHT) {
                 const time = Date.now() / 1000;
                 ctx.fillStyle = '#ffffff';
-                for(let i=0; i<30; i++) {
-                    const x = (Math.sin(i * 132 + time * 0.1) + 1) * 120;
-                    const y = (Math.cos(i * 45 + time * 0.1) + 1) * 120;
-                    const size = (Math.sin(time * 2 + i) + 1);
+                for(let i=0; i<40; i++) {
+                    // Simple deterministic pseudo-random positions based on index
+                    const x = (Math.sin(i * 132 + time * 0.05) + 1) * 120;
+                    const y = (Math.cos(i * 45 + time * 0.05) + 1) * 120;
+                    const size = (Math.sin(time * 2 + i) + 1.5) * 0.8;
                     ctx.beginPath(); ctx.arc(x,y, size, 0, Math.PI*2); ctx.fill();
                 }
             }
 
-            ctx.clip(); 
-
-            // 2. WIDGETS
+            // 4. WIDGETS
             const sortedWidgets = [...displayWidgets].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
 
             sortedWidgets.forEach(widget => {
@@ -148,7 +153,7 @@ export const DisplayCanvas: React.FC<DisplayCanvasProps> = ({ selectedWidgetId, 
                 else if (widget.type === WidgetType.TIDE_FILL) {
                     ctx.beginPath();
                     ctx.arc(0, 0, 120, 0, Math.PI * 2);
-                    ctx.clip();
+                    // Don't clip here, we are already clipped by main display
                     const level = currentHeight / 100;
                     const waterHeight = 240 * level;
                     const yOffset = 120 - waterHeight;
@@ -213,9 +218,12 @@ export const DisplayCanvas: React.FC<DisplayCanvasProps> = ({ selectedWidgetId, 
                     ctx.beginPath(); 
                     ctx.arc(0, 0, 20, 0, Math.PI*2); 
                     ctx.fillStyle = color; 
+                    
+                    // Simple rect mask for phase approximation in canvas
+                    ctx.save();
                     ctx.clip(); 
-                    // Draw a rect representing illumination percentage roughly
                     ctx.fillRect(-20, -20, phaseWidth, 40);
+                    ctx.restore();
                 }
                 else if (widget.type === WidgetType.TEXT_LABEL) {
                     ctx.fillStyle = color;
@@ -347,19 +355,28 @@ export const DisplayCanvas: React.FC<DisplayCanvasProps> = ({ selectedWidgetId, 
                 ctx.restore();
             });
 
-            // 3. POST-PROCESSING
+            // 5. RESTORE STATE (Removing Clip)
+            ctx.restore();
+
+            // 6. POST-PROCESSING (Glare/Grid drawn ON TOP of everything, unaffected by circular clip unless desired)
             if (displayConfig.simulateSunlight) {
+                ctx.save();
+                ctx.beginPath(); ctx.arc(120, 120, 120, 0, Math.PI*2); ctx.clip();
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
-                ctx.beginPath(); ctx.arc(120,120, 120, 0, Math.PI*2); ctx.fill();
+                ctx.fill();
                 const glare = ctx.createLinearGradient(0, 0, 240, 240);
                 glare.addColorStop(0, 'rgba(255,255,255,0.4)');
                 glare.addColorStop(0.5, 'rgba(255,255,255,0)');
                 ctx.fillStyle = glare; ctx.fill();
+                ctx.restore();
             }
             if (displayConfig.simulatePixelGrid) {
+                ctx.save();
+                ctx.beginPath(); ctx.arc(120, 120, 120, 0, Math.PI*2); ctx.clip();
                 ctx.fillStyle = 'rgba(0,0,0,0.1)';
                 for(let i=0; i<240; i+=2) ctx.fillRect(i, 0, 1, 240);
                 for(let i=0; i<240; i+=2) ctx.fillRect(0, i, 240, 1);
+                ctx.restore();
             }
             
             requestAnimationFrame(render);

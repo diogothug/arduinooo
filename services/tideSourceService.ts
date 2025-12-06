@@ -1,3 +1,4 @@
+
 import { DataSourceConfig, Keyframe, TideSourceType, MockWaveType, EffectType, WeatherData } from "../types";
 import { useAppStore } from '../store';
 
@@ -9,7 +10,7 @@ const uid = () => Math.random().toString(36).substr(2, 9);
 // Helper to sanitize base URLs but ALLOW double slashes if intentional (as per API docs)
 const sanitizeBaseUrl = (url: string) => {
     if (!url) return '';
-    // Only remove trailing slashes, do NOT merge internal slashes as some APIs like tabuamare use //api
+    // Only remove trailing slashes
     return url.replace(/\/+$/, '');
 };
 
@@ -189,47 +190,66 @@ export const tideSourceService = {
     getHarborById: async (config: DataSourceConfig): Promise<{ id: number, name: string }> => {
         const { baseUrl, harborId } = config.tabuaMare;
         if (!harborId) throw new Error("ID do porto não definido");
-        const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io/api/v1');
-        const url = `${apiBase}/harbors/${harborId}`;
+        // Default to the provided base URL with double slash if needed
+        const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io//api/v1');
+        
+        // Correct endpoint: /harbor/{id} (Singular)
+        const url = `${apiBase}/harbor/${harborId}`;
         
         safeLog(`[API] Harbor ID: ${url}`);
         
-        const res = await fetch(url, { referrerPolicy: 'no-referrer' });
+        const res = await fetch(url, { 
+            headers: { 'Accept': 'application/json' },
+            referrerPolicy: 'no-referrer' 
+        });
         
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
+        
         if (json.data && json.data.length > 0) return { id: json.data[0].id, name: json.data[0].harbor_name };
-        throw new Error("Porto não encontrado.");
+        
+        throw new Error("Porto não encontrado (Dados vazios).");
     },
 
     findNearestHarbor: async (config: DataSourceConfig): Promise<{ id: number, name: string, distance: number }> => {
          const { baseUrl, uf, lat, lng } = config.tabuaMare;
-         const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io/api/v1'); 
+         const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io//api/v1'); 
          
-         // Use strict JSON stringify + Encode to ensure [lat,lng] -> %5Blat%2Clng%5D
-         const latLngParam = encodeURIComponent(JSON.stringify([lat, lng]));
+         // Fix: Manual string construction to ensure strict formatting: [lat,lng]
+         // Do NOT use encodeURIComponent here, fetch will handle the URL.
+         const latLngParam = `[${lat},${lng}]`;
+         
          const url = `${apiBase}/nearested-harbor/${uf.toLowerCase()}/${latLngParam}`;
          
          safeLog(`[API] Nearest: ${url}`);
          
-         // Simple fetch, no headers to avoid WAF/CORS preflight issues on public API
          const res = await fetch(url, { 
+             headers: { 'Accept': 'application/json' },
              referrerPolicy: 'no-referrer'
          });
          
          if (!res.ok) throw new Error(`HTTP ${res.status}`);
          const json = await res.json();
-         if (json.data && json.data.length > 0) {
-             const p = json.data[0];
+         
+         // Handle both single object return (seen in logs) and data array (standard)
+         let p = null;
+         if (json.data && Array.isArray(json.data) && json.data.length > 0) {
+             p = json.data[0];
+         } else if (json.id) {
+             p = json;
+         }
+
+         if (p) {
              return { id: p.id, name: p.name || p.harbor_name, distance: parseFloat((p.distance || 0).toFixed(1)) };
          }
+         
          throw new Error("Nenhum porto encontrado.");
     }
 };
 
 async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: number): Promise<Keyframe[]> {
     const { baseUrl, uf, lat, lng, harborId } = config.tabuaMare;
-    const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io/api/v1');
+    const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io//api/v1');
 
     const now = new Date();
     const month = now.getMonth() + 1; 
@@ -243,21 +263,22 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     }
     if (daysArray.length === 0) daysArray.push(now.getDate());
     
-    // CRITICAL: Encode brackets/commas correctly for this API
-    const daysParam = encodeURIComponent(JSON.stringify(daysArray));
+    // Fix: Manual string construction to ensure correct format: [1,2,3]
+    // Do NOT use encodeURIComponent manually, it causes double encoding.
+    const daysParam = `[${daysArray.join(',')}]`;
     
     let url = "";
     if (harborId) {
         url = `${apiBase}/tabua-mare/${harborId}/${month}/${daysParam}`;
     } else {
-        const latLngParam = encodeURIComponent(JSON.stringify([lat, lng]));
+        const latLngParam = `[${lat},${lng}]`;
         url = `${apiBase}/geo-tabua-mare/${latLngParam}/${uf.toLowerCase()}/${month}/${daysParam}`;
     }
     
     safeLog(`[API] Req URL: ${url}`);
     
-    // Use simple GET without extra headers to avoid 403 Forbidden
     const res = await fetch(url, {
+        headers: { 'Accept': 'application/json' },
         referrerPolicy: 'no-referrer'
     });
     
@@ -275,14 +296,14 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     
     const processTides = (tides: any[], dateStr: string) => {
          tides.forEach((t: any) => {
-             const [hh, mm] = t.time.split(':').map(Number);
+             const [hh, mm] = (t.hour || t.time || "00:00").split(':').map(Number);
              const today = new Date(now.toISOString().split('T')[0]);
              const tideDate = new Date(dateStr);
              const diffDays = Math.round((tideDate.getTime() - today.getTime()) / (86400000));
              const timeOffset = (diffDays * 24) + hh + (mm / 60);
 
              if (timeOffset >= 0 && timeOffset <= cycleDuration + 24) {
-                const h = parseFloat(t.height);
+                const h = parseFloat(t.level || t.height);
                 if (!isNaN(h)) {
                     // Normalize (Approx: -0.2 to 2.9m -> 0 to 100%)
                     let pct = ((h + 0.2) / 2.9) * 100;
@@ -306,7 +327,9 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
              item.months.forEach((m: any) => {
                  if (m.days) {
                      m.days.forEach((d: any) => {
-                         if (d.tides) processTides(d.tides, d.date);
+                         // API can return hours (new format) or tides (old format)
+                         if (d.hours) processTides(d.hours, d.date || now.toISOString().split('T')[0]);
+                         else if (d.tides) processTides(d.tides, d.date || now.toISOString().split('T')[0]);
                      });
                  }
              });

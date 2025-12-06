@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../../store';
 import { DisplayTheme, WidgetType, ViewState } from '../../types';
-import { Zap, Palette, CloudSun, Sparkles, Image as ImageIcon, CheckCircle, Moon, Sun, Thermometer, Wind, Droplets, Gauge, Wifi, Bluetooth, ExternalLink, Settings } from 'lucide-react';
+import { Zap, Palette, CloudSun, Sparkles, Image as ImageIcon, Wifi, Bluetooth, Settings, Sun, Moon, Droplets, Thermometer, Wind, Waves } from 'lucide-react';
 import { generateDisplayImage } from '../../services/geminiService';
 
 export const DisplaySidebar: React.FC = () => {
@@ -89,82 +89,30 @@ export const DisplaySidebar: React.FC = () => {
   return (
     <div className="flex flex-col gap-6 max-h-full overflow-y-auto pr-2 pb-20 custom-scrollbar">
         
-        {/* Data Monitor Card (Read Only) */}
-        <div className="bg-slate-800 rounded-lg border border-slate-700 p-6">
-            <div className="flex justify-between items-start mb-4">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                    <CloudSun size={14} className="text-cyan-400" /> Monitor de Dados
-                </h3>
-                <button 
-                    onClick={() => setView(ViewState.EDITOR)}
-                    className="p-1.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition"
-                    title="Configurar Fontes de Dados"
-                >
-                    <Settings size={14} />
-                </button>
+        {/* Compact Status Bar (Read Only) */}
+        <div className="bg-slate-800 rounded-lg border border-slate-700 p-3 flex items-center justify-between">
+            <div className="flex items-center gap-4 text-xs">
+                <div className="flex flex-col items-center" title="Dados de Maré">
+                    <Waves size={16} className="text-cyan-400 mb-0.5" />
+                    <span className="text-slate-300 font-mono">ON</span>
+                </div>
+                <div className="w-px h-8 bg-slate-700"></div>
+                <div className="flex flex-col items-center" title="Clima Atual">
+                     {weatherData.isDay ? <Sun size={16} className="text-amber-400 mb-0.5"/> : <Moon size={16} className="text-indigo-400 mb-0.5"/>}
+                     <span className="text-slate-300 font-mono">{Math.round(weatherData.temp)}°C</span>
+                </div>
+                <div className="flex flex-col items-center" title="Vento">
+                     <Wind size={16} className="text-slate-400 mb-0.5"/>
+                     <span className="text-slate-300 font-mono">{Math.round(weatherData.windSpeed)}</span>
+                </div>
             </div>
-            
-            <div className="text-[10px] text-slate-500 mb-3 bg-slate-900/50 p-2 rounded">
-                <div className="flex justify-between">
-                    <span>Fonte Ativa:</span>
-                    <span className="text-slate-300 font-bold">{dataSourceConfig.activeSource}</span>
-                </div>
-                {dataSourceConfig.activeSource === 'API' && (
-                    <div className="flex justify-between mt-1">
-                         <span>Loc:</span> <span className="text-slate-300 truncate max-w-[100px]">{dataSourceConfig.api.locationId}</span>
-                    </div>
-                )}
-            </div>
-
-            {weatherData ? (
-                <div className="mt-2 flex flex-col gap-4 animate-in fade-in">
-                    {/* Basic Status */}
-                    <div className="text-[10px] text-green-400 flex flex-col gap-1 p-2 bg-green-900/10 rounded border border-green-900/30">
-                        <div className="flex items-center gap-1 font-bold">
-                            <CheckCircle size={12} /> Estado do Sistema
-                        </div>
-                        {weatherData.conditionText && (
-                            <div className="flex items-center gap-1 text-slate-300">
-                                 {weatherData.isDay ? <Sun size={10} className="text-amber-400"/> : <Moon size={10} className="text-indigo-400"/>}
-                                 {weatherData.conditionText} ({Math.round(weatherData.temp)}°C)
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Environmental Grid */}
-                    <div>
-                        <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2 flex items-center gap-1"><Gauge size={12}/> Métricas Atuais (Leitura)</h4>
-                        <div className="grid grid-cols-2 gap-2">
-                             <div className="bg-slate-900 p-2 rounded flex flex-col items-center justify-center border border-slate-700">
-                                 <span className="text-[9px] text-slate-500 uppercase">Sensação</span>
-                                 <span className="text-sm font-bold text-orange-400">{weatherData.feelsLike}°C</span>
-                             </div>
-                             <div className="bg-slate-900 p-2 rounded flex flex-col items-center justify-center border border-slate-700">
-                                 <span className="text-[9px] text-slate-500 uppercase flex items-center gap-1"><Sun size={8}/> UV Index</span>
-                                 <span className={`text-sm font-bold ${weatherData.uv > 5 ? 'text-purple-400' : 'text-green-400'}`}>{weatherData.uv}</span>
-                             </div>
-                             <div className="bg-slate-900 p-2 rounded flex flex-col items-center justify-center border border-slate-700">
-                                 <span className="text-[9px] text-slate-500 uppercase flex items-center gap-1"><Wind size={8}/> Vento</span>
-                                 <span className="text-sm font-bold text-slate-300">{weatherData.windSpeed}kph</span>
-                             </div>
-                             <div className="bg-slate-900 p-2 rounded flex flex-col items-center justify-center border border-slate-700">
-                                 <span className="text-[9px] text-slate-500 uppercase flex items-center gap-1"><Droplets size={8}/> Umidade</span>
-                                 <span className="text-sm font-bold text-blue-400">{weatherData.humidity}%</span>
-                             </div>
-                        </div>
-                    </div>
-                </div>
-            ) : (
-                <div className="text-xs text-slate-500 text-center py-4 italic">
-                    Nenhum dado carregado.
-                </div>
-            )}
             
             <button 
                 onClick={() => setView(ViewState.EDITOR)}
-                className="w-full mt-4 py-2 rounded text-xs font-bold flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white transition border border-slate-600"
+                className="p-2 hover:bg-slate-700 rounded-full text-slate-400 hover:text-white transition"
+                title="Configurar Fontes de Dados"
             >
-                <ExternalLink size={12} /> Gerenciar Fontes de Dados
+                <Settings size={18} />
             </button>
         </div>
 

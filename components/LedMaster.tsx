@@ -1,8 +1,7 @@
 
-
 import React, { useRef, useEffect, useState } from 'react';
 import { useAppStore } from '../store';
-import { Zap, Settings, AlertTriangle, Lightbulb, BoxSelect, CloudRain, Wind, Thermometer, Moon, Activity, Waves, AlignLeft, Sun, Sliders } from 'lucide-react';
+import { Zap, Settings, AlertTriangle, Lightbulb, BoxSelect, CloudRain, Wind, Thermometer, Moon, Activity, Waves, AlignLeft, Sun, Sliders, Grid } from 'lucide-react';
 
 // PREMIUM PRESETS DEFINITION
 const PRESETS = [
@@ -34,6 +33,24 @@ export const LedMaster: React.FC = () => {
     if (typicalCurrent > 1 && typicalCurrent <= 2.5) psuSuggestion = "5V 3A";
     if (typicalCurrent > 2.5 && typicalCurrent <= 5) psuSuggestion = "5V 6A";
     if (typicalCurrent > 5) psuSuggestion = "5V 10A+ (Injeção de Energia)";
+
+    // Hardware Presets
+    const applyHardwarePreset = (type: '16x16' | '16x80') => {
+        if (type === '16x16') {
+            updateFirmwareConfig({
+                ledCount: 256,
+                ledLayoutType: 'MATRIX',
+                ledMatrixWidth: 16
+            });
+        } else if (type === '16x80') {
+            // Flexible panels 16x80 (Total 1280 LEDs)
+            updateFirmwareConfig({
+                ledCount: 1280,
+                ledLayoutType: 'MATRIX',
+                ledMatrixWidth: 80 // Assuming Landscape orientation
+            });
+        }
+    };
 
     // Helper: Interpolate Tide Height
     const getTideHeightAt = (time: number) => {
@@ -87,6 +104,27 @@ export const LedMaster: React.FC = () => {
             const time = Date.now();
             const tideLevel = getTideHeightAt(simulatedTime); 
 
+            // Calculate grid metrics for Equidistant Spacing
+            let cellSize = 10;
+            let startX = 0;
+            let startY = 0;
+
+            if (layout === 'MATRIX') {
+                // Determine the largest possible square cell size that fits in the canvas
+                const padding = 20;
+                const availW = width - (padding * 2);
+                const availH = height - (padding * 2);
+                
+                // Calculate size based on limiting dimension
+                cellSize = Math.min(availW / matrixW, availH / matrixH);
+                
+                // Center the matrix in the canvas
+                const totalGridWidth = cellSize * matrixW;
+                const totalGridHeight = cellSize * matrixH;
+                startX = (width - totalGridWidth) / 2;
+                startY = (height - totalGridHeight) / 2;
+            }
+
             // Render LEDs
             for (let i = 0; i < count; i++) {
                 let x = 0, y = 0, size = 10;
@@ -101,19 +139,28 @@ export const LedMaster: React.FC = () => {
                     size = Math.min(spacing * 0.8, 15);
                     col = i; row = 0;
                 } else if (layout === 'MATRIX') {
-                    const cellW = width / matrixW;
-                    const cellH = height / matrixH;
                     row = Math.floor(i / matrixW);
                     col = i % matrixW;
-                    if (row % 2 !== 0) col = (matrixW - 1) - col; // Serpentine visual
-                    x = (col * cellW) + (cellW / 2);
-                    y = (row * cellH) + (cellH / 2);
-                    size = Math.min(cellW, cellH) * 0.7;
+                    
+                    // Serpentine visual logic (matches standard panels)
+                    if (row % 2 !== 0) col = (matrixW - 1) - col; 
+                    
+                    x = startX + (col * cellSize) + (cellSize / 2);
+                    y = startY + (row * cellSize) + (cellSize / 2);
+                    size = cellSize * 0.8;
+                } else if (layout === 'RING') {
+                    // Simple ring logic
+                    const radius = Math.min(width, height) * 0.35;
+                    const angle = (i / count) * Math.PI * 2 - (Math.PI / 2);
+                    x = (width / 2) + Math.cos(angle) * radius;
+                    y = (height / 2) + Math.sin(angle) * radius;
+                    size = (Math.PI * 2 * radius / count) * 0.8;
+                    col = i; row = 0;
                 }
 
                 // --- GENERATIVE ART SIMULATION (Approximating C++ logic) ---
                 let r = 0, g = 0, b = 0;
-                const effRow = matrixH - 1 - row; // Bottom up
+                const effRow = matrixH - 1 - row; // Bottom up for logic
 
                 if (activePresetId === 'tideFill2') {
                     const fillH = (tideLevel / 100) * matrixH;
@@ -205,6 +252,19 @@ export const LedMaster: React.FC = () => {
                     <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
                         <Settings size={16} className="text-yellow-400" /> Hardware
                     </h3>
+                    
+                    <div className="mb-4">
+                        <span className="block text-[10px] text-slate-500 uppercase font-bold mb-2">Presets Rápidos (WS2812B)</span>
+                        <div className="grid grid-cols-2 gap-2">
+                            <button onClick={() => applyHardwarePreset('16x16')} className="p-2 bg-slate-700 hover:bg-slate-600 rounded text-xs text-white border border-slate-600 flex flex-col items-center">
+                                <Grid size={14} className="mb-1 text-cyan-400"/> Matrix 16x16
+                            </button>
+                            <button onClick={() => applyHardwarePreset('16x80')} className="p-2 bg-slate-700 hover:bg-slate-600 rounded text-xs text-white border border-slate-600 flex flex-col items-center">
+                                <AlignLeft size={14} className="mb-1 text-green-400"/> Flex 16x80
+                            </button>
+                        </div>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-4 text-xs">
                         <div>
                              <span className="block text-slate-500 uppercase font-bold">GPIO</span>
