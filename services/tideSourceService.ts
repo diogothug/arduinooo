@@ -11,6 +11,30 @@ const uid = () => Math.random().toString(36).substr(2, 9);
 // We use a public proxy to act as the "Backend" for these requests, solving the CORS issue.
 const CORS_PROXY = "https://api.allorigins.win/raw?url=";
 
+// --- HARDCODED MOCK DATA (New Moreré Data 2025) ---
+const HARDCODED_TIDE_DATA = {
+  "location": "morere",
+  "timezone": "America/Bahia",
+  "period": "até 2025-12-29",
+  "tides": [
+    {
+      "date": "2025-12-01",
+      "low": ["02:11", "14:27"],
+      "high": ["08:39", "20:51"]
+    },
+    {
+      "date": "2025-12-02",
+      "low": ["02:59", "15:18"],
+      "high": ["09:28", "21:41"]
+    },
+    {
+      "date": "2025-12-03",
+      "low": ["03:46", "16:05"],
+      "high": ["10:15", "22:28"]
+    }
+  ]
+};
+
 // Robust Base URL Builder
 const buildApiBase = (customBase?: string): string => {
     const defaultBase = "https://tabuamare.devtu.qzz.io/api/v1";
@@ -290,20 +314,37 @@ export const tideSourceService = {
     },
 };
 
-// --- UPDATED FETCH LOGIC: GET 30 DAYS BATCHED BY MONTH ---
+// --- UPDATED FETCH LOGIC: RETRY 30 DAYS -> 2 DAYS ---
 async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: number): Promise<Keyframe[]> {
+    // Attempt 1: 30 Days (Standard)
+    try {
+        return await fetchTabuaMareDataDuration(config, 30);
+    } catch (e: any) {
+        console.warn(`[TideSource] Falha ao buscar 30 dias: ${e.message}. Tentando fallback para 2 dias...`);
+        safeLog(`[API] Aviso: Falha em 30 dias (${e.message}). Tentando buscar apenas 2 dias...`);
+        
+        // Attempt 2: 2 Days (Fallback)
+        try {
+            return await fetchTabuaMareDataDuration(config, 2);
+        } catch (e2: any) {
+            // Throw original error or new error if both fail
+            throw new Error(`Falha na API Maré (30d e 2d): ${e2.message}`);
+        }
+    }
+}
+
+async function fetchTabuaMareDataDuration(config: DataSourceConfig, totalDays: number): Promise<Keyframe[]> {
     const { baseUrl, uf, lat, lng, harborId } = config.tabuaMare;
     const apiBase = buildApiBase(baseUrl);
 
     const now = new Date();
-    const TOTAL_DAYS = 30; // Strict requirement: Get 30 days
     const allFrames: Keyframe[] = [];
 
     // 1. Organize days into Month buckets (to handle Month rollover)
     // Example: Map { "2023-10": [28,29,30,31], "2023-11": [1,2,3...] }
     const monthsMap = new Map<string, number[]>();
 
-    for (let i = 0; i < TOTAL_DAYS; i++) {
+    for (let i = 0; i < totalDays; i++) {
         const d = new Date(now);
         d.setDate(now.getDate() + i);
         const key = `${d.getFullYear()}-${d.getMonth() + 1}`;
@@ -311,7 +352,7 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
         monthsMap.get(key)!.push(d.getDate());
     }
 
-    safeLog(`[API] Preparing 30-day fetch across ${monthsMap.size} month(s).`);
+    safeLog(`[API] Preparing ${totalDays}-day fetch across ${monthsMap.size} month(s).`);
 
     // 2. Fetch function for a single batch
     const fetchBatch = async (year: number, month: number, days: number[]) => {
@@ -359,8 +400,8 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
                     
                     const timeOffset = (diffDays * 24) + hh + (mm / 60);
 
-                    // Allow range: 0 to 30 days + small buffer
-                    if (timeOffset >= -2 && timeOffset <= (TOTAL_DAYS * 24) + 24) {
+                    // Allow range: 0 to totalDays days + small buffer
+                    if (timeOffset >= -2 && timeOffset <= (totalDays * 24) + 24) {
                         const hVal = parseFloat(t.level || t.height);
                          if (!isNaN(hVal)) {
                             // Normalize (Approx: -0.2 to 2.9m -> 0 to 100%)
@@ -405,19 +446,65 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
         }
     }
 
-    if (allFrames.length === 0) throw new Error("Nenhum dado retornado para os próximos 30 dias (Verifique conexão ou ID do porto).");
+    if (allFrames.length === 0) throw new Error(`Nenhum dado retornado para os próximos ${totalDays} dias (Verifique conexão ou ID do porto).`);
 
     return allFrames.sort((a,b) => a.timeOffset - b.timeOffset);
 }
 
+// Replaced generic math generation with Hardcoded Data Parsing (Updated with better data)
 function generateMockData(config: DataSourceConfig, cycleDuration: number): Keyframe[] {
-    const { minHeight, maxHeight, periodHours } = config.mock;
+    safeLog("[TideSource] Usando dados estáticos (Moreré 2025 Melhorados)...");
+    
+    const frames: Keyframe[] = [];
+    const tides = HARDCODED_TIDE_DATA.tides;
+    
+    // Iterate over the days provided
+    tides.forEach((dayData, dayIndex) => {
+        // Parse High Tides
+        dayData.high.forEach((timeStr) => {
+             const [hh, mm] = timeStr.split(':').map(Number);
+             const timeOffset = (dayIndex * 24) + hh + (mm / 60);
+             
+             // High Tide = ~95%
+             frames.push({
+                 id: uid(),
+                 timeOffset: parseFloat(timeOffset.toFixed(2)),
+                 height: 95,
+                 color: '#00eebb', // Cyan/Green for High
+                 intensity: 200,
+                 effect: EffectType.WAVE
+             });
+        });
+
+        // Parse Low Tides
+        dayData.low.forEach((timeStr) => {
+             const [hh, mm] = timeStr.split(':').map(Number);
+             const timeOffset = (dayIndex * 24) + hh + (mm / 60);
+             
+             // Low Tide = ~15%
+             frames.push({
+                 id: uid(),
+                 timeOffset: parseFloat(timeOffset.toFixed(2)),
+                 height: 15,
+                 color: '#004488', // Dark Blue for Low
+                 intensity: 50,
+                 effect: EffectType.STATIC
+             });
+        });
+    });
+    
+    // Sort frames by time
+    return frames.sort((a,b) => a.timeOffset - b.timeOffset);
+}
+
+function calculateFallback(lastFrame: Keyframe | null, cycleDuration: number): Keyframe[] {
+    // Basic math fallback if even the hardcoded data fails
     const frames: Keyframe[] = [];
     const limit = Math.ceil(cycleDuration / 12) * 12 + 12;
     for (let i = 0; i <= limit; i++) {
         const t = i;
-        const val = (Math.sin(t * 2 * Math.PI / periodHours) + 1) / 2;
-        const h = minHeight + (val * (maxHeight - minHeight));
+        const val = (Math.sin(t * 2 * Math.PI / 12.42) + 1) / 2;
+        const h = 20 + (val * 60);
         if(t <= cycleDuration) {
              frames.push({
                 id: uid(),
@@ -430,8 +517,4 @@ function generateMockData(config: DataSourceConfig, cycleDuration: number): Keyf
         }
     }
     return frames;
-}
-
-function calculateFallback(lastFrame: Keyframe | null, cycleDuration: number): Keyframe[] {
-    return generateMockData({mock: {minHeight: 20, maxHeight: 80, periodHours: 12.42}} as any, cycleDuration);
 }
