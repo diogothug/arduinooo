@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { useAppStore } from '../../store';
 import { Network, Code, AlertCircle } from 'lucide-react';
@@ -24,13 +25,21 @@ export const LedDebugPanel: React.FC = () => {
             const base = dataSourceConfig.tabuaMare.baseUrl;
             const pid = dataSourceConfig.tabuaMare.harborId || 8;
             const month = new Date().getMonth() + 1;
-            const encodedBracket = "%5B6%5D"; 
+            const today = new Date().getDate();
+            // Encoded [today, today+1, ...]
+            const encodedBracket = `%5B${today},${today+1},${today+2}%5D`; 
             let cleanBase = base.replace(/\/+$/, "");
+            
+            // Ensure HTTPS in snippet
             if(!cleanBase.startsWith('http')) cleanBase = 'https://' + cleanBase;
+            else if(cleanBase.startsWith('http://')) cleanBase = cleanBase.replace('http://', 'https://');
+
             url = `${cleanBase}/tabua-mare/${pid}/${month}/${encodedBracket}`;
             
             snippet = `#include <WiFi.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
+#include <ArduinoJson.h>
 
 const char* ssid = "SEU_SSID";
 const char* password = "SUA_SENHA";
@@ -41,15 +50,34 @@ void setup() {
   while (WiFi.status() != WL_CONNECTED) delay(500);
   
   String url = "${url}";
+  
+  WiFiClientSecure client;
+  client.setInsecure(); // Ignore SSL for testing
+  
   HTTPClient http;
   http.setDebugOutput(true);
   
-  if (http.begin(url)) {
+  if (http.begin(client, url)) {
     http.addHeader("User-Agent", "ESP32-Debug");
     int httpCode = http.GET();
     Serial.printf("HTTP Code: %d\\n", httpCode);
-    if (httpCode > 0) Serial.println(http.getString());
-    else Serial.printf("Error: %s\\n", http.errorToString(httpCode).c_str());
+    
+    if (httpCode == 200) {
+        String payload = http.getString();
+        Serial.println(payload);
+        
+        DynamicJsonDocument doc(8192);
+        deserializeJson(doc, payload);
+        // Parsing data[0].months[0]...
+        JsonArray hours = doc["data"][0]["months"][0]["days"][0]["hours"];
+        for(JsonObject h : hours) {
+            const char* time = h["hour"];
+            float level = h["level"];
+            Serial.printf("Time: %s Level: %.2f\\n", time, level);
+        }
+    } else {
+        Serial.println(http.getString());
+    }
     http.end();
   }
 }
@@ -73,7 +101,7 @@ void loop() {}`;
                 <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2"><Network size={14}/> Teste de Conectividade</h3>
                 <div className="space-y-2 mb-4">
                     <button onClick={()=>handleCheckApi('TABUA_MARE')} className="w-full bg-slate-900 hover:bg-slate-800 border border-slate-600 rounded p-2 text-xs text-white text-left flex justify-between">
-                        <span>Check Tábua Maré (Robust Debug)</span> <span>GET</span>
+                        <span>Check Tábua Maré (Secure & Parsed)</span> <span>GET</span>
                     </button>
                     <button onClick={()=>handleCheckApi('WEATHER')} className="w-full bg-slate-900 hover:bg-slate-800 border border-slate-600 rounded p-2 text-xs text-white text-left flex justify-between">
                         <span>Check WeatherAPI</span> <span>GET</span>

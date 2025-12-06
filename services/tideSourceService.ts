@@ -246,7 +246,7 @@ export const tideSourceService = {
         
         const apiBase = buildApiBase(baseUrl);
         
-        // Correct endpoint: /harbors/{id} (Plural)
+        // Correct endpoint: /harbors/{id} (Plural based on fix request)
         const targetUrl = `${apiBase}/harbors/${harborId}`;
         safeLog(`[API] Target URL: ${targetUrl}`);
         
@@ -277,7 +277,7 @@ export const tideSourceService = {
          const { baseUrl, uf, lat, lng } = config.tabuaMare;
          const apiBase = buildApiBase(baseUrl);
          
-         // Fix: Use manual encoding for brackets to avoid proxy/encoding issues
+         // Use manual encoding for brackets to avoid proxy/encoding issues
          // Wanted: [lat,lng] -> %5Blat,lng%5D
          const latLngParam = `%5B${lat},${lng}%5D`;
          
@@ -402,24 +402,33 @@ async function fetchTabuaMareDataDuration(config: DataSourceConfig, totalDays: n
                  daysList.forEach((d: any) => {
                      const dateStr = d.date; // "YYYY-MM-DD"
                      const hoursList = d.hours || [];
+
+                     // Sort hours first to properly determine structure/extrema
+                     // And map to numeric time for simpler logic
+                     const parsedHours = hoursList.map((hObj: any) => {
+                         const parts = (hObj.hour || "").split(':');
+                         const hh = parseInt(parts[0], 10) || 0;
+                         const mm = parseInt(parts[1], 10) || 0;
+                         const t = hh + (mm / 60);
+                         const val = parseFloat(hObj.level);
+                         return { ...hObj, hh, mm, t, val };
+                     }).sort((a: any, b: any) => a.t - b.t);
+
+                     if (parsedHours.length === 0) return;
+
+                     // Determine Day Mean Level to infer High/Low
+                     // (Since 'type' field is missing in new API)
+                     const levels = parsedHours.map((x: any) => x.val).filter((v: number) => !isNaN(v));
+                     const minL = Math.min(...levels);
+                     const maxL = Math.max(...levels);
+                     const midL = (minL + maxL) / 2;
                      
-                     hoursList.forEach((hObj: any) => {
-                         // New fields: hour, level (no type)
-                         const timeStr = hObj.hour;
-                         if (!timeStr) return;
+                     parsedHours.forEach((hObj: any) => {
+                         const { hh, mm, val } = hObj;
                          
-                         // Parse "HH:MM:SS" or "HH:MM"
-                         const parts = timeStr.split(':');
-                         const hh = parseInt(parts[0], 10);
-                         const mm = parseInt(parts[1], 10);
-                         
-                         const levelVal = parseFloat(hObj.level);
-                         
-                         if (!isNaN(hh) && !isNaN(mm) && !isNaN(levelVal)) {
+                         if (!isNaN(hh) && !isNaN(mm) && !isNaN(val)) {
                             // Date math (Local vs UTC handling)
                             // We treat "YYYY-MM-DD" + Hour as relative time from "now"
-                            
-                            // Reference: Today Midnight
                             const today = new Date(now.toISOString().split('T')[0]); 
                             const tideDate = new Date(dateStr); 
 
@@ -431,12 +440,12 @@ async function fetchTabuaMareDataDuration(config: DataSourceConfig, totalDays: n
                             // Filter valid window
                             if (timeOffset >= -2 && timeOffset <= (totalDays * 24) + 24) {
                                 // Normalize (Approx: -0.2 to 2.9m -> 0 to 100%)
-                                let pct = ((levelVal + 0.2) / 2.9) * 100;
+                                let pct = ((val + 0.2) / 2.9) * 100;
                                 pct = Math.max(0, Math.min(100, pct));
                                 
                                 // Infer High/Low since 'type' is missing
-                                // Heuristic: Above 50% = High/Wave, Below = Low/Static
-                                const isHigh = pct > 50;
+                                // Using day's median threshold
+                                const isHigh = val > midL;
                                 
                                 allFrames.push({
                                     id: uid(),

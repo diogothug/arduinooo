@@ -286,7 +286,7 @@ export const generateWeatherManagerH = () => `
 #define WEATHER_MANAGER_H
 
 #include <HTTPClient.h>
-#include <WiFiClient.h>
+#include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 #include "MareEngine.h"
 
@@ -368,21 +368,29 @@ void WeatherManager::fetchFromTabuaMare() {
     int day = timeinfo.tm_mday;
     int harborId = TABUA_MARE_HARBOR_ID_DEFAULT;
 
-    // 2. Construct URL - HTTP plain text, No Brackets (Proven Fix)
-    // Format: .../tabua-mare/{id}/{month}/{day}
-    String url = "http://tabuamare.devtu.qzz.io/api/v1/tabua-mare/";
-    url += String(harborId) + "/" + String(month) + "/" + String(day);
+    // 2. Construct URL - HTTPS + Array Encoding + 15 Days
+    // We request the next 7 days for robustness
+    String daysParam = "%5B";
+    for(int i=0; i<7; i++) { 
+       daysParam += String(day + i);
+       if(i < 6) daysParam += ",";
+    }
+    daysParam += "%5D";
+
+    // Format: .../tabua-mare/{id}/{month}/[d1,d2...]
+    String url = "https://tabuamare.devtu.qzz.io/api/v1/tabua-mare/";
+    url += String(harborId) + "/" + String(month) + "/" + daysParam;
     
     Serial.printf("[HTTP] URL: %s\\n", url.c_str());
 
     // 3. Setup Client
-    WiFiClient client;
-    HTTPClient http;
+    WiFiClientSecure client;
+    client.setInsecure(); // Skip cert validation for simplicity on embedded
     
-    // Configs de robustez
+    HTTPClient http;
     http.begin(client, url);
-    http.setConnectTimeout(10000); // 10s timeout de conexão
-    http.setTimeout(10000);        // 10s timeout de leitura
+    http.setConnectTimeout(15000); 
+    http.setTimeout(15000);        
     
     unsigned long start = millis();
     int httpCode = http.GET();
@@ -394,37 +402,48 @@ void WeatherManager::fetchFromTabuaMare() {
         if (httpCode == HTTP_CODE_OK) {
             String payload = http.getString();
             Serial.printf("[HTTP] Payload Size: %d bytes\\n", payload.length());
-            
-            // Validate Payload
-            if (payload.length() < 10) {
-                Serial.println("[Weather] Erro: Payload muito curto/vazio.");
-                return;
-            }
 
-            // Parse JSON
-            DynamicJsonDocument doc(4096);
+            // Parse Nested JSON
+            DynamicJsonDocument doc(16384); // Larger buffer for multiple days
             DeserializationError error = deserializeJson(doc, payload);
             
             if (!error) {
+                // Parse Logic matching new structure: data[0].months[0].days[].hours[]
+                JsonArray dataArr = doc["data"];
+                if (dataArr.size() > 0) {
+                    JsonArray months = dataArr[0]["months"];
+                    for (JsonObject m : months) {
+                        JsonArray days = m["days"];
+                        for (JsonObject d : days) {
+                            JsonArray hours = d["hours"];
+                            for (JsonObject h : hours) {
+                                // Extract hour: "HH:MM:SS"
+                                String timeStr = h["hour"].as<String>();
+                                float level = h["level"].as<float>();
+                                
+                                int colonIdx = timeStr.indexOf(':');
+                                int hh = timeStr.substring(0, colonIdx).toInt();
+                                int mm = timeStr.substring(colonIdx+1, colonIdx+3).toInt();
+                                
+                                Serial.printf("Tide: %02d:%02d Level: %.2f\\n", hh, mm, level);
+                                // Here we would insert into engine
+                            }
+                        }
+                    }
+                }
                 Serial.println("[Weather] JSON Parse OK!");
-                // Exemplo de extração de dados
-                // JsonArray data = doc["data"];
-                // if(data && data.size() > 0) { ... }
             } else {
                 Serial.print("[Weather] JSON Parse Error: ");
                 Serial.println(error.c_str());
             }
         } else {
-             // Server reached but returned error (404, 500, etc)
              String errorBody = http.getString();
              Serial.printf("[HTTP] Server Error Body: %s\\n", errorBody.c_str());
         }
     } else {
-        // Connection Failed
         Serial.printf("[HTTP] Connect Failed: %s\\n", http.errorToString(httpCode).c_str());
     }
     
     http.end();
-    Serial.printf("[System] Heap Pos-Req: %d bytes\\n", ESP.getFreeHeap());
 }
 `;
