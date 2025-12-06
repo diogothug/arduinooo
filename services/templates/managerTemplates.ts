@@ -425,12 +425,13 @@ void WeatherManager::fetchTabuaMareData() {
     
     String url;
     
-    // Dynamic Port Logic
+    // Dynamic Port Logic using Encoded Brackets for safety
     if (_harborId > 0) {
-        url = String(TABUA_MARE_BASE) + "/tabua-mare/" + String(_harborId) + "/" + String(month) + "/[" + String(day) + "]";
+        // Enforcing encoded brackets [%5B, %5D] instead of literals, just to be safe with standard URL parsing
+        url = String(TABUA_MARE_BASE) + "/tabua-mare/" + String(_harborId) + "/" + String(month) + "/%5B" + String(day) + "%5D";
     } else {
         // Fallback to build-time Geo if no port set
-        url = String(TABUA_MARE_BASE) + "/geo-tabua-mare/" + TABUA_MARE_COORDS + "/" + TABUA_MARE_STATE + "/" + String(month) + "/[" + String(day) + "]";
+        url = String(TABUA_MARE_BASE) + "/geo-tabua-mare/" + TABUA_MARE_COORDS + "/" + TABUA_MARE_STATE + "/" + String(month) + "/%5B" + String(day) + "%5D";
     }
 
     WiFiClientSecure client;

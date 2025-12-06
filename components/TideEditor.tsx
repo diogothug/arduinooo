@@ -116,6 +116,7 @@ export const TideEditor: React.FC = () => {
         updateFirmwareConfig({ cycleDuration: cycleLimit });
         
         // Prepare Payload with Firmware 2.0 structure
+        // Include harborId so the firmware can save it to NVS and fetch updates autonomously
         const payload = {
             frames: useSevenDayMode ? activeData : keyframes,
             cycleDuration: cycleLimit,

@@ -229,11 +229,13 @@ export const tideSourceService = {
          const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io//api/v1'); 
          
          // Fix: Encode parameters for AllOrigins proxy (Double Encode logic)
+         // We must manually encode brackets here so they survive the second encodeURIComponent later
          const latLngParam = encodeURIComponent(`[${lat},${lng}]`);
          
          const targetUrl = `${apiBase}/nearested-harbor/${uf.toLowerCase()}/${latLngParam}`;
 
          // PROXY IMPLEMENTATION
+         // The proxy expects the target URL to be fully encoded as a parameter
          const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
          
          safeLog(`[API] Nearest (Proxy): ${proxyUrl}`);
@@ -278,18 +280,23 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     }
     if (daysArray.length === 0) daysArray.push(now.getDate());
     
-    // Fix: Encode parameters for AllOrigins proxy (Double Encode logic)
+    // Fix: Double Encode Logic for AllOrigins
+    // First, encode the array string: [1,2,3] -> %5B1%2C2%2C3%5D
+    // This is required because this string becomes part of the target URL path.
     const daysParam = encodeURIComponent(`[${daysArray.join(',')}]`);
     
     let targetUrl = "";
     if (harborId) {
         targetUrl = `${apiBase}/tabua-mare/${harborId}/${month}/${daysParam}`;
     } else {
+        // Also encode lat/lng params if falling back to geo search
         const latLngParam = encodeURIComponent(`[${lat},${lng}]`);
         targetUrl = `${apiBase}/geo-tabua-mare/${latLngParam}/${uf.toLowerCase()}/${month}/${daysParam}`;
     }
     
     // PROXY IMPLEMENTATION
+    // Finally, encode the ENTIRE target URL to pass it as the 'url' query param to AllOrigins
+    // This results in the brackets being double-encoded (%5B -> %255B) in the final request
     const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
 
     safeLog(`[API] Req Proxy URL: ${proxyUrl}`);
