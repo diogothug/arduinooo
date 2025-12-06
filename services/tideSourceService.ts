@@ -221,10 +221,8 @@ export const tideSourceService = {
          const { baseUrl, uf, lat, lng } = config.tabuaMare;
          const apiBase = sanitizeBaseUrl(baseUrl || 'https://tabuamare.devtu.qzz.io/api/v1'); 
          
-         // Fix: Encode parameters for AllOrigins proxy (Double Encode logic)
-         // We must manually encode brackets here so they survive the second encodeURIComponent later
-         // [lat,lng] -> %5Blat%2Clng%5D
-         const latLngParam = encodeURIComponent(`[${lat},${lng}]`);
+         // Fix: Do not encode internal parameters here. We encode the full URL later for the proxy.
+         const latLngParam = `[${lat},${lng}]`;
          
          const targetUrl = `${apiBase}/nearested-harbor/${uf.toLowerCase()}/${latLngParam}`;
 
@@ -274,18 +272,16 @@ async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: numbe
     }
     if (daysArray.length === 0) daysArray.push(now.getDate());
     
-    // Fix: Double Encode Logic for AllOrigins
-    // First, encode the array string: [1,2,3] -> %5B1%2C2%2C3%5D
-    // This is required because this string becomes part of the target URL path.
-    // This results in the final URL sent to AllOrigins having %255B (double encoded bracket)
-    const daysParam = encodeURIComponent(`[${daysArray.join(',')}]`);
+    // Fix: Do not double encode. The brackets and commas should remain as part of the raw URL path string
+    // before the whole URL is encoded for the AllOrigins proxy.
+    const daysParam = `[${daysArray.join(',')}]`;
     
     let targetUrl = "";
     if (harborId) {
         targetUrl = `${apiBase}/tabua-mare/${harborId}/${month}/${daysParam}`;
     } else {
-        // Also encode lat/lng params if falling back to geo search
-        const latLngParam = encodeURIComponent(`[${lat},${lng}]`);
+        // Fallback to geo search
+        const latLngParam = `[${lat},${lng}]`;
         targetUrl = `${apiBase}/geo-tabua-mare/${latLngParam}/${uf.toLowerCase()}/${month}/${daysParam}`;
     }
     
