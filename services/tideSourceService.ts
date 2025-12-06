@@ -82,6 +82,7 @@ export const tideSourceService = {
         // 2. Tábua Maré (Brasil)
         if (config.activeSource === TideSourceType.TABUA_MARE) {
              try {
+                 // Note: We ignore cycleDuration here and enforce 30 days within the fetcher
                  resultFrames = await fetchTabuaMareData(config, cycleDuration);
                  // Note: Tábua Maré API currently only provides tide data, not weather.
                  // We return frames, weather remains undefined (controlled manually)
@@ -289,116 +290,124 @@ export const tideSourceService = {
     },
 };
 
+// --- UPDATED FETCH LOGIC: GET 30 DAYS BATCHED BY MONTH ---
 async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: number): Promise<Keyframe[]> {
     const { baseUrl, uf, lat, lng, harborId } = config.tabuaMare;
     const apiBase = buildApiBase(baseUrl);
 
     const now = new Date();
-    const month = now.getMonth() + 1; 
-    const daysRequired = Math.ceil(cycleDuration / 24) || 1;
-    const daysArray: number[] = [];
-    
-    for(let i=0; i<daysRequired; i++) {
+    const TOTAL_DAYS = 30; // Strict requirement: Get 30 days
+    const allFrames: Keyframe[] = [];
+
+    // 1. Organize days into Month buckets (to handle Month rollover)
+    // Example: Map { "2023-10": [28,29,30,31], "2023-11": [1,2,3...] }
+    const monthsMap = new Map<string, number[]>();
+
+    for (let i = 0; i < TOTAL_DAYS; i++) {
         const d = new Date(now);
         d.setDate(now.getDate() + i);
-        if (d.getMonth() + 1 === month) daysArray.push(d.getDate());
-    }
-    if (daysArray.length === 0) daysArray.push(now.getDate());
-    
-    // Create params without spaces to avoid encoding issues
-    const daysParam = `[${daysArray.join(',')}]`;
-    
-    let targetUrl = "";
-    if (harborId) {
-        targetUrl = `${apiBase}/tabua-mare/${harborId}/${month}/${daysParam}`;
-    } else {
-        // Fallback to geo search
-        const latLngParam = `[${lat},${lng}]`;
-        targetUrl = `${apiBase}/geo-tabua-mare/${latLngParam}/${uf.toLowerCase()}/${month}/${daysParam}`;
-    }
-    
-    safeLog(`[API] Target URL: ${targetUrl}`);
-
-    // PROXY IMPLEMENTATION
-    const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
-    safeLog(`[API] Proxy URL: ${proxyUrl}`);
-    
-    const res = await fetch(proxyUrl, {
-        headers: { 'Accept': 'application/json' },
-        referrerPolicy: 'no-referrer'
-    });
-    
-    if (!res.ok) throw new Error(`Erro HTTP ${res.status} - ${res.statusText}`);
-    
-    const text = await res.text();
-
-    if (text.trim().startsWith("<")) {
-        throw new Error("Proxy devolveu HTML (provável erro no endpoint/URL)");
+        const key = `${d.getFullYear()}-${d.getMonth() + 1}`;
+        if (!monthsMap.has(key)) monthsMap.set(key, []);
+        monthsMap.get(key)!.push(d.getDate());
     }
 
-    let json;
-    try {
-        json = JSON.parse(text);
-    } catch (e) {
-        console.error("Failed to parse JSON:", text.substring(0, 100));
-        throw new Error("API retornou resposta inválida (JSON Parse Error).");
-    }
-    
-    safeLog(`[API] Resp JSON OK`);
+    safeLog(`[API] Preparing 30-day fetch across ${monthsMap.size} month(s).`);
 
-    if (json.error && json.error.msg) throw new Error(`API Error: ${json.error.msg}`);
-    
-    const rawData = json.data || [];
-    if (rawData.length === 0) throw new Error("API retornou 'data' vazio.");
+    // 2. Fetch function for a single batch
+    const fetchBatch = async (year: number, month: number, days: number[]) => {
+         // IMPORTANT: No spaces in the array string to avoid proxy encoding issues
+         const daysParam = `[${days.join(',')}]`;
+         let targetUrl = "";
 
-    const frames: Keyframe[] = [];
-    
-    const processTides = (tides: any[], dateStr: string) => {
-         tides.forEach((t: any) => {
-             const [hh, mm] = (t.hour || t.time || "00:00").split(':').map(Number);
-             const today = new Date(now.toISOString().split('T')[0]);
-             const tideDate = new Date(dateStr);
-             const diffDays = Math.round((tideDate.getTime() - today.getTime()) / (86400000));
-             const timeOffset = (diffDays * 24) + hh + (mm / 60);
+         if (harborId) {
+            targetUrl = `${apiBase}/tabua-mare/${harborId}/${month}/${daysParam}`;
+        } else {
+            const latLngParam = `[${lat},${lng}]`;
+            targetUrl = `${apiBase}/geo-tabua-mare/${latLngParam}/${uf.toLowerCase()}/${month}/${daysParam}`;
+        }
 
-             if (timeOffset >= 0 && timeOffset <= cycleDuration + 24) {
-                const h = parseFloat(t.level || t.height);
-                if (!isNaN(h)) {
-                    // Normalize (Approx: -0.2 to 2.9m -> 0 to 100%)
-                    let pct = ((h + 0.2) / 2.9) * 100;
-                    pct = Math.max(0, Math.min(100, pct));
-                    const isHigh = (t.type || "").toLowerCase().includes('high') || (t.type || "").toLowerCase().includes('alta');
-                    frames.push({
-                        id: uid(),
-                        timeOffset: parseFloat(timeOffset.toFixed(2)),
-                        height: parseFloat(pct.toFixed(1)),
-                        color: isHigh ? '#00eebb' : '#004488',
-                        intensity: 100,
-                        effect: isHigh ? EffectType.WAVE : EffectType.STATIC
-                    });
-                }
+        const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
+        safeLog(`[API] Batch ${month}/${year} (${days.length} days): ${targetUrl}`);
+
+        const res = await fetch(proxyUrl, { headers: { 'Accept': 'application/json' }, referrerPolicy: 'no-referrer' });
+        if (!res.ok) throw new Error(`HTTP ${res.status} on month ${month}/${year}`);
+
+        const text = await res.text();
+        if (text.trim().startsWith("<")) throw new Error(`Proxy returned HTML error for month ${month}/${year}`);
+
+        const json = JSON.parse(text);
+        if (json.error && json.error.msg) throw new Error(json.error.msg);
+
+        const rawData = json.data || [];
+
+        // Process Data
+        rawData.forEach((item: any) => {
+             const processTidesList = (tides: any[], dateStr: string) => {
+                 if (!tides) return;
+                 tides.forEach((t: any) => {
+                    // Support both "14:20" and "2023-10-10 14:20" formats if API changes
+                    const timePart = (t.hour || t.time || "00:00").includes(' ') ? (t.hour || t.time).split(' ')[1] : (t.hour || t.time || "00:00");
+                    const [hh, mm] = timePart.split(':').map(Number);
+                    
+                    const today = new Date(now.toISOString().split('T')[0]); // Midnight today (Local)
+                    // Use date provided by API item
+                    const tideDate = new Date(dateStr); 
+
+                    // Calculate offset in hours relative to Today 00:00
+                    const diffMs = tideDate.getTime() - today.getTime();
+                    const diffDays = Math.round(diffMs / 86400000);
+                    
+                    const timeOffset = (diffDays * 24) + hh + (mm / 60);
+
+                    // Allow range: 0 to 30 days + small buffer
+                    if (timeOffset >= -2 && timeOffset <= (TOTAL_DAYS * 24) + 24) {
+                        const hVal = parseFloat(t.level || t.height);
+                         if (!isNaN(hVal)) {
+                            // Normalize (Approx: -0.2 to 2.9m -> 0 to 100%)
+                            let pct = ((hVal + 0.2) / 2.9) * 100;
+                            pct = Math.max(0, Math.min(100, pct));
+                            const isHigh = (t.type || "").toLowerCase().includes('high') || (t.type || "").toLowerCase().includes('alta');
+                            allFrames.push({
+                                id: uid(),
+                                timeOffset: parseFloat(timeOffset.toFixed(2)),
+                                height: parseFloat(pct.toFixed(1)),
+                                color: isHigh ? '#00eebb' : '#004488',
+                                intensity: 100,
+                                effect: isHigh ? EffectType.WAVE : EffectType.STATIC
+                            });
+                         }
+                    }
+                 });
+             };
+
+             // Handle different API structures (some endpoints wrap in 'months', others flat 'tides')
+             if (item.months) {
+                 item.months.forEach((m: any) => {
+                     if (m.days) m.days.forEach((d: any) => {
+                         if (d.hours) processTidesList(d.hours, d.date);
+                         else if (d.tides) processTidesList(d.tides, d.date);
+                     });
+                 });
+             } else if (item.tides) {
+                 processTidesList(item.tides, item.date || item.date_time?.split(' ')[0]);
              }
          });
     };
 
-    rawData.forEach((item: any) => {
-        if (item.months) {
-             item.months.forEach((m: any) => {
-                 if (m.days) {
-                     m.days.forEach((d: any) => {
-                         // API can return hours (new format) or tides (old format)
-                         if (d.hours) processTides(d.hours, d.date || now.toISOString().split('T')[0]);
-                         else if (d.tides) processTides(d.tides, d.date || now.toISOString().split('T')[0]);
-                     });
-                 }
-             });
-        } 
-        else if (item.tides) {
-             processTides(item.tides, item.date || now.toISOString().split('T')[0]);
+    // 3. Execute Batches sequentially
+    for (const [key, days] of monthsMap) {
+        const [y, m] = key.split('-').map(Number);
+        try {
+            await fetchBatch(y, m, days);
+        } catch(e: any) {
+            console.warn(`Batch failed for ${key}: ${e.message}`);
+            // We continue to next batch to get partial data rather than crashing entire flow
         }
-    });
-    
-    return frames.sort((a,b) => a.timeOffset - b.timeOffset);
+    }
+
+    if (allFrames.length === 0) throw new Error("Nenhum dado retornado para os próximos 30 dias (Verifique conexão ou ID do porto).");
+
+    return allFrames.sort((a,b) => a.timeOffset - b.timeOffset);
 }
 
 function generateMockData(config: DataSourceConfig, cycleDuration: number): Keyframe[] {
