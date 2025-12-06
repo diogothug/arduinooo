@@ -1,5 +1,4 @@
 
-
 export enum EffectType {
   STATIC = 'STATIC',
   WAVE = 'WAVE',
@@ -9,10 +8,10 @@ export enum EffectType {
 
 export interface Keyframe {
   id: string;
-  timeOffset: number; // 0 to 24 (hours), or 0 to 168 for weekly
-  height: number; // 0 to 100 (%)
-  color: string; // Hex color
-  intensity: number; // 0 to 255
+  timeOffset: number;
+  height: number;
+  color: string;
+  intensity: number;
   effect: EffectType;
 }
 
@@ -31,11 +30,9 @@ export enum ConnectionType {
   BLE = 'BLE'
 }
 
-// --- DATA SOURCE TYPES ---
-
 export enum TideSourceType {
   API = 'API',
-  TABUA_MARE = 'TABUA_MARE', // New Brazil API
+  TABUA_MARE = 'TABUA_MARE',
   MOCK = 'MOCK',
   CALCULATED = 'CALCULATED'
 }
@@ -58,14 +55,14 @@ export interface TabuaMareConfig {
   uf: string;
   lat: number;
   lng: number;
-  harborId?: number | null; // ID specific port override
+  harborId?: number | null;
   lastFoundHarbor?: string | null;
 }
 
 export interface MockConfig {
-  minHeight: number; // 0-100
-  maxHeight: number; // 0-100
-  periodHours: number; // e.g. 12.4 (12h25m approx)
+  minHeight: number;
+  maxHeight: number;
+  periodHours: number;
   waveType: MockWaveType;
 }
 
@@ -74,18 +71,21 @@ export interface DataSourceConfig {
   api: ApiConfig;
   tabuaMare: TabuaMareConfig;
   mock: MockConfig;
-  lastValidData: Keyframe | null; // For calculation fallback
+  lastValidData: Keyframe | null;
 }
-
-// --- HARDWARE & DISPLAY TYPES ---
 
 export enum DisplayDriver {
   TFT_ESPI = 'TFT_eSPI',
   ARDUINO_GFX = 'Arduino_GFX',
+  U8G2_OLED = 'U8G2_OLED' // New
+}
+
+export enum DisplayType {
+    GC9A01_240 = 'GC9A01_240',
+    OLED_128 = 'OLED_128'
 }
 
 export enum WidgetType {
-  // V1 Widgets
   TIDE_GAUGE = 'TIDE_GAUGE', 
   CLOCK_DIGITAL = 'CLOCK_DIGITAL',
   CLOCK_ANALOG = 'CLOCK_ANALOG',
@@ -94,78 +94,73 @@ export enum WidgetType {
   MINI_CHART = 'MINI_CHART',
   TIDE_RADAR = 'TIDE_RADAR',
   MOON_PHASE = 'MOON_PHASE',
-  
-  // V2.1 New Widgets
   TIDE_RING = 'TIDE_RING',
-  TIDE_FILL = 'TIDE_FILL', // Physics liquid fill
-  WIND_VECTOR = 'WIND_VECTOR', // Animated arrow
+  TIDE_FILL = 'TIDE_FILL',
+  WIND_VECTOR = 'WIND_VECTOR',
   TEMP_GAUGE = 'TEMP_GAUGE',
   HUMIDITY_DOTS = 'HUMIDITY_DOTS',
   RAIN_METER = 'RAIN_METER',
   SOUND_PULSE = 'SOUND_PULSE',
   HORIZON_BAR = 'HORIZON_BAR',
-
-  // V2.2 Status & AI
   STATUS_WIFI_ICON = 'STATUS_WIFI_ICON',
   STATUS_WIFI_TEXT = 'STATUS_WIFI_TEXT',
   STATUS_BLE_ICON = 'STATUS_BLE_ICON',
   STATUS_BLE_TEXT = 'STATUS_BLE_TEXT',
   AI_IMAGE = 'AI_IMAGE',
-
-  // V2.3 Granular Weather (New)
   WEATHER_TEMP_TEXT = 'WEATHER_TEMP_TEXT',
   WEATHER_HUMIDITY_TEXT = 'WEATHER_HUMIDITY_TEXT',
   WEATHER_WIND_TEXT = 'WEATHER_WIND_TEXT',
   WEATHER_CONDITION_TEXT = 'WEATHER_CONDITION_TEXT',
+  
+  // New OLED Specific
+  OLED_MODERN_RING = 'OLED_MODERN_RING',
+  OLED_STATUS_BAR = 'OLED_STATUS_BAR',
+  OLED_MINI_GRAPH = 'OLED_MINI_GRAPH'
 }
 
 export enum DisplayTheme {
-  // V1 Themes
   DEFAULT = 'DEFAULT',
   AZUL_OCEANO = 'AZUL_OCEANO',
   SOL_MORERE = 'SOL_MORERE',
   NOITE_TROPICAL = 'NOITE_TROPICAL',
-  
-  // V2.1 Themes
   OCEAN_TURQUOISE = 'OCEAN_TURQUOISE',
   SUNSET_BAHIA = 'SUNSET_BAHIA',
   STARRY_NIGHT = 'STARRY_NIGHT',
   TROPICAL_STORM = 'TROPICAL_STORM',
   MORERE_MINIMAL = 'MORERE_MINIMAL',
-
-  // V2.4 New Animated Themes
   CYBER_GRID = 'CYBER_GRID',
   VORTEX = 'VORTEX',
   JELLYFISH_JAM = 'JELLYFISH_JAM',
-
-  // V2.5 Extra Animated Themes
   DIGITAL_RAIN = 'DIGITAL_RAIN',
   NEON_RIPPLES = 'NEON_RIPPLES',
   RETRO_SUNSET = 'RETRO_SUNSET',
-  CORAL_REEF = 'CORAL_REEF'
+  CORAL_REEF = 'CORAL_REEF',
+  
+  // New
+  OLED_MODERN = 'OLED_MODERN'
 }
 
 export enum RenderMode {
-  PERFORMANCE = 'PERFORMANCE', // 60fps, no AA
-  QUALITY = 'QUALITY', // 30fps, AA, Dithering
+  PERFORMANCE = 'PERFORMANCE',
+  QUALITY = 'QUALITY',
 }
 
 export interface SPIConfig {
-  frequency: number; // 20, 40, 60, 80 MHz
+  frequency: number;
   mode: 0 | 1 | 2 | 3;
   dataOrderMSB: boolean;
 }
 
 export interface BacklightConfig {
-  pwmFrequency: number; // e.g., 5000Hz
+  pwmFrequency: number;
   smoothing: boolean;
 }
 
 export interface LedNightMode {
   enabled: boolean;
-  startHour: number; // e.g. 22
-  endHour: number; // e.g. 4.75 (4:45)
-  brightnessFactor: number; // 0.0 to 1.0 (0.5 = 50%)
+  startHour: number;
+  endHour: number;
+  brightnessFactor: number;
 }
 
 export interface DisplayWidget {
@@ -173,22 +168,21 @@ export interface DisplayWidget {
   type: WidgetType;
   x: number;
   y: number;
-  scale: number; // 0.5 to 2.0
+  scale: number;
   color: string;
-  color2?: string; // Secondary color for gradients/accents
-  label?: string; // For text widgets
-  imageUrl?: string; // Base64 or URL for AI_IMAGE
+  color2?: string;
+  label?: string;
+  imageUrl?: string;
   visible: boolean;
-  zIndex: number; // Layer order
-  
-  // V2.1 Properties
-  rotation?: number; // 0-360 degrees
-  opacity?: number; // 0.0-1.0
-  thickness?: number; // For rings/lines
+  zIndex: number;
+  rotation?: number;
+  opacity?: number;
+  thickness?: number;
   fontFamily?: string;
 }
 
 export interface DisplayConfig {
+  type: DisplayType; // New: Switch between GC9A01 and OLED
   driver: DisplayDriver;
   pinSCK: number;
   pinMOSI: number;
@@ -196,25 +190,23 @@ export interface DisplayConfig {
   pinDC: number;
   pinRST: number;
   pinBLK: number;
-  rotation: 0 | 1 | 2 | 3; // 0, 90, 180, 270
-  brightness: number; // 0-255
+  rotation: 0 | 1 | 2 | 3;
+  brightness: number;
   fps: number;
-  
-  // Advanced V2.0
   spi: SPIConfig;
   backlight: BacklightConfig;
   renderMode: RenderMode;
   theme: DisplayTheme;
-  simulateSunlight: boolean; // Visual only
-  simulatePixelGrid: boolean; // Visual only
-  simulateRGB565: boolean; // Visual only
+  simulateSunlight: boolean;
+  simulatePixelGrid: boolean;
+  simulateRGB565: boolean;
 }
 
 export interface LowPowerConfig {
   enabled: boolean;
-  idleFps: number; // e.g., 5
+  idleFps: number;
   dimBacklight: boolean;
-  batteryThreshold: number; // e.g., 20%
+  batteryThreshold: number;
 }
 
 export interface WeatherApiConfig {
@@ -226,10 +218,10 @@ export interface WeatherApiConfig {
 
 export interface AutonomousConfig {
     enabled: boolean;
-    linkSpeedToTide: boolean; // High Tide = Faster Animation
-    linkBrightnessToTide: boolean; // Low Tide = Dimmer
-    linkPaletteToTime: boolean; // Day/Night palette shift
-    linkWeatherToLeds: boolean; // New: Link Wind/Humidity to animation params
+    linkSpeedToTide: boolean;
+    linkBrightnessToTide: boolean;
+    linkPaletteToTime: boolean;
+    linkWeatherToLeds: boolean;
 }
 
 export interface FirmwareConfig {
@@ -238,25 +230,21 @@ export interface FirmwareConfig {
   deviceName: string;
   enableBLE: boolean;
   enableSerial: boolean;
-  cycleDuration: number; // 24 for daily, 168 for weekly
+  cycleDuration: number;
   nightMode: LedNightMode;
-  lowPowerMode: LowPowerConfig; // Island Mode
+  lowPowerMode: LowPowerConfig;
   weatherApi: WeatherApiConfig;
-  autonomous: AutonomousConfig; // Logic on Chip
-
-  // LED Master Config
+  autonomous: AutonomousConfig;
   ledCount: number;
   ledPin: number;
-  ledBrightness: number; // 0-255
+  ledBrightness: number;
   ledColorOrder: 'GRB' | 'RGB';
-  ledLayoutType: 'STRIP' | 'MATRIX' | 'RING' | 'SPIRAL' | 'MOUNTAIN' | 'CUSTOM'; // Expanded
-  ledMatrixWidth?: number; // Only for matrix
-  ledMatrixHeight?: number; // New: Explicit height
-  ledSerpentine?: boolean; // New: ZigZag wiring
-  ledSpiralTurns?: number; // New: For spiral layout
-  customColors?: string[]; // New: User defined palette (Up to 5 hex codes)
-  
-  // Animation Engine 2.0
+  ledLayoutType: 'STRIP' | 'MATRIX' | 'RING' | 'SPIRAL' | 'MOUNTAIN' | 'CUSTOM';
+  ledMatrixWidth?: number;
+  ledMatrixHeight?: number;
+  ledSerpentine?: boolean;
+  ledSpiralTurns?: number;
+  customColors?: string[];
   animationMode: string;
   animationSpeed: number;
   animationIntensity: number;
@@ -273,28 +261,21 @@ export interface DailyForecast {
 }
 
 export interface WeatherData {
-  // Core
   temp: number;
   humidity: number;
-  windSpeed: number; // km/h
-  windDir: number; // degrees
-  
-  // Environment (New)
+  windSpeed: number;
+  windDir: number;
   feelsLike: number;
   uv: number;
-  pressure: number; // mb
-  cloud: number; // %
-  precip: number; // mm
-  
-  // Astronomy
+  pressure: number;
+  cloud: number;
+  precip: number;
   moonPhase: string;
-  moonIllumination: number; // 0-100
+  moonIllumination: number;
   isDay: boolean;
   sunrise: string;
   sunset: string;
-
-  // Status & Forecast
-  battery: number; // %
+  battery: number;
   conditionText: string;
   forecast: DailyForecast[];
 }
