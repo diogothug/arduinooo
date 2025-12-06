@@ -1,4 +1,5 @@
 
+
 import { FirmwareConfig, DisplayConfig } from '../../types';
 
 export const generatePlatformIO = (config: FirmwareConfig, display: DisplayConfig) => `
@@ -44,6 +45,12 @@ export const generateConfigH = (config: FirmwareConfig) => `
 #define LED_PIN ${config.ledPin}
 #define NUM_LEDS ${config.ledCount}
 #define LED_BRIGHTNESS 200
+
+// Autonomous Logic Configuration (Logic on Chip)
+#define AUTO_LOGIC_ENABLED ${config.autonomous.enabled ? 'true' : 'false'}
+#define AUTO_LINK_SPEED_TIDE ${config.autonomous.linkSpeedToTide ? 'true' : 'false'}
+#define AUTO_LINK_BRIGHT_TIDE ${config.autonomous.linkBrightnessToTide ? 'true' : 'false'}
+#define AUTO_LINK_PALETTE_TIME ${config.autonomous.linkPaletteToTime ? 'true' : 'false'}
 
 // Night Mode
 #define NIGHT_MODE_ENABLED ${config.nightMode.enabled ? 'true' : 'false'}
@@ -169,8 +176,9 @@ void loop() {
   display.update(tidePct);
 
   // 3. Update LEDs (Animations Module)
-  // Use config mode or default to tideFill
-  WS2812BAnimations::tideFillAnimation(tideNorm);
+  // The Run() method in Animations now handles Autonomous Logic based on config.h flags
+  // We pass the current Animation Mode string from config manager
+  WS2812BAnimations::run(WS2812BConfigManager::config.mode, tideNorm);
   
   // --- LOW POWER ---
   int frameDelay = 30; 

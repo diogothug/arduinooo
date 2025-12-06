@@ -224,6 +224,7 @@ private:
 
 export const generateWs2812bAnimationsCpp = () => `
 #include "ws2812b_animations.h"
+#include "config.h"
 
 WS2812BController* WS2812BAnimations::_ctrl = nullptr;
 
@@ -248,6 +249,24 @@ void WS2812BAnimations::run(String mode, float tideLevel) {
     p.intensity = WS2812BConfigManager::config.intensity;
     p.palette = getPaletteById(WS2812BConfigManager::config.paletteId);
     p.tideLevel = tideLevel;
+
+    // --- AUTONOMOUS LOGIC INTEGRATION ---
+    // This runs directly on the ESP32
+    #if AUTO_LOGIC_ENABLED
+        #if AUTO_LINK_SPEED_TIDE
+           // Low Tide (0.0) = 0.2x speed (Calm)
+           // High Tide (1.0) = 2.0x speed (Energetic)
+           p.speed = p.speed * (0.2f + (tideLevel * 1.8f));
+        #endif
+
+        #if AUTO_LINK_BRIGHT_TIDE
+           // Low Tide = Dimmer (Energy saving/Visual cue)
+           // Scale intensity between 0.4 and 1.0 based on tide
+           p.intensity = p.intensity * (0.4f + (tideLevel * 0.6f));
+        #endif
+        
+        // Note: Palette linkage would require RTC time check, omitted for simplicity in this loop
+    #endif
 
     uint32_t t = millis();
 
@@ -295,11 +314,14 @@ void WS2812BAnimations::oceanCaustics(AnimationParams p, uint32_t t) {
             
             // Map noise to palette brightness
             // "Caustics" look: Dark base with bright highlights
-            uint8_t brightness = map(noise, 0, 255, 10, 255);
+            // Apply intensity scaling to brightness map
+            uint8_t minBright = 10 * p.intensity;
+            uint8_t maxBright = 255 * p.intensity;
+            uint8_t brightness = map(noise, 0, 255, minBright, maxBright);
             
             // Cutoff for sharp lines
-            if (brightness < 100) brightness = brightness / 3; 
-            else brightness = map(brightness, 100, 255, 50, 255);
+            if (brightness < (100 * p.intensity)) brightness = brightness / 3; 
+            else brightness = map(brightness, 100 * p.intensity, 255 * p.intensity, 50, 255);
 
             CRGB color = ColorFromPalette(p.palette, noise, brightness);
             _ctrl->setPixelXY(x, y, color);
@@ -330,9 +352,12 @@ void WS2812BAnimations::tideFill2(AnimationParams p, uint32_t t) {
             uint8_t depth = map(effectiveY, 0, waterTopY, 0, 255);
             CRGB color = ColorFromPalette(p.palette, depth);
             
+            // Apply Intensity
+            color.nscale8(p.intensity * 255);
+            
             // Add subtle ripple
             uint8_t ripple = sin8(effectiveY * 10 - t/10);
-            if (ripple > 240) color += CRGB(20, 20, 20);
+            if (ripple > 240) color += CRGB(20 * p.intensity, 20 * p.intensity, 20 * p.intensity);
             
             _ctrl->setPixelXY(0, y, color); // Logic simplified
             // For matrix, fill whole row with X variation
@@ -368,7 +393,7 @@ void WS2812BAnimations::auroraWaves(AnimationParams p, uint32_t t) {
         for (int y = 0; y < h; y++) {
              // Vertical shift
              uint8_t vShift = sin8(y * 8 + t/5);
-             CRGB color = ColorFromPalette(p.palette, hue + vShift, 255);
+             CRGB color = ColorFromPalette(p.palette, hue + vShift, 255 * p.intensity);
              _ctrl->setPixelXY(x, y, color);
         }
     }
@@ -404,9 +429,12 @@ void WS2812BAnimations::stormSurge(AnimationParams p, uint32_t t) {
         for(int y=0; y<h; y++) {
              uint8_t noise = inoise8(x*50, y*50, t * p.speed);
              if (noise > 220) {
-                 _ctrl->setPixelXY(x, y, CRGB::White); // Lightning flash
+                 // Flash brightness scales with intensity
+                 _ctrl->setPixelXY(x, y, CRGB(255 * p.intensity, 255 * p.intensity, 255 * p.intensity)); 
              } else {
-                 _ctrl->setPixelXY(x, y, ColorFromPalette(p.palette, noise));
+                 CRGB c = ColorFromPalette(p.palette, noise);
+                 c.nscale8(p.intensity * 255);
+                 _ctrl->setPixelXY(x, y, c);
              }
         }
     }
@@ -416,7 +444,7 @@ void WS2812BAnimations::neonPulse(AnimationParams p, uint32_t t) {
      uint8_t hue = (t / 10) * p.speed;
      int num = _ctrl->getNumLeds();
      for(int i=0; i<num; i++) {
-         _ctrl->setPixel(i, CHSV(hue + (i*5), 255, 255));
+         _ctrl->setPixel(i, CHSV(hue + (i*5), 255, 255 * p.intensity));
      }
 }
 `;

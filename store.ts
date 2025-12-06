@@ -108,6 +108,12 @@ export const useAppStore = create<AppState>((set) => ({
         location: '-13.5985,-38.8976',
         intervalMinutes: 60
     },
+    autonomous: {
+        enabled: true,
+        linkSpeedToTide: true,
+        linkBrightnessToTide: false,
+        linkPaletteToTime: false
+    },
     
     // Animation Engine Defaults
     animationMode: 'oceanCaustics',

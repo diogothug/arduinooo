@@ -213,6 +213,13 @@ export interface WeatherApiConfig {
     intervalMinutes: number;
 }
 
+export interface AutonomousConfig {
+    enabled: boolean;
+    linkSpeedToTide: boolean; // High Tide = Faster Animation
+    linkBrightnessToTide: boolean; // Low Tide = Dimmer
+    linkPaletteToTime: boolean; // Day/Night palette shift
+}
+
 export interface FirmwareConfig {
   ssid: string;
   password: string;
@@ -223,6 +230,7 @@ export interface FirmwareConfig {
   nightMode: LedNightMode;
   lowPowerMode: LowPowerConfig; // Island Mode
   weatherApi: WeatherApiConfig;
+  autonomous: AutonomousConfig; // Logic on Chip
 
   // LED Master Config
   ledCount: number;

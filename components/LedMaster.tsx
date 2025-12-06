@@ -1,8 +1,10 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import { useAppStore } from '../store';
-import { Zap, Settings, AlertTriangle, Lightbulb, BoxSelect, CloudRain, Wind, Thermometer, Moon, Activity, Waves, AlignLeft, Sun, Sliders, Grid, Upload, Code, Image as ImageIcon, Download, Check, ArrowRightLeft } from 'lucide-react';
+import { ConnectionType } from '../types';
+import { Zap, Settings, Lightbulb, BoxSelect, CloudRain, Wind, Moon, Activity, Waves, Sun, Sliders, Grid, Upload, Code, Image as ImageIcon, Check, ArrowRightLeft, Eye, EyeOff, PlayCircle, ArrowDown, ArrowRight, MousePointer2, Maximize } from 'lucide-react';
 import { hardwareBridge } from '../services/hardwareBridge';
+import omggif from 'omggif';
 
 // PREMIUM PRESETS DEFINITION
 const PRESETS = [
@@ -15,9 +17,10 @@ const PRESETS = [
 ];
 
 type TabMode = 'GENERATIVE' | 'PIXEL_ART';
+type StripDirection = 'HORIZONTAL' | 'VERTICAL' | 'CUSTOM';
 
 export const LedMaster: React.FC = () => {
-    const { firmwareConfig, updateFirmwareConfig, keyframes, simulatedTime, activeDeviceId, connectionType } = useAppStore();
+    const { firmwareConfig, updateFirmwareConfig, keyframes, simulatedTime, activeDeviceId, connectionType, weatherData } = useAppStore();
     const [activeTab, setActiveTab] = useState<TabMode>('GENERATIVE');
 
     // --- GEN STATE ---
@@ -26,11 +29,20 @@ export const LedMaster: React.FC = () => {
     const animIntensity = firmwareConfig.animationIntensity;
     const activePresetId = firmwareConfig.animationMode;
     
+    // Preview Options
+    const [stripDirection, setStripDirection] = useState<StripDirection>('HORIZONTAL');
+    const [autoSyncWeather, setAutoSyncWeather] = useState(false);
+    
     // --- PIXEL ART STATE ---
-    const [pixelImage, setPixelImage] = useState<HTMLImageElement | null>(null);
-    const [pixelData, setPixelData] = useState<Uint8ClampedArray | null>(null); // RGBA data
+    const [gridWidth, setGridWidth] = useState(16);
+    const [gridHeight, setGridHeight] = useState(16);
+    const [pixelFrames, setPixelFrames] = useState<Uint8ClampedArray[]>([]); // Array of RGBA frames
+    const [currentFrameIdx, setCurrentFrameIdx] = useState(0);
+    const [isGif, setIsGif] = useState(false);
+    const [showIndices, setShowIndices] = useState(false);
+    
     const pixelCanvasRef = useRef<HTMLCanvasElement>(null);
-    const [isSerpentine, setIsSerpentine] = useState(true); // Hardware mapping
+    const [isSerpentine, setIsSerpentine] = useState(true); 
     const [generatedCode, setGeneratedCode] = useState('');
     const [isSending, setIsSending] = useState(false);
 
@@ -42,136 +54,196 @@ export const LedMaster: React.FC = () => {
     // Power Calculation
     const maxCurrent = (firmwareConfig.ledCount * 60) / 1000;
     const typicalCurrent = (firmwareConfig.ledCount * 60 * (firmwareConfig.ledBrightness / 255)) / 1000;
-    let psuSuggestion = "5V 1A";
-    if (typicalCurrent > 1 && typicalCurrent <= 2.5) psuSuggestion = "5V 3A";
-    if (typicalCurrent > 2.5 && typicalCurrent <= 5) psuSuggestion = "5V 6A";
-    if (typicalCurrent > 5) psuSuggestion = "5V 10A+ (Injeção de Energia)";
 
-    // --- PIXEL ART LOGIC ---
+    // --- PIXEL ART / GIF LOGIC ---
     
+    const handleGridSizeChange = (w: number, h: number) => {
+        setGridWidth(w);
+        setGridHeight(h);
+        setPixelFrames([]); // Reset images to avoid mismatch
+        setGeneratedCode('');
+    };
+
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const img = new Image();
-            img.onload = () => {
-                setPixelImage(img);
-                processPixelImage(img);
+
+        if (file.type === 'image/gif') {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                if (event.target?.result instanceof ArrayBuffer) {
+                    processGif(new Uint8Array(event.target.result));
+                }
             };
-            img.src = event.target?.result as string;
-        };
-        reader.readAsDataURL(file);
+            reader.readAsArrayBuffer(file);
+        } else {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.onload = () => processStaticImage(img);
+                img.src = event.target?.result as string;
+            };
+            reader.readAsDataURL(file);
+        }
     };
 
-    const processPixelImage = (img: HTMLImageElement) => {
-        // Create an offscreen canvas to resize to 16x16
+    const processStaticImage = (img: HTMLImageElement) => {
+        setIsGif(false);
+        const data = extractFrameData(img);
+        if (data) {
+            setPixelFrames([data]);
+            setCurrentFrameIdx(0);
+            generateCode([data], isSerpentine);
+        }
+    };
+
+    const processGif = (gifData: Uint8Array) => {
+        try {
+            // Fix: Use default export or direct instantiation depending on bundle
+            // With esm.sh/omggif, it often exports the object directly or as default
+            const reader = new omggif.GifReader(gifData);
+            
+            const numFrames = reader.numFrames();
+            const width = reader.width;
+            const height = reader.height;
+            
+            const frames: Uint8ClampedArray[] = [];
+            
+            // Helper canvas to decode and resize
+            const frameCanvas = document.createElement('canvas');
+            frameCanvas.width = width;
+            frameCanvas.height = height;
+            const frameCtx = frameCanvas.getContext('2d');
+            const frameData = frameCtx?.createImageData(width, height);
+
+            if (!frameCtx || !frameData) return;
+
+            for (let i = 0; i < numFrames; i++) {
+                // Decode GIF frame to raw pixels
+                reader.decodeAndBlitFrameRGBA(i, frameData.data);
+                frameCtx.putImageData(frameData, 0, 0);
+
+                // Resize to Grid Size (e.g. 16x16)
+                const resized = extractFrameData(frameCanvas);
+                if (resized) frames.push(resized);
+            }
+            
+            setIsGif(true);
+            setPixelFrames(frames);
+            setCurrentFrameIdx(0);
+            generateCode(frames, isSerpentine);
+
+        } catch (e: any) {
+            console.error(e);
+            alert("Erro ao processar GIF. Verifique se o arquivo é válido. " + e.message);
+        }
+    };
+
+    const extractFrameData = (source: CanvasImageSource): Uint8ClampedArray | null => {
         const offCanvas = document.createElement('canvas');
-        offCanvas.width = 16;
-        offCanvas.height = 16;
+        offCanvas.width = gridWidth;
+        offCanvas.height = gridHeight;
         const offCtx = offCanvas.getContext('2d');
-        if (!offCtx) return;
+        if (!offCtx) return null;
 
-        // Draw with smoothing disabled for Pixel Art look (Nearest Neighbor)
+        // Draw with smoothing disabled for Pixel Art look
         offCtx.imageSmoothingEnabled = false;
-        offCtx.drawImage(img, 0, 0, 16, 16);
-        
-        const imageData = offCtx.getImageData(0, 0, 16, 16);
-        setPixelData(imageData.data);
-        generateCode(imageData.data, isSerpentine);
+        offCtx.drawImage(source, 0, 0, gridWidth, gridHeight);
+        return offCtx.getImageData(0, 0, gridWidth, gridHeight).data;
     };
 
-    const generateCode = (data: Uint8ClampedArray, serpentine: boolean) => {
-        let code = `// 16x16 Pixel Art - ${serpentine ? 'Serpentine' : 'Linear'} Layout\n`;
-        code += `const uint8_t image_data[] PROGMEM = {\n`;
+    const generateCode = (frames: Uint8ClampedArray[], serpentine: boolean) => {
+        const width = gridWidth;
+        const height = gridHeight;
+        const numLeds = width * height;
+        const varName = frames.length > 1 ? 'animation_frames' : 'image_data';
+
+        let code = `// ${width}x${height} ${frames.length > 1 ? 'Animation' : 'Static'} - ${serpentine ? 'Serpentine' : 'Linear'}\n`;
+        code += `const uint8_t ${varName}[][${numLeds * 3}] PROGMEM = {\n`;
         
-        const width = 16;
-        const height = 16;
-        
-        // Loop through pixels
-        for (let i = 0; i < width * height; i++) {
-            // Determine physical coordinates based on index i
-            // But we iterate spatially (y, x) to fetch from RGBA buffer
-            // Then we map to physical index for commenting or ordering?
-            // Actually, for a C array, we usually want it ordered by PHYSICAL index so the firmware just iterates [i].
-            
-            // Standard loop is by Physical LED Index
-            // We need to find which X,Y corresponds to physical index 'i'
-            // OR we iterate X,Y and map to physical index position in array?
-            // PROGMEM usually stores bytes in order 0..NUM_LEDS.
-            
-            // Let's iterate linearly 0..255 (Physical LEDs) and find which Image Pixel (x,y) corresponds to it.
-            let x, y;
-            
-            // Assuming the loop 'i' is the physical LED address
-            if (!serpentine) {
-                // Linear: Row by row
-                y = Math.floor(i / width);
-                x = i % width;
-            } else {
-                // Serpentine: Even rows L->R, Odd rows R->L
-                y = Math.floor(i / width);
-                if (y % 2 === 0) {
+        frames.forEach((data, fIdx) => {
+            code += `  { // Frame ${fIdx}\n    `;
+            for (let i = 0; i < numLeds; i++) {
+                let x, y;
+                if (!serpentine) {
+                    y = Math.floor(i / width);
                     x = i % width;
                 } else {
-                    x = (width - 1) - (i % width);
+                    y = Math.floor(i / width);
+                    x = (y % 2 === 0) ? (i % width) : ((width - 1) - (i % width));
                 }
-            }
 
-            // Get color from Image Data (linear row-major RGBA)
-            const pixelIndex = (y * width + x) * 4;
-            const r = data[pixelIndex];
-            const g = data[pixelIndex + 1];
-            const b = data[pixelIndex + 2];
-            
-            // GRB Order for WS2812B
-            code += `  0x${g.toString(16).padStart(2,'0').toUpperCase()}, 0x${r.toString(16).padStart(2,'0').toUpperCase()}, 0x${b.toString(16).padStart(2,'0').toUpperCase()}`;
-            
-            if (i < (width * height) - 1) code += ',';
-            if ((i + 1) % width === 0) code += ` // Row ${y}\n`;
-        }
+                const pixelIndex = (y * width + x) * 4;
+                const r = data[pixelIndex];
+                const g = data[pixelIndex + 1];
+                const b = data[pixelIndex + 2];
+                
+                // GRB Order (Typical WS2812B)
+                code += `0x${g.toString(16).padStart(2,'0').toUpperCase()},0x${r.toString(16).padStart(2,'0').toUpperCase()},0x${b.toString(16).padStart(2,'0').toUpperCase()}`;
+                if (i < numLeds - 1) code += ',';
+            }
+            code += `\n  }${fIdx < frames.length - 1 ? ',' : ''}\n`;
+        });
         
         code += `};\n`;
         setGeneratedCode(code);
     };
 
     useEffect(() => {
-        if (pixelData) generateCode(pixelData, isSerpentine);
+        if (pixelFrames.length > 0) generateCode(pixelFrames, isSerpentine);
     }, [isSerpentine]);
 
     const handleSendPixelData = async () => {
-        if (!pixelData) return;
+        if (pixelFrames.length === 0) return;
+        
+        if (connectionType === ConnectionType.NONE) {
+             alert("Não conectado. Selecione USB, BLE ou WiFi.");
+             return;
+        }
+
         setIsSending(true);
         try {
-            // Convert RGBA to simple RGB array
+            // Flatten current frame (or handle animation upload logic)
+            // For now, sends the current visible frame
+            const currentData = pixelFrames[currentFrameIdx];
             const rgbArray = [];
-            for (let i = 0; i < 256; i++) {
-                // Map physical address i to image coords x,y
+            const totalPixels = gridWidth * gridHeight;
+            
+            for (let i = 0; i < totalPixels; i++) {
                 let x, y;
                 if (!isSerpentine) {
-                    y = Math.floor(i / 16);
-                    x = i % 16;
+                    y = Math.floor(i / gridWidth);
+                    x = i % gridWidth;
                 } else {
-                    y = Math.floor(i / 16);
-                    x = (y % 2 === 0) ? (i % 16) : (15 - (i % 16));
+                    y = Math.floor(i / gridWidth);
+                    x = (y % 2 === 0) ? (i % gridWidth) : ((gridWidth - 1) - (i % gridWidth));
                 }
-                const idx = (y * 16 + x) * 4;
-                rgbArray.push(pixelData[idx], pixelData[idx+1], pixelData[idx+2]);
+                const idx = (y * gridWidth + x) * 4;
+                rgbArray.push(currentData[idx], currentData[idx+1], currentData[idx+2]);
             }
             
             await hardwareBridge.sendData({
                 command: 'setPixels',
                 pixels: rgbArray
-            }, connectionType, '192.168.1.10');
+            }, connectionType as "USB" | "BLE" | "WIFI", '192.168.1.10');
             
-            alert("Enviado com sucesso!");
+            alert("Frame enviado!");
         } catch(e: any) {
             alert("Erro ao enviar: " + e.message);
         } finally {
             setIsSending(false);
         }
     };
+
+    // --- ANIMATION LOOP FOR PREVIEW ---
+    useEffect(() => {
+        if (activeTab === 'PIXEL_ART' && isGif && pixelFrames.length > 1) {
+            const interval = setInterval(() => {
+                setCurrentFrameIdx(prev => (prev + 1) % pixelFrames.length);
+            }, 100); // 10 FPS default for preview
+            return () => clearInterval(interval);
+        }
+    }, [activeTab, isGif, pixelFrames.length]);
 
     // --- RENDER LOOPS ---
 
@@ -185,7 +257,6 @@ export const LedMaster: React.FC = () => {
 
         let animationFrameId: number;
         
-        // Helper: Interpolate Tide
         const getTideHeightAt = (time: number) => {
             if (keyframes.length < 2) return 50;
             const cycle = firmwareConfig.cycleDuration || 24;
@@ -216,7 +287,17 @@ export const LedMaster: React.FC = () => {
             const time = Date.now();
             const tideLevel = getTideHeightAt(simulatedTime); 
 
-            // Grid metrics
+            // Environment overrides
+            let effectiveSpeed = animSpeed;
+            let effectiveIntensity = animIntensity;
+            
+            if (autoSyncWeather) {
+                 // Map wind 0-50km/h to 0.1-5.0 speed
+                 effectiveSpeed = Math.max(0.1, Math.min(5.0, weatherData.windSpeed / 10));
+                 // Map humidity/rain to intensity
+                 effectiveIntensity = Math.max(0.2, Math.min(1.0, weatherData.humidity / 100));
+            }
+
             let cellSize = 10;
             let startX = 0;
             let startY = 0;
@@ -233,14 +314,35 @@ export const LedMaster: React.FC = () => {
                 let col = 0, row = 0;
                 
                 if (layout === 'STRIP') {
-                    const margin = 20;
-                    const spacing = (width - margin*2) / (count - 1 || 1);
-                    x = margin + (i * spacing); y = height / 2; size = Math.min(spacing * 0.8, 15);
-                    col = i; row = 0;
+                    const margin = 30;
+                    
+                    if (stripDirection === 'HORIZONTAL') {
+                        const spacing = (width - margin*2) / (count - 1 || 1);
+                        x = margin + (i * spacing);
+                        y = height / 2;
+                        size = Math.min(spacing * 0.8, 15);
+                    } else if (stripDirection === 'VERTICAL') {
+                        const spacing = (height - margin*2) / (count - 1 || 1);
+                        x = width / 2;
+                        // Bottom to top like a gauge
+                        y = height - margin - (i * spacing); 
+                        size = Math.min(spacing * 0.8, 20);
+                    } else if (stripDirection === 'CUSTOM') {
+                        // S-Curve / Snake Path simulation
+                        const t = i / (count - 1);
+                        const angle = t * Math.PI * 4; // 2 loops
+                        const radius = 50;
+                        x = (width/2 - 150) + (t * 300);
+                        y = (height/2) + Math.sin(angle) * radius;
+                        size = 8;
+                    }
+
+                    col = i; 
+                    row = 0;
                 } else if (layout === 'MATRIX') {
                     row = Math.floor(i / matrixW);
                     col = i % matrixW;
-                    if (row % 2 !== 0) col = (matrixW - 1) - col; // Visual Serpentine
+                    if (row % 2 !== 0) col = (matrixW - 1) - col; 
                     x = startX + (col * cellSize) + (cellSize / 2);
                     y = startY + (row * cellSize) + (cellSize / 2);
                     size = cellSize * 0.8;
@@ -252,29 +354,43 @@ export const LedMaster: React.FC = () => {
                     size = (Math.PI * 2 * radius / count) * 0.8;
                 }
 
-                // Generative Logic (Same as before)
                 let r = 0, g = 0, b = 0;
-                const effRow = matrixH - 1 - row; 
+                const effRow = (layout === 'STRIP') ? Math.floor((i / count) * 10) : (matrixH - 1 - row);
+                const effCol = col;
+
+                // --- ANIMATION GENERATORS ---
                 if (activePresetId === 'tideFill2') {
-                    const fillH = (tideLevel / 100) * matrixH;
-                    if (effRow < fillH) {
-                        r = 0; g = 50 + (effRow * 20); b = 150 + (effRow * 10);
-                        if (Math.sin(col*0.5 + time*0.005) > 0.5) g += 30;
-                        if (effRow > fillH - 1) { r=150; g=200; b=255; }
+                    // Vertical Fill logic
+                    let fillThreshold = 0;
+                    if (layout === 'STRIP') {
+                        fillThreshold = tideLevel / 100 * count;
+                        if (i < fillThreshold) {
+                             r = 0; g = 50; b = 150;
+                             // Surface ripple
+                             if (i > fillThreshold - 2) { r=100; g=200; b=255; }
+                        }
+                    } else {
+                        // Matrix Logic
+                        const fillH = (tideLevel / 100) * matrixH;
+                        if (effRow < fillH) {
+                            r = 0; g = 50 + (effRow * 10); b = 150 + (effRow * 5);
+                            if (Math.sin(effCol*0.5 + time*0.005*effectiveSpeed) > 0.5) g += 30;
+                            if (effRow > fillH - 1) { r=150; g=200; b=255; }
+                        }
                     }
                 } else if (activePresetId === 'oceanCaustics') {
                     const scale = 0.2;
-                    const val = Math.sin(col*scale + time*0.001*animSpeed) + Math.cos(row*scale + time*0.002*animSpeed);
-                    const bright = Math.max(0, val * 100 * animIntensity + 50);
+                    const val = Math.sin(effCol*scale + time*0.001*effectiveSpeed) + Math.cos(row*scale + time*0.002*effectiveSpeed);
+                    const bright = Math.max(0, val * 100 * effectiveIntensity + 50);
                     r=0; g=bright; b=bright+50;
                 } else if (activePresetId === 'storm') {
                     const noise = Math.random();
-                    if (noise > 0.98 * (1/animIntensity)) { r=255; g=255; b=255; } else { r=20; g=20; b=40; }
+                    if (noise > 0.98 * (1/effectiveIntensity)) { r=255; g=255; b=255; } else { r=20; g=20; b=40; }
                 } else if (activePresetId === 'aurora') {
-                    const wave = Math.sin(col*0.3 + time*0.002*animSpeed) * 100;
+                    const wave = Math.sin(effCol*0.3 + time*0.002*effectiveSpeed) * 100;
                     r=50; g=100 + wave; b=100 - wave;
                 } else if (activePresetId === 'neon') {
-                    const hue = (time * 0.1 * animSpeed + col * 10) % 360;
+                    const hue = (time * 0.1 * effectiveSpeed + effCol * 10) % 360;
                     r = hue < 120 ? 255 : 0; g = hue > 60 && hue < 180 ? 255 : 0; b = hue > 180 ? 255 : 0;
                 } else {
                     r=0; g=10; b=40; if (Math.random() > 0.99) { r=100; g=200; b=255; }
@@ -284,71 +400,112 @@ export const LedMaster: React.FC = () => {
                 r*=br; g*=br; b*=br;
                 ctx.beginPath(); ctx.arc(x, y, size/2, 0, Math.PI*2); ctx.fillStyle = `rgb(${r},${g},${b})`; ctx.fill();
             }
+            
+            // --- DATA OVERLAY (Integration) ---
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
+            ctx.fillRect(10, 10, 180, 70);
+            ctx.strokeStyle = '#334155';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(10, 10, 180, 70);
+            
+            ctx.fillStyle = '#fff';
+            ctx.font = '10px monospace';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.fillText(`⚡ MARÉ: ${(tideLevel).toFixed(0)}%`, 20, 20);
+            ctx.fillText(`💨 VENTO: ${weatherData.windSpeed} km/h`, 20, 35);
+            ctx.fillText(`🌡️ TEMP:  ${weatherData.temp}°C`, 20, 50);
+            
+            if (autoSyncWeather) {
+                 ctx.fillStyle = '#4ade80';
+                 ctx.fillText("● SYNC ON", 130, 20);
+            }
+
             animationFrameId = requestAnimationFrame(render);
         };
         render();
         return () => cancelAnimationFrame(animationFrameId);
-    }, [activePresetId, firmwareConfig, simulatedTime, animSpeed, animIntensity, activeTab]);
+    }, [activePresetId, firmwareConfig, simulatedTime, animSpeed, animIntensity, activeTab, stripDirection, autoSyncWeather, weatherData]);
 
     // 2. PIXEL ART PREVIEW LOOP
     useEffect(() => {
         if (activeTab !== 'PIXEL_ART') return;
         const canvas = pixelCanvasRef.current;
-        if (!canvas || !pixelData) return;
+        if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
         
-        // Draw 16x16 pixel data scaled up
-        // We do this by drawing rects to visualize the physical mapping if needed, or just the image.
-        // Let's visualize the PHYSICAL LEDs to show order
         const width = canvas.width;
         const height = canvas.height;
         ctx.fillStyle = '#111';
         ctx.fillRect(0,0,width,height);
         
-        const cellSize = width / 16;
+        // Dynamic scaling
+        const scaleX = width / gridWidth;
+        const scaleY = height / gridHeight;
+        const cellSize = Math.min(scaleX, scaleY);
+        const startX = (width - (gridWidth * cellSize)) / 2;
+        const startY = (height - (gridHeight * cellSize)) / 2;
         
-        for(let i=0; i<256; i++) {
-            // Find x,y in the pixel data (Linear Image Source)
-            const imgX = i % 16;
-            const imgY = Math.floor(i / 16);
-            const idx = (imgY * 16 + imgX) * 4;
-            const r = pixelData[idx];
-            const g = pixelData[idx+1];
-            const b = pixelData[idx+2];
-            
-            // Map to physical location for visualization
-            // This loop visualizes the IMAGE as is (Linear grid)
-            // But we can overlay the index number
-            
-            ctx.fillStyle = `rgb(${r},${g},${b})`;
-            ctx.fillRect(imgX * cellSize, imgY * cellSize, cellSize, cellSize);
-            
-            ctx.strokeStyle = '#222';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(imgX * cellSize, imgY * cellSize, cellSize, cellSize);
-            
-            // Debug: Show hardware index if serpentine
-            let hwIndex;
-            if (!isSerpentine) {
-                hwIndex = i;
-            } else {
-                // If this is image pos (x,y), what is the hw index?
-                // y * width + (y even ? x : width-1-x)
-                if (imgY % 2 === 0) hwIndex = imgY * 16 + imgX;
-                else hwIndex = imgY * 16 + (15 - imgX);
+        if (pixelFrames.length > 0) {
+            const currentData = pixelFrames[currentFrameIdx];
+            const totalPixels = gridWidth * gridHeight;
+
+            for(let i=0; i<totalPixels; i++) {
+                const imgX = i % gridWidth;
+                const imgY = Math.floor(i / gridWidth);
+                const idx = (imgY * gridWidth + imgX) * 4;
+                
+                // Safety check for data array bounds
+                if (idx + 3 >= currentData.length) continue;
+
+                const r = currentData[idx];
+                const g = currentData[idx+1];
+                const b = currentData[idx+2];
+                const a = currentData[idx+3];
+                
+                const pxX = startX + imgX * cellSize;
+                const pxY = startY + imgY * cellSize;
+
+                // Only draw if opacity > 0
+                if (a > 0) {
+                    ctx.fillStyle = `rgb(${r},${g},${b})`;
+                    ctx.fillRect(pxX, pxY, cellSize, cellSize);
+                } else {
+                    // Checkboard pattern for transparent
+                    ctx.fillStyle = ((imgX+imgY)%2===0) ? '#222' : '#333';
+                    ctx.fillRect(pxX, pxY, cellSize, cellSize);
+                }
+                
+                ctx.strokeStyle = '#222';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(pxX, pxY, cellSize, cellSize);
+                
+                // Show Index Logic
+                if (showIndices && cellSize > 15) {
+                    let hwIndex;
+                    if (!isSerpentine) {
+                        hwIndex = i;
+                    } else {
+                        if (imgY % 2 === 0) hwIndex = imgY * gridWidth + imgX;
+                        else hwIndex = imgY * gridWidth + ((gridWidth - 1) - imgX);
+                    }
+                    
+                    ctx.fillStyle = (r+g+b)/3 > 128 ? '#000' : '#fff';
+                    ctx.font = `${Math.max(8, cellSize/3)}px monospace`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(hwIndex.toString(), pxX + cellSize/2, pxY + cellSize/2);
+                }
             }
-            
-            if (cellSize > 15) {
-                ctx.fillStyle = (r+g+b)/3 > 128 ? '#000' : '#fff';
-                ctx.font = '8px monospace';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(hwIndex.toString(), imgX * cellSize + cellSize/2, imgY * cellSize + cellSize/2);
-            }
+        } else {
+             ctx.fillStyle = '#333';
+             ctx.textAlign = 'center';
+             ctx.font = '12px sans-serif';
+             ctx.fillText("Nenhuma imagem carregada", width/2, height/2);
         }
 
-    }, [pixelData, isSerpentine, activeTab]);
+    }, [pixelFrames, currentFrameIdx, isSerpentine, activeTab, showIndices, gridWidth, gridHeight]);
 
     return (
         <div className="flex flex-col h-full gap-4">
@@ -379,7 +536,23 @@ export const LedMaster: React.FC = () => {
                             <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                                 <Sliders size={20} className="text-cyan-400" /> Parâmetros
                             </h3>
-                            <div className="space-y-6">
+                            
+                            <div className="bg-slate-900/50 p-3 rounded mb-4 border border-slate-700">
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="text-xs text-white font-bold flex items-center gap-2"><Wind size={12}/> Auto-Sync Clima</span>
+                                    <button 
+                                        onClick={() => setAutoSyncWeather(!autoSyncWeather)}
+                                        className={`w-8 h-4 rounded-full transition-colors relative ${autoSyncWeather ? 'bg-green-500' : 'bg-slate-600'}`}
+                                    >
+                                        <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${autoSyncWeather ? 'left-4.5' : 'left-0.5'}`}></div>
+                                    </button>
+                                </div>
+                                <p className="text-[10px] text-slate-400">
+                                    Se ativo, a velocidade e intensidade reagirão ao vento ({weatherData.windSpeed}km/h) e humidade ({weatherData.humidity}%) em tempo real.
+                                </p>
+                            </div>
+
+                            <div className={`space-y-6 transition-opacity ${autoSyncWeather ? 'opacity-50 pointer-events-none' : ''}`}>
                                 <div>
                                     <label className="text-xs text-slate-500 font-bold uppercase block mb-1 flex justify-between">
                                         <span>Velocidade</span>
@@ -418,6 +591,18 @@ export const LedMaster: React.FC = () => {
                                         ))}
                                     </div>
                                 </div>
+                                
+                                {firmwareConfig.ledLayoutType === 'STRIP' && (
+                                    <div className="col-span-2">
+                                        <span className="block text-slate-500 uppercase font-bold mb-1">Orientação Preview</span>
+                                        <div className="flex bg-slate-900 rounded p-1 gap-1">
+                                            <button onClick={() => setStripDirection('HORIZONTAL')} className={`flex-1 py-1 rounded text-[10px] flex justify-center ${stripDirection === 'HORIZONTAL' ? 'bg-slate-700 text-white' : 'text-slate-500'}`} title="Horizontal"><ArrowRight size={14}/></button>
+                                            <button onClick={() => setStripDirection('VERTICAL')} className={`flex-1 py-1 rounded text-[10px] flex justify-center ${stripDirection === 'VERTICAL' ? 'bg-slate-700 text-white' : 'text-slate-500'}`} title="Vertical"><ArrowDown size={14}/></button>
+                                            <button onClick={() => setStripDirection('CUSTOM')} className={`flex-1 py-1 rounded text-[10px] flex justify-center ${stripDirection === 'CUSTOM' ? 'bg-slate-700 text-white' : 'text-slate-500'}`} title="Custom Path"><MousePointer2 size={14}/></button>
+                                        </div>
+                                    </div>
+                                )}
+
                                 {firmwareConfig.ledLayoutType === 'MATRIX' && (
                                     <div className="col-span-2">
                                         <span className="block text-slate-500 uppercase font-bold mb-1">Largura da Matriz</span>
@@ -442,9 +627,10 @@ export const LedMaster: React.FC = () => {
 
                             <div className="bg-black rounded-lg border-2 border-slate-700 relative overflow-hidden flex items-center justify-center p-4 shadow-inner min-h-[300px] flex-1">
                                 <canvas ref={canvasRef} width={600} height={300} className="w-full h-full object-contain" />
-                                <div className="absolute top-4 left-4 text-xs font-mono text-cyan-500 opacity-50">
+                                <div className="absolute top-4 right-4 text-xs font-mono text-cyan-500 opacity-50 text-right">
                                     MODE: {activePresetId.toUpperCase()}<br/>
-                                    FPS: 60
+                                    FPS: 60<br/>
+                                    LAYOUT: {firmwareConfig.ledLayoutType}
                                 </div>
                             </div>
 
@@ -475,27 +661,55 @@ export const LedMaster: React.FC = () => {
                 {activeTab === 'PIXEL_ART' && (
                 <>
                     <div className="lg:col-span-1 flex flex-col gap-6">
-                         {/* 1. UPLOAD */}
+                         
+                         {/* 1. UPLOAD & CONFIG */}
                          <div className="bg-slate-800 rounded-lg border border-slate-700 p-6">
                             <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                                <Upload size={20} className="text-purple-400" /> Carregar Imagem
+                                <Upload size={20} className="text-purple-400" /> Config & Mídia
                             </h3>
+                            
+                            {/* NEW: GRID CONFIG */}
+                            <div className="flex gap-2 mb-4 bg-slate-900 p-3 rounded border border-slate-700">
+                                <div className="flex-1">
+                                    <label className="text-[10px] text-slate-500 uppercase font-bold block mb-1">Colunas (X)</label>
+                                    <input 
+                                        type="number" 
+                                        min="1" max="256"
+                                        value={gridWidth} 
+                                        onChange={(e) => handleGridSizeChange(parseInt(e.target.value), gridHeight)} 
+                                        className="w-full bg-slate-800 border border-slate-600 rounded p-1.5 text-white text-xs font-mono" 
+                                    />
+                                </div>
+                                <div className="flex-1">
+                                    <label className="text-[10px] text-slate-500 uppercase font-bold block mb-1">Linhas (Y)</label>
+                                    <input 
+                                        type="number" 
+                                        min="1" max="256"
+                                        value={gridHeight} 
+                                        onChange={(e) => handleGridSizeChange(gridWidth, parseInt(e.target.value))} 
+                                        className="w-full bg-slate-800 border border-slate-600 rounded p-1.5 text-white text-xs font-mono" 
+                                    />
+                                </div>
+                            </div>
+
                             <div className="bg-slate-900 border-2 border-dashed border-slate-700 rounded-lg p-6 flex flex-col items-center justify-center text-center hover:border-purple-500 transition cursor-pointer relative">
-                                <input type="file" accept="image/*" onChange={handleImageUpload} className="absolute inset-0 opacity-0 cursor-pointer" />
+                                <input type="file" accept="image/png, image/jpeg, image/gif" onChange={handleImageUpload} className="absolute inset-0 opacity-0 cursor-pointer" />
                                 <ImageIcon size={32} className="text-slate-500 mb-2" />
-                                <p className="text-sm text-slate-300 font-bold">Clique ou arraste aqui</p>
-                                <p className="text-xs text-slate-500 mt-1">PNG, JPG (Auto-resize 16x16)</p>
+                                <p className="text-sm text-slate-300 font-bold">Clique ou arraste</p>
+                                <p className="text-xs text-slate-500 mt-1">PNG, JPG ou GIF (Animado)</p>
                             </div>
                             
-                            <div className="mt-4 flex items-center justify-between bg-slate-900 p-3 rounded border border-slate-700">
-                                <span className="text-xs text-slate-400 font-bold uppercase">Mapeamento Físico</span>
-                                <button 
-                                    onClick={() => setIsSerpentine(!isSerpentine)}
-                                    className={`text-xs px-2 py-1 rounded border flex items-center gap-1 ${isSerpentine ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-400'}`}
-                                >
-                                    <ArrowRightLeft size={12} />
-                                    {isSerpentine ? 'Serpentina (ZigZag)' : 'Linear (Progressivo)'}
-                                </button>
+                            <div className="mt-4 space-y-2">
+                                <div className="flex items-center justify-between bg-slate-900 p-3 rounded border border-slate-700">
+                                    <span className="text-xs text-slate-400 font-bold uppercase">Mapeamento</span>
+                                    <button 
+                                        onClick={() => setIsSerpentine(!isSerpentine)}
+                                        className={`text-xs px-2 py-1 rounded border flex items-center gap-1 ${isSerpentine ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-400'}`}
+                                    >
+                                        <ArrowRightLeft size={12} />
+                                        {isSerpentine ? 'Serpentina' : 'Linear'}
+                                    </button>
+                                </div>
                             </div>
                          </div>
 
@@ -506,8 +720,8 @@ export const LedMaster: React.FC = () => {
                             </h3>
                             <button 
                                 onClick={handleSendPixelData}
-                                disabled={!pixelData || isSending}
-                                className={`w-full py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition ${!pixelData ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-green-600 hover:bg-green-500 text-white'}`}
+                                disabled={pixelFrames.length === 0 || isSending}
+                                className={`w-full py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition ${pixelFrames.length === 0 ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-green-600 hover:bg-green-500 text-white'}`}
                             >
                                 {isSending ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> : <Upload size={18} />}
                                 {isSending ? 'Enviando...' : 'Enviar para Dispositivo'}
@@ -517,11 +731,24 @@ export const LedMaster: React.FC = () => {
 
                     <div className="lg:col-span-2 flex flex-col gap-6">
                          {/* 2. PREVIEW */}
-                         <div className="bg-slate-800 rounded-lg border border-slate-700 p-6 flex flex-col items-center h-[400px]">
-                            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 self-start">Preview 16x16 (Com Índices)</h3>
+                         <div className="bg-slate-800 rounded-lg border border-slate-700 p-6 flex flex-col items-center h-[400px] relative">
+                            <div className="w-full flex justify-between items-center mb-4">
+                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider self-start flex items-center gap-2">
+                                    Preview {gridWidth}x{gridHeight}
+                                    {isGif && <span className="text-purple-400 bg-purple-900/30 px-2 rounded text-[10px]">GIF {currentFrameIdx + 1}/{pixelFrames.length}</span>}
+                                </h3>
+                                <button 
+                                    onClick={() => setShowIndices(!showIndices)}
+                                    className={`text-[10px] flex items-center gap-2 px-2 py-1 rounded border transition ${showIndices ? 'bg-cyan-900/50 text-cyan-400 border-cyan-800' : 'bg-slate-900 text-slate-500 border-slate-700'}`}
+                                >
+                                    {showIndices ? <Eye size={12}/> : <EyeOff size={12}/>} Índices
+                                </button>
+                            </div>
+                            
                             <div className="h-full aspect-square bg-black border border-slate-600 shadow-2xl relative">
-                                {!pixelData && (
-                                    <div className="absolute inset-0 flex items-center justify-center text-slate-600 text-xs">
+                                {pixelFrames.length === 0 && (
+                                    <div className="absolute inset-0 flex items-center justify-center text-slate-600 text-xs flex-col gap-2">
+                                        <Maximize size={32} opacity={0.5}/>
                                         Nenhuma imagem carregada
                                     </div>
                                 )}

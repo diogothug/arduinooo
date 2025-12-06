@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
 import { 
@@ -11,7 +12,7 @@ import {
     generateWs2812bControllerH, generateWs2812bControllerCpp,
     generateWs2812bAnimationsH, generateWs2812bAnimationsCpp
 } from '../services/firmwareTemplates';
-import { Download, Cpu, Code, Wifi, Package, FileCode, Bluetooth, Usb, Sun, Moon, CloudSun, FolderTree, Database, Check } from 'lucide-react';
+import { Download, Cpu, Code, Wifi, Package, FileCode, Bluetooth, Usb, Sun, Moon, CloudSun, FolderTree, Database, Check, BrainCircuit, Activity, Zap } from 'lucide-react';
 import JSZip from 'jszip';
 
 export const FirmwareBuilder: React.FC = () => {
@@ -111,6 +112,46 @@ export const FirmwareBuilder: React.FC = () => {
                             className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-white"
                         />
                     </div>
+                </div>
+                
+                {/* Autonomous Logic Section */}
+                <div className="pt-4 border-t border-slate-700">
+                    <div className="flex justify-between items-center mb-2">
+                        <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                           <BrainCircuit size={14} className="text-pink-400" /> Lógica Autônoma (Chip)
+                        </h3>
+                        <input 
+                            type="checkbox" 
+                            checked={firmwareConfig.autonomous.enabled} 
+                            onChange={e => updateFirmwareConfig({ autonomous: {...firmwareConfig.autonomous, enabled: e.target.checked} })} 
+                        />
+                     </div>
+                     
+                     {firmwareConfig.autonomous.enabled && (
+                         <div className="bg-slate-900 p-3 rounded space-y-3">
+                             <div className="flex items-center justify-between">
+                                 <div className="flex items-center gap-2">
+                                     <Activity size={12} className="text-cyan-400"/>
+                                     <label className="text-[10px] text-slate-400">Maré Alta = Mais Rápido</label>
+                                 </div>
+                                 <input type="checkbox" checked={firmwareConfig.autonomous.linkSpeedToTide} onChange={e => updateFirmwareConfig({ autonomous: {...firmwareConfig.autonomous, linkSpeedToTide: e.target.checked} })} />
+                             </div>
+                             <div className="flex items-center justify-between">
+                                 <div className="flex items-center gap-2">
+                                     <Zap size={12} className="text-yellow-400"/>
+                                     <label className="text-[10px] text-slate-400">Maré Baixa = Menor Brilho</label>
+                                 </div>
+                                 <input type="checkbox" checked={firmwareConfig.autonomous.linkBrightnessToTide} onChange={e => updateFirmwareConfig({ autonomous: {...firmwareConfig.autonomous, linkBrightnessToTide: e.target.checked} })} />
+                             </div>
+                             <div className="flex items-center justify-between">
+                                 <div className="flex items-center gap-2">
+                                     <Sun size={12} className="text-orange-400"/>
+                                     <label className="text-[10px] text-slate-400">Paleta Dia/Noite (Horário)</label>
+                                 </div>
+                                 <input type="checkbox" checked={firmwareConfig.autonomous.linkPaletteToTime} onChange={e => updateFirmwareConfig({ autonomous: {...firmwareConfig.autonomous, linkPaletteToTime: e.target.checked} })} />
+                             </div>
+                         </div>
+                     )}
                 </div>
 
                 {/* Night Mode Config */}
