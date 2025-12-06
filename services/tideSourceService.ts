@@ -1,4 +1,5 @@
 
+
 import { DataSourceConfig, Keyframe, TideSourceType, MockWaveType, EffectType, WeatherData } from "../types";
 import { useAppStore } from '../store';
 
@@ -87,6 +88,17 @@ export const tideSourceService = {
         let weatherResult: Partial<WeatherData> | undefined = undefined;
 
         safeLog(`\n--- [TideSource] New Request: ${config.activeSource} ---`);
+
+        // 0. Calculated/Fallback Logic explicitly requested
+        if (config.activeSource === TideSourceType.CALCULATED) {
+             safeLog("[TideSource] Mode: CALCULATED (Algorithm Fallback)");
+             if (config.lastValidData) {
+                 resultFrames = calculateFallback(config.lastValidData, cycleDuration);
+                 return { frames: resultFrames, sourceUsed: TideSourceType.CALCULATED, weather: undefined };
+             }
+             // If no last data, fall through to mock
+             safeLog("[TideSource] No last valid data for Calculation. Falling to Mock.");
+        }
 
         // 1. WeatherAPI (Global)
         if (config.activeSource === TideSourceType.API) {

@@ -1,14 +1,16 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from './store';
-import { ViewState, ConnectionType } from './types';
+import { ViewState, ConnectionType, TideSourceType } from './types';
 import { TideEditor } from './components/TideEditor';
 import { LedSimulator } from './components/LedSimulator';
 import { FirmwareBuilder } from './components/FirmwareBuilder';
 import { DisplayEditor } from './components/DisplayEditor';
 import { LedMaster } from './components/LedMaster';
 import { ConnectionManager } from './components/ConnectionManager';
-import { LayoutDashboard, Waves, Cpu, Settings, Activity, Monitor, Link2, Wifi, Usb, Bluetooth, AlertCircle, CheckCircle, Info, X, Lightbulb } from 'lucide-react';
+import { LedDebugPanel } from './components/led/LedDebugPanel';
+import { LayoutDashboard, Waves, Cpu, Settings, Activity, Monitor, Link2, Wifi, Usb, Bluetooth, AlertCircle, CheckCircle, Info, X, Lightbulb, Database, Terminal, Shield, ChevronDown, ChevronRight, Calculator, Globe, MapPin } from 'lucide-react';
 
 const NotificationToast = () => {
     const { notification, clearNotification } = useAppStore();
@@ -35,11 +37,17 @@ const NotificationToast = () => {
 };
 
 const App: React.FC = () => {
-  const { currentView, setView, devices, setActiveDevice, activeDeviceId, connectionType } = useAppStore();
+  const { currentView, setView, devices, setActiveDevice, activeDeviceId, connectionType, updateDataSourceConfig } = useAppStore();
   const [showConnectionManager, setShowConnectionManager] = useState(false);
+  const [expandedData, setExpandedData] = useState(true);
 
   const handleEditDevice = (id: string) => {
       setActiveDevice(id);
+      setView(ViewState.EDITOR);
+  };
+
+  const handleDataSourceSelect = (type: TideSourceType) => {
+      updateDataSourceConfig({ activeSource: type });
       setView(ViewState.EDITOR);
   };
 
@@ -50,7 +58,7 @@ const App: React.FC = () => {
       <NotificationToast />
 
       {/* Sidebar Navigation */}
-      <nav className="w-20 lg:w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between">
+      <nav className="w-20 lg:w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between overflow-y-auto">
          <div>
             <div className="p-6 flex items-center gap-3">
                 <div className="w-8 h-8 bg-cyan-500 rounded-lg flex items-center justify-center shadow-lg shadow-cyan-500/30">
@@ -67,22 +75,72 @@ const App: React.FC = () => {
                     label="Painel" 
                 />
                 <NavButton 
-                    active={currentView === ViewState.EDITOR} 
-                    onClick={() => setView(ViewState.EDITOR)} 
-                    icon={<Activity size={20}/>} 
-                    label="Editor de Maré" 
-                />
-                 <NavButton 
-                    active={currentView === ViewState.DISPLAY} 
-                    onClick={() => setView(ViewState.DISPLAY)} 
-                    icon={<Monitor size={20}/>} 
-                    label="Display GC9A01" 
-                />
-                <NavButton 
                     active={currentView === ViewState.LED_MASTER} 
                     onClick={() => setView(ViewState.LED_MASTER)} 
                     icon={<Lightbulb size={20}/>} 
-                    label="LED Master" 
+                    label="Leds" 
+                />
+                <NavButton 
+                    active={currentView === ViewState.DISPLAY} 
+                    onClick={() => setView(ViewState.DISPLAY)} 
+                    icon={<Monitor size={20}/>} 
+                    label="Displays" 
+                />
+                
+                {/* DADOS GROUP */}
+                <div className="pt-2">
+                    <button 
+                        onClick={() => setExpandedData(!expandedData)}
+                        className={`w-full flex items-center justify-between px-4 py-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition`}
+                    >
+                        <div className="flex items-center gap-3">
+                            <Database size={20} />
+                            <span className="hidden lg:block">Dados</span>
+                        </div>
+                        <div className="hidden lg:block">
+                            {expandedData ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}
+                        </div>
+                    </button>
+                    
+                    {expandedData && (
+                        <div className="mt-1 ml-4 border-l border-slate-700 pl-2 space-y-1">
+                             <SubNavButton 
+                                onClick={() => handleDataSourceSelect(TideSourceType.TABUA_MARE)}
+                                label="API (Tábua Maré)"
+                                icon={<MapPin size={14}/>}
+                             />
+                             <SubNavButton 
+                                onClick={() => handleDataSourceSelect(TideSourceType.API)}
+                                label="Sensores (Clima)"
+                                icon={<Globe size={14}/>}
+                             />
+                             <SubNavButton 
+                                onClick={() => handleDataSourceSelect(TideSourceType.MOCK)}
+                                label="Mockados"
+                                icon={<Activity size={14}/>}
+                             />
+                             <SubNavButton 
+                                onClick={() => handleDataSourceSelect(TideSourceType.CALCULATED)}
+                                label="Calculados"
+                                icon={<Calculator size={14}/>}
+                             />
+                        </div>
+                    )}
+                </div>
+
+                <div className="w-full h-px bg-slate-800 my-2"></div>
+
+                <NavButton 
+                    active={currentView === ViewState.DEBUG} 
+                    onClick={() => setView(ViewState.DEBUG)} 
+                    icon={<Terminal size={20}/>} 
+                    label="Debug" 
+                />
+                <NavButton 
+                    active={currentView === ViewState.ESP32} 
+                    onClick={() => setView(ViewState.ESP32)} 
+                    icon={<Shield size={20}/>} 
+                    label="ESP32" 
                 />
                 <NavButton 
                     active={currentView === ViewState.FIRMWARE} 
@@ -107,10 +165,12 @@ const App: React.FC = () => {
          <header className="h-16 bg-slate-900/50 backdrop-blur-sm border-b border-slate-800 flex items-center justify-between px-6 lg:px-8">
             <h2 className="text-lg font-semibold text-white">
                 {currentView === ViewState.DASHBOARD && 'Visão Geral'}
-                {currentView === ViewState.EDITOR && 'Editor Visual de Maré'}
+                {currentView === ViewState.EDITOR && 'Editor de Dados & Fontes'}
                 {currentView === ViewState.DISPLAY && 'Designer do Display'}
                 {currentView === ViewState.LED_MASTER && 'LED Master WS2812B'}
                 {currentView === ViewState.FIRMWARE && 'Gerador de Firmware'}
+                {currentView === ViewState.DEBUG && 'Console de Debug'}
+                {currentView === ViewState.ESP32 && 'Gerenciador de Conexão ESP32'}
             </h2>
             <div className="flex items-center gap-4">
                  
@@ -209,6 +269,22 @@ const App: React.FC = () => {
                  </div>
              )}
 
+             {currentView === ViewState.DEBUG && (
+                 <div className="h-full bg-slate-800 rounded-lg border border-slate-700 p-6 flex flex-col">
+                     <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                         <Terminal size={20} className="text-green-400" />
+                         Laboratório de Debug
+                     </h3>
+                     <LedDebugPanel />
+                 </div>
+             )}
+
+             {currentView === ViewState.ESP32 && (
+                 <div className="h-full">
+                     <ConnectionManager isEmbed={true} />
+                 </div>
+             )}
+
          </div>
       </main>
     </div>
@@ -219,6 +295,16 @@ const NavButton = ({ active, onClick, icon, label }: { active: boolean, onClick:
     <button 
         onClick={onClick}
         className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${active ? 'bg-cyan-500/10 text-cyan-400 font-medium border-r-2 border-cyan-500' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}
+    >
+        {icon}
+        <span className="hidden lg:block">{label}</span>
+    </button>
+);
+
+const SubNavButton = ({ onClick, icon, label }: { onClick: () => void, icon: React.ReactNode, label: string }) => (
+    <button 
+        onClick={onClick}
+        className="w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-200 text-slate-500 hover:text-cyan-400 hover:bg-slate-800/50 text-xs font-medium"
     >
         {icon}
         <span className="hidden lg:block">{label}</span>

@@ -1,4 +1,5 @@
 
+
 export enum EffectType {
   STATIC = 'STATIC',
   WAVE = 'WAVE',
@@ -286,6 +287,8 @@ export enum ViewState {
   DISPLAY = 'DISPLAY',
   LED_MASTER = 'LED_MASTER',
   FIRMWARE = 'FIRMWARE',
+  DEBUG = 'DEBUG',
+  ESP32 = 'ESP32'
 }
 
 export interface Notification {

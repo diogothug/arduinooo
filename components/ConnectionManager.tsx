@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
 import { ConnectionType } from '../types';
@@ -6,10 +7,11 @@ import { hardwareBridge } from '../services/hardwareBridge';
 import { Wifi, Usb, Bluetooth, CheckCircle, XCircle, AlertCircle, Shield } from 'lucide-react';
 
 interface ConnectionManagerProps {
-  onClose: () => void;
+  onClose?: () => void;
+  isEmbed?: boolean;
 }
 
-export const ConnectionManager: React.FC<ConnectionManagerProps> = ({ onClose }) => {
+export const ConnectionManager: React.FC<ConnectionManagerProps> = ({ onClose, isEmbed = false }) => {
   const { connectionType, setConnectionType, activeDeviceId, devices, setActiveDevice } = useAppStore();
   const [activeTab, setActiveTab] = useState<ConnectionType>(ConnectionType.USB);
   const [statusMsg, setStatusMsg] = useState('');
@@ -78,16 +80,24 @@ export const ConnectionManager: React.FC<ConnectionManagerProps> = ({ onClose })
     setErrorMsg('');
   };
 
+  const ContainerClass = isEmbed 
+      ? "w-full h-full bg-slate-800 rounded-lg border border-slate-700 p-4" 
+      : "fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4";
+
+  const InnerClass = isEmbed
+      ? "w-full h-full flex flex-col"
+      : "bg-slate-800 rounded-2xl border border-slate-700 shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200";
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="bg-slate-800 rounded-2xl border border-slate-700 shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div className={ContainerClass}>
+      <div className={InnerClass}>
         
-        <div className="flex justify-between items-center p-6 border-b border-slate-700 bg-slate-800">
+        <div className={`flex justify-between items-center ${isEmbed ? 'mb-4 border-b border-slate-700 pb-2' : 'p-6 border-b border-slate-700 bg-slate-800'}`}>
            <h3 className="text-xl font-bold text-white flex items-center gap-2">
                <Shield size={20} className="text-cyan-400" />
                Conectar Dispositivo
            </h3>
-           <button onClick={onClose} className="text-slate-400 hover:text-white transition">Fechar</button>
+           {!isEmbed && onClose && <button onClick={onClose} className="text-slate-400 hover:text-white transition">Fechar</button>}
         </div>
 
         {/* Connection Status Banner */}
@@ -138,7 +148,7 @@ export const ConnectionManager: React.FC<ConnectionManagerProps> = ({ onClose })
         </div>
 
         {/* Tab Content */}
-        <div className="p-6 min-h-[240px]">
+        <div className={`p-6 ${isEmbed ? 'flex-1 overflow-y-auto' : 'min-h-[240px]'}`}>
            {activeTab === ConnectionType.USB && (
              <div className="space-y-4 text-center">
                  <div className="bg-slate-900 p-4 rounded-lg border border-slate-700 mb-4">
