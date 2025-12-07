@@ -2,12 +2,14 @@
 
 
 
+
+
 import React, { useEffect } from 'react';
 import { useAppStore } from '../../store';
 import { LayoutTemplate, AlignVerticalJustifyCenter, Grid, Circle, RotateCw, Mountain, Spline, Palette, Cpu, Waves, Sun, Anchor, Zap, Wind, Moon, Activity, Plus, Trash2, ArrowUp, ArrowDown, BarChart3, AlertOctagon, ArrowUpCircle, Ruler, BatteryCharging } from 'lucide-react';
 
 const PRESETS = [
-    { id: 'tideWaveVertical', label: 'Onda Vertical (Direção)', icon: <ArrowUpCircle size={16} className="text-blue-400"/>, desc: 'Ondas sobem/descem conforme a maré.' },
+    { id: 'tideWaveVertical', label: 'Onda Vertical (Adaptativa)', icon: <ArrowUpCircle size={16} className="text-blue-400"/>, desc: 'Ondas físicas reais (m/s).' },
     { id: 'tideFill2', label: 'Maré Alta Viva', icon: <Waves size={16} className="text-cyan-400"/>, desc: 'Gradiente vertical baseado na maré.' },
     { id: 'oceanCaustics', label: 'Moreré Lagoon', icon: <Sun size={16} className="text-yellow-400"/>, desc: 'Luz solar refratada na água.' },
     { id: 'coralReef', label: 'Coral Reef', icon: <Anchor size={16} className="text-red-400"/>, desc: 'Cores de recife com fundo arenoso.' },
@@ -46,31 +48,18 @@ export const LedConfigPanel: React.FC<LedConfigPanelProps> = ({ simMode, setSimM
         }
     };
 
-    // Auto-calculate Total LEDs based on Physical Specs
-    useEffect(() => {
-        const { stripLengthMeters, ledDensity } = firmwareConfig.physicalSpecs || { stripLengthMeters: 1, ledDensity: 60 };
-        const calculated = Math.round(stripLengthMeters * ledDensity);
-        // Only update if significantly different to avoid loop, and logic is implicit
-        // We actually want the user to click "Auto-Calc" or toggle a mode, 
-        // but for now let's just show the calculated value as a hint or optional Apply.
-    }, [firmwareConfig.physicalSpecs]);
-
     const applyPhysicalCalculation = () => {
         const { stripLengthMeters, ledDensity } = firmwareConfig.physicalSpecs;
         const total = Math.round(stripLengthMeters * ledDensity);
         updateFirmwareConfig({ ledCount: total });
-        // Also update matrix dimensions if sensible
-        if (firmwareConfig.ledLayoutType === 'MATRIX') {
-            // Assume square-ish or keep width fixed?
-            // Let's just update count, user fixes width.
-        }
     };
 
     const estimatePower = () => {
-        const maxAmpsPerLed = 0.06; // 60mA white full brightness
-        const totalMax = firmwareConfig.ledCount * maxAmpsPerLed;
-        const typical = totalMax * 0.3; // 30% duty cycle typical
-        return { max: totalMax.toFixed(1), typical: typical.toFixed(1) };
+        // WS2812B Typical: 60mA (0.06A) per LED at full white
+        const totalLeds = firmwareConfig.ledCount;
+        const maxAmps = totalLeds * 0.06;
+        const typicalAmps = maxAmps * 0.35; // ~35% duty cycle typical usage
+        return { max: maxAmps.toFixed(1), typical: typicalAmps.toFixed(1) };
     };
 
     const powerStats = estimatePower();
@@ -92,7 +81,7 @@ export const LedConfigPanel: React.FC<LedConfigPanelProps> = ({ simMode, setSimM
                         <input 
                             type="number" 
                             step="0.1"
-                            value={firmwareConfig.physicalSpecs.stripLengthMeters} 
+                            value={firmwareConfig.physicalSpecs?.stripLengthMeters || 1.0} 
                             onChange={e=>updateFirmwareConfig({ physicalSpecs: {...firmwareConfig.physicalSpecs, stripLengthMeters: parseFloat(e.target.value)} })} 
                             className="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white text-xs focus:border-cyan-500 outline-none"
                         />
@@ -100,7 +89,7 @@ export const LedConfigPanel: React.FC<LedConfigPanelProps> = ({ simMode, setSimM
                     <div>
                         <label className="text-[9px] block text-slate-500 font-bold uppercase mb-1">Densidade (LEDs/m)</label>
                         <select 
-                            value={firmwareConfig.physicalSpecs.ledDensity} 
+                            value={firmwareConfig.physicalSpecs?.ledDensity || 60} 
                             onChange={e=>updateFirmwareConfig({ physicalSpecs: {...firmwareConfig.physicalSpecs, ledDensity: parseInt(e.target.value) as any} })}
                             className="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white text-xs focus:border-cyan-500 outline-none"
                         >
@@ -115,13 +104,15 @@ export const LedConfigPanel: React.FC<LedConfigPanelProps> = ({ simMode, setSimM
                 <div className="flex items-center justify-between bg-slate-800/50 p-2 rounded border border-slate-700/50 relative z-10">
                     <div className="flex flex-col">
                         <span className="text-[9px] text-slate-500 uppercase">Total Calculado</span>
-                        <span className="text-sm font-mono text-cyan-400 font-bold">{Math.round(firmwareConfig.physicalSpecs.stripLengthMeters * firmwareConfig.physicalSpecs.ledDensity)} LEDs</span>
+                        <span className="text-sm font-mono text-cyan-400 font-bold">
+                            {Math.round((firmwareConfig.physicalSpecs?.stripLengthMeters || 1) * (firmwareConfig.physicalSpecs?.ledDensity || 60))} LEDs
+                        </span>
                     </div>
                     <button 
                         onClick={applyPhysicalCalculation}
-                        className="text-[10px] bg-cyan-900/30 hover:bg-cyan-900/50 text-cyan-300 border border-cyan-800/50 px-3 py-1.5 rounded transition"
+                        className="text-[10px] bg-cyan-900/30 hover:bg-cyan-900/50 text-cyan-300 border border-cyan-800/50 px-3 py-1.5 rounded transition font-bold"
                     >
-                        Aplicar ao Firmware
+                        Atualizar Total
                     </button>
                 </div>
 
@@ -130,7 +121,7 @@ export const LedConfigPanel: React.FC<LedConfigPanelProps> = ({ simMode, setSimM
                         <BatteryCharging size={14} className="text-yellow-500"/>
                         <span className="text-[10px] text-slate-400 font-bold uppercase">Orçamento de Energia (5V)</span>
                      </div>
-                     <div className="flex gap-4">
+                     <div className="flex gap-4 items-end">
                          <div>
                              <span className="block text-[10px] text-slate-500">Máximo Teórico</span>
                              <span className="text-xs font-mono text-red-400">{powerStats.max} A</span>
@@ -140,18 +131,18 @@ export const LedConfigPanel: React.FC<LedConfigPanelProps> = ({ simMode, setSimM
                              <span className="text-xs font-mono text-green-400">{powerStats.typical} A</span>
                          </div>
                          <div className="flex-1">
-                             <label className="text-[9px] block text-slate-500 mb-1">Limite Software (A)</label>
+                             <label className="text-[9px] block text-slate-500 mb-1">Limite Firmware (A)</label>
                              <input 
                                 type="number" 
                                 step="0.5"
-                                value={firmwareConfig.physicalSpecs.maxPowerAmps} 
+                                value={firmwareConfig.physicalSpecs?.maxPowerAmps || 2.0} 
                                 onChange={e=>updateFirmwareConfig({ physicalSpecs: {...firmwareConfig.physicalSpecs, maxPowerAmps: parseFloat(e.target.value)} })} 
-                                className="w-20 bg-slate-800 border border-slate-600 rounded p-1 text-xs text-yellow-500 text-center"
+                                className="w-20 bg-slate-800 border border-slate-600 rounded p-1 text-xs text-yellow-500 text-center focus:border-yellow-500 outline-none"
                             />
                          </div>
                      </div>
                      <p className="text-[9px] text-slate-600 mt-2 italic">
-                         * O firmware limitará o brilho automaticamente se exceder o limite de {firmwareConfig.physicalSpecs.maxPowerAmps}A.
+                         * O FastLED ajustará o brilho dinamicamente para não exceder {firmwareConfig.physicalSpecs?.maxPowerAmps}A.
                      </p>
                 </div>
              </div>

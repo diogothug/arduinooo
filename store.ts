@@ -3,6 +3,7 @@
 
 
 
+
 import { create } from 'zustand';
 import { Keyframe, Device, ViewState, EffectType, FirmwareConfig, DisplayConfig, DisplayWidget, WidgetType, DisplayDriver, ConnectionType, DisplayTheme, RenderMode, DataSourceConfig, TideSourceType, MockWaveType, WeatherData, Notification, DisplayType, SavedMock } from './types';
 
@@ -85,11 +86,11 @@ export const useAppStore = create<AppState>((set) => ({
   firmwareConfig: {
     ssid: 'Moreré_WiFi',
     password: '',
-    ledCount: 64,
+    ledCount: 60,
     ledPin: 18,
     ledBrightness: 160,
     ledColorOrder: 'GRB',
-    ledLayoutType: 'MATRIX',
+    ledLayoutType: 'STRIP',
     ledMatrixWidth: 8,
     ledMatrixHeight: 8,
     ledSerpentine: true,

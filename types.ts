@@ -1,6 +1,7 @@
 
 
 
+
 export enum EffectType {
   STATIC = 'STATIC',
   WAVE = 'WAVE',
