@@ -1,5 +1,6 @@
 
 
+
 export enum EffectType {
   STATIC = 'STATIC',
   WAVE = 'WAVE',
@@ -237,7 +238,7 @@ export interface AutonomousConfig {
     linkWeatherToLeds: boolean;
 }
 
-export interface CompiledFirmwareData {
+export interface CompiledData {
     timestamp: number;
     frames: Keyframe[];
     defaultTemp: number;
@@ -271,7 +272,7 @@ export interface FirmwareConfig {
   animationSpeed: number;
   animationIntensity: number;
   animationPalette: number;
-  compiledData?: CompiledFirmwareData; // New field for compiled data
+  compiledData?: CompiledData; 
 }
 
 export interface DailyForecast {

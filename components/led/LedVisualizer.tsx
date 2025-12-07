@@ -1,8 +1,6 @@
 
-
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { useAppStore } from '../../store';
-import { FirmwareConfig } from '../../types';
 
 interface LedVisualizerProps {
     simMode: boolean;
@@ -49,7 +47,7 @@ export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
-        const ctx = canvas.getContext('2d', { alpha: false }); // Optimize
+        const ctx = canvas.getContext('2d', { alpha: false }); 
         if (!ctx) return;
 
         let animId: number;
@@ -174,36 +172,47 @@ export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams
                          normalizedY = led.i / count;
                     }
 
-                    // Map tide % (which can be negative) to 0-1 scale visually
-                    // -20 to 120 -> We clamp visually between 0 and 1 for colors, but handle negative logic
                     const tideLevel = tide / 100.0;
                     
-                    if (normalizedY <= tideLevel && tideLevel > 0) {
-                         // Underwater
-                         if (mode === 'coralReef') {
-                             if (normalizedY < 0.2) { r=139; g=90; b=43; } 
-                             else {
-                                 const depth = (tideLevel - normalizedY) / tideLevel;
-                                 if (depth < 0.2) { r=90; g=200; b=250; } else { r=0; g=119; b=190; }
+                    // Logic: If tide is negative, bottom LEDs are "Exposed Ground".
+                    // If tide is positive, LEDs below tideLevel are Water.
+                    
+                    if (tideLevel >= 0) {
+                        if (normalizedY <= tideLevel) {
+                             // Underwater
+                             if (mode === 'coralReef') {
+                                 if (normalizedY < 0.2) { r=139; g=90; b=43; } 
+                                 else {
+                                     const depth = (tideLevel - normalizedY) / tideLevel;
+                                     if (depth < 0.2) { r=90; g=200; b=250; } else { r=0; g=119; b=190; }
+                                 }
+                                 if (normalizedY < 0.3 && (led.i * 13) % 7 === 0) { r=255; g=107; b=107; }
+                             } else {
+                                 const idx = normalizedY / (tideLevel || 1); 
+                                 const c1 = hexToRgb(colors[0]);
+                                 const c2 = hexToRgb(colors[1] || colors[0]);
+                                 r = c1.r + (c2.r - c1.r) * idx;
+                                 g = c1.g + (c2.g - c1.g) * idx;
+                                 b = c1.b + (c2.b - c1.b) * idx;
                              }
-                             if (normalizedY < 0.3 && (led.i * 13) % 7 === 0) { r=255; g=107; b=107; }
-                         } else {
-                             const idx = normalizedY / (tideLevel || 1); // Avoid div 0 
-                             const c1 = hexToRgb(colors[0]);
-                             const c2 = hexToRgb(colors[1] || colors[0]);
-                             r = c1.r + (c2.r - c1.r) * idx;
-                             g = c1.g + (c2.g - c1.g) * idx;
-                             b = c1.b + (c2.b - c1.b) * idx;
-                         }
-                    } else {
-                        // Air OR Negative Tide Exposed Rock
-                        if (tideLevel < 0 && normalizedY < 0.2) {
-                             // Negative tide logic: Bottom LEDs turn "Dry/Dead" color
-                             r=80; g=60; b=40; // Dried mud/rock
                         } else {
-                             r=0; g=0; b=0;
+                            // Air above water
+                            r=0; g=0; b=0;
+                        }
+                    } else {
+                        // Negative Tide: Water is gone. Bottom is exposed.
+                        // Render "Exposed Rock/Mud" for the bottom area magnitude of the negative tide
+                        const exposedHeight = Math.abs(tideLevel);
+                        if (normalizedY <= exposedHeight) {
+                            // Mud/Rock Color
+                            r=101; g=67; b=33; // Dark Brown
+                            // Texture
+                            if ((led.i % 3) === 0) { r+=20; g+=20; b+=10; }
+                        } else {
+                            r=0; g=0; b=0;
                         }
                     }
+
                 } else if (mode === 'neon') {
                     const hue = (now * 0.1 * speed + led.i * 5) % 360;
                     const s = 1, v = 1 * intensity;

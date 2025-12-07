@@ -1,5 +1,6 @@
 
 
+
 import { FirmwareConfig, DisplayConfig, Keyframe } from '../../types';
 
 export const generatePlatformIO = (config: FirmwareConfig, display: DisplayConfig) => `
