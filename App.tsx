@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from './store';
 import { ViewState, ConnectionType, TideSourceType } from './types';
@@ -8,7 +9,7 @@ import { DisplayEditor } from './components/DisplayEditor';
 import { LedMaster } from './components/LedMaster';
 import { ConnectionManager } from './components/ConnectionManager';
 import { Esp32Tools } from './components/Esp32Tools';
-import { LayoutDashboard, Waves, Cpu, Settings, Activity, Monitor, Link2, Wifi, Usb, Bluetooth, AlertCircle, CheckCircle, Info, X, Lightbulb, Database, Shield, ChevronDown, ChevronRight, Calculator, Globe, MapPin, Thermometer } from 'lucide-react';
+import { LayoutDashboard, Waves, Cpu, Settings, Activity, Monitor, Link2, Wifi, Usb, Bluetooth, AlertCircle, CheckCircle, Info, X, Lightbulb, Database, Shield, ChevronDown, ChevronRight, Calculator, Globe, MapPin, Thermometer, Clock } from 'lucide-react';
 
 const NotificationToast = () => {
     const { notification, clearNotification } = useAppStore();
@@ -35,9 +36,20 @@ const NotificationToast = () => {
 };
 
 const App: React.FC = () => {
-  const { currentView, setView, devices, setActiveDevice, activeDeviceId, connectionType, updateDataSourceConfig } = useAppStore();
+  const { currentView, setView, devices, setActiveDevice, activeDeviceId, connectionType, updateDataSourceConfig, systemTime, setSystemTime } = useAppStore();
   const [showConnectionManager, setShowConnectionManager] = useState(false);
   const [expandedData, setExpandedData] = useState(true);
+
+  // --- Real Time System Clock ---
+  useEffect(() => {
+      // Initialize with current time
+      setSystemTime(Date.now());
+      // Update every second
+      const timer = setInterval(() => {
+          setSystemTime(Date.now());
+      }, 1000);
+      return () => clearInterval(timer);
+  }, [setSystemTime]);
 
   const handleEditDevice = (id: string) => {
       setActiveDevice(id);
@@ -156,13 +168,21 @@ const App: React.FC = () => {
       <main className="flex-1 flex flex-col h-screen overflow-hidden min-w-0">
          {/* Top Header - Mobile friendly */}
          <header className="h-16 bg-slate-900/50 backdrop-blur-sm border-b border-slate-800 flex items-center justify-between px-6 lg:px-8 shrink-0 z-10">
-            <h2 className="text-lg font-semibold text-white truncate">
-                {currentView === ViewState.DASHBOARD && 'Visão Geral'}
-                {currentView === ViewState.EDITOR && 'Editor de Dados & Fontes'}
-                {currentView === ViewState.DISPLAY && 'Designer do Display'}
-                {currentView === ViewState.LED_MASTER && 'LED Master WS2812B'}
-                {currentView === ViewState.FIRMWARE && 'Gerador de Firmware'}
-                {currentView === ViewState.ESP32 && 'ESP32 & Ferramentas'}
+            <h2 className="text-lg font-semibold text-white truncate flex items-center gap-4">
+                <span>
+                    {currentView === ViewState.DASHBOARD && 'Visão Geral'}
+                    {currentView === ViewState.EDITOR && 'Editor de Dados & Fontes'}
+                    {currentView === ViewState.DISPLAY && 'Designer do Display'}
+                    {currentView === ViewState.LED_MASTER && 'LED Master WS2812B'}
+                    {currentView === ViewState.FIRMWARE && 'Gerador de Firmware'}
+                    {currentView === ViewState.ESP32 && 'ESP32 & Ferramentas'}
+                </span>
+                
+                {/* System Clock Widget */}
+                <div className="hidden md:flex items-center gap-2 text-xs font-mono text-slate-400 bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
+                    <Clock size={12} className="text-cyan-500" />
+                    {new Date(systemTime).toLocaleString('pt-BR', { weekday: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </div>
             </h2>
             <div className="flex items-center gap-4 shrink-0">
                  

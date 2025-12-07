@@ -12,28 +12,48 @@ const uid = () => Math.random().toString(36).substr(2, 9);
 // We use a public proxy to act as the "Backend" for these requests, solving the CORS issue.
 const CORS_PROXY = "https://api.allorigins.win/raw?url=";
 
-// --- HARDCODED MOCK DATA (New Moreré Data 2025) ---
-const HARDCODED_TIDE_DATA = {
-  "location": "morere",
-  "timezone": "America/Bahia",
-  "period": "até 2025-12-29",
-  "tides": [
-    {
-      "date": "2025-12-01",
-      "low": ["02:11", "14:27"],
-      "high": ["08:39", "20:51"]
-    },
-    {
-      "date": "2025-12-02",
-      "low": ["02:59", "15:18"],
-      "high": ["09:28", "21:41"]
-    },
-    {
-      "date": "2025-12-03",
-      "low": ["03:46", "16:05"],
-      "high": ["10:15", "22:28"]
+// --- DYNAMIC MOCK DATA GENERATOR ---
+const generateCurrentMockData = () => {
+    const today = new Date();
+    const data = {
+        "location": "morere",
+        "timezone": "America/Bahia",
+        "tides": [] as any[]
+    };
+
+    // Generate 3 days of data starting today
+    for (let i = 0; i < 3; i++) {
+        const d = new Date(today);
+        d.setDate(today.getDate() + i);
+        const dateStr = d.toISOString().split('T')[0]; // YYYY-MM-DD
+        
+        // Shift times slightly each day to simulate lunar cycle (~50min shift)
+        const shiftMinutes = i * 50; 
+        const h1 = Math.floor((2 * 60 + 11 + shiftMinutes) / 60) % 24;
+        const m1 = (2 * 60 + 11 + shiftMinutes) % 60;
+        
+        const h2 = Math.floor((14 * 60 + 27 + shiftMinutes) / 60) % 24;
+        const m2 = (14 * 60 + 27 + shiftMinutes) % 60;
+
+        const h3 = Math.floor((8 * 60 + 39 + shiftMinutes) / 60) % 24;
+        const m3 = (8 * 60 + 39 + shiftMinutes) % 60;
+
+        const h4 = Math.floor((20 * 60 + 51 + shiftMinutes) / 60) % 24;
+        const m4 = (20 * 60 + 51 + shiftMinutes) % 60;
+
+        data.tides.push({
+            "date": dateStr,
+            "low": [
+                `${String(h1).padStart(2,'0')}:${String(m1).padStart(2,'0')}`, 
+                `${String(h2).padStart(2,'0')}:${String(m2).padStart(2,'0')}`
+            ],
+            "high": [
+                `${String(h3).padStart(2,'0')}:${String(m3).padStart(2,'0')}`, 
+                `${String(h4).padStart(2,'0')}:${String(m4).padStart(2,'0')}`
+            ]
+        });
     }
-  ]
+    return data;
 };
 
 // Robust Base URL Builder
@@ -481,13 +501,17 @@ async function fetchTabuaMareDataDuration(config: DataSourceConfig, totalDays: n
 }
 
 function generateMockData(config: DataSourceConfig, cycleDuration: number): Keyframe[] {
-    safeLog("[TideSource] Usando dados estáticos (Moreré 2025 Melhorados)...");
+    safeLog("[TideSource] Gerando dados dinâmicos baseados na data de hoje...");
     
+    // Generate Current Data instead of Hardcoded 2025
+    const dynamicData = generateCurrentMockData();
+
     const frames: Keyframe[] = [];
-    const tides = HARDCODED_TIDE_DATA.tides;
+    const tides = dynamicData.tides;
     
     tides.forEach((dayData, dayIndex) => {
-        dayData.high.forEach((timeStr) => {
+        // High Tides
+        dayData.high.forEach((timeStr: string) => {
              const [hh, mm] = timeStr.split(':').map(Number);
              const timeOffset = (dayIndex * 24) + hh + (mm / 60);
              frames.push({
@@ -499,7 +523,8 @@ function generateMockData(config: DataSourceConfig, cycleDuration: number): Keyf
                  effect: EffectType.WAVE
              });
         });
-        dayData.low.forEach((timeStr) => {
+        // Low Tides
+        dayData.low.forEach((timeStr: string) => {
              const [hh, mm] = timeStr.split(':').map(Number);
              const timeOffset = (dayIndex * 24) + hh + (mm / 60);
              frames.push({

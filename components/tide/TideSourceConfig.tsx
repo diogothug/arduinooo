@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useAppStore } from '../../store';
 import { TideSourceType, MockWaveType } from '../../types';
@@ -12,7 +13,7 @@ interface TideSourceConfigProps {
 export const TideSourceConfig: React.FC<TideSourceConfigProps> = ({ useSevenDayMode, setSimulatedTime }) => {
   const { 
     dataSourceConfig, updateDataSourceConfig, weatherData, setWeatherData,
-    setKeyframes, setNotification, setApiStatus, savedMocks, saveMock, deleteMock
+    setKeyframes, setNotification, setApiStatus, savedMocks, saveMock, deleteMock, systemTime
   } = useAppStore();
 
   const [isGeneratingSource, setIsGeneratingSource] = useState(false);
@@ -74,7 +75,7 @@ export const TideSourceConfig: React.FC<TideSourceConfigProps> = ({ useSevenDayM
   };
 
   const handleSaveMock = () => {
-      const name = newMockName || `Snapshot ${new Date().toLocaleTimeString()}`;
+      const name = newMockName || `Snapshot ${new Date(systemTime).toLocaleTimeString()}`;
       saveMock(name, useAppStore.getState().keyframes);
       setNewMockName('');
       setNotification('success', 'Mock salvo com sucesso!');
@@ -139,6 +140,7 @@ export const TideSourceConfig: React.FC<TideSourceConfigProps> = ({ useSevenDayM
                               <h5 className="text-[10px] font-bold text-blue-300 mb-1 flex items-center gap-1"><Info size={10}/> Modo 7 Dias</h5>
                               <p className="text-[10px] text-blue-200/70 leading-relaxed">
                                   A Tábua de Marés do Brasil fornece dados precisos. Ative o modo "7 Dias" no topo para previsão semanal.
+                                  Data Ref: {new Date(systemTime).toLocaleDateString()}
                               </p>
                           </div>
                       </div>

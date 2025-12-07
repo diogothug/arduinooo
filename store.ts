@@ -1,5 +1,6 @@
 
 
+
 import { create } from 'zustand';
 import { Keyframe, Device, ViewState, EffectType, FirmwareConfig, DisplayConfig, DisplayWidget, WidgetType, DisplayDriver, ConnectionType, DisplayTheme, RenderMode, DataSourceConfig, TideSourceType, MockWaveType, WeatherData, Notification, DisplayType, SavedMock } from './types';
 
@@ -13,6 +14,7 @@ interface AppState {
   keyframes: Keyframe[];
   savedMocks: SavedMock[]; 
   simulatedTime: number; 
+  systemTime: number; // Real-world clock
   firmwareConfig: FirmwareConfig;
   dataSourceConfig: DataSourceConfig;
   displayConfig: DisplayConfig;
@@ -37,6 +39,7 @@ interface AppState {
   deleteMock: (id: string) => void;
 
   setSimulatedTime: (time: number) => void;
+  setSystemTime: (time: number) => void;
   updateFirmwareConfig: (config: Partial<FirmwareConfig>) => void;
   updateDataSourceConfig: (config: Partial<DataSourceConfig>) => void;
   setDisplayConfig: (config: Partial<DisplayConfig>) => void;
@@ -76,6 +79,7 @@ export const useAppStore = create<AppState>((set) => ({
       }
   ],
   simulatedTime: 12,
+  systemTime: Date.now(),
   firmwareConfig: {
     ssid: 'Moreré_WiFi',
     password: '',
@@ -153,6 +157,7 @@ export const useAppStore = create<AppState>((set) => ({
   deleteMock: (id) => set((state) => ({ savedMocks: state.savedMocks.filter(m => m.id !== id) })),
 
   setSimulatedTime: (time) => set({ simulatedTime: time }),
+  setSystemTime: (time) => set({ systemTime: time }),
   updateFirmwareConfig: (config) => set((state) => ({ firmwareConfig: { ...state.firmwareConfig, ...config } })),
   updateDataSourceConfig: (config) => set((state) => ({ dataSourceConfig: { ...state.dataSourceConfig, ...config } })),
   setDisplayConfig: (config) => set((state) => ({ displayConfig: { ...state.displayConfig, ...config } })),

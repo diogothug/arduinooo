@@ -1,3 +1,5 @@
+
+
 import React, { useRef, useEffect } from 'react';
 import { useAppStore } from '../../store';
 
@@ -66,15 +68,20 @@ export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams
 
             // 1. Determine Environment Variables
             let tide = 50, wind = 0, hum = 0, night = false;
+            let isRising = true;
 
             if (data.simMode) {
                 tide = data.simParams.tide; 
                 wind = data.simParams.wind; 
                 hum = data.simParams.humidity; 
                 night = data.simParams.isNight;
+                isRising = data.simParams.tideDirection === 'RISING';
             } else {
                 const cycle = cfg.cycleDuration || 24;
                 let t = data.simulatedTime % cycle;
+                let currentH = 50;
+                let nextH = 50;
+
                 if (data.keyframes.length > 1) {
                     let s = data.keyframes[0], e = data.keyframes[data.keyframes.length-1];
                     for(let i=0; i<data.keyframes.length-1; i++) {
@@ -87,7 +94,15 @@ export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams
                     let dur = e.timeOffset - s.timeOffset; 
                     if (dur < 0) dur += cycle;
                     const prog = dur === 0 ? 0 : (t - s.timeOffset) / dur;
-                    tide = s.height + (e.height - s.height) * (prog < 0 ? prog + 1 : prog);
+                    currentH = s.height + (e.height - s.height) * (prog < 0 ? prog + 1 : prog);
+                    
+                    // Simple prediction for direction: Compare current with slightly future time
+                    const futureT = (t + 0.1) % cycle;
+                    let nextProg = prog + (0.1 / dur);
+                    if(nextProg > 1) nextProg = 1; 
+                    nextH = s.height + (e.height - s.height) * nextProg;
+                    isRising = nextH > currentH;
+                    tide = currentH;
                 }
                 wind = data.weatherData.windSpeed; 
                 hum = data.weatherData.humidity;
@@ -163,7 +178,59 @@ export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams
             leds.forEach((led) => {
                 let r=0, g=0, b=0;
                 
-                if (mode === 'tideFill2' || mode === 'coralReef') {
+                if (mode === 'tideWaveVertical') {
+                    // NEW ANIMATION: Wave moves UP if rising, DOWN if falling
+                    let normalizedY = 0;
+                    if (layout === 'MATRIX') {
+                         normalizedY = 1.0 - (led.r / (led.maxR || 1));
+                    } else {
+                         normalizedY = led.i / count;
+                    }
+                    const tideLevel = tide / 100.0;
+                    
+                    if (normalizedY <= tideLevel) {
+                        // Depth Gradient (Deep Blue to Light Cyan)
+                        // Deep at 0, Light at tideLevel
+                        const relativeDepth = normalizedY / (tideLevel || 0.001); // 0.0(bot) -> 1.0(surf)
+                        
+                        // Internal Wave Logic
+                        // Direction multiplier: +1 for Up (Rising), -1 for Down (Falling)
+                        const dirMult = isRising ? 1 : -1;
+                        const waveSpeed = speed * 2.0;
+                        
+                        // Wave calculation
+                        // y * 10 creates the spatial wave frequency
+                        // now * speed * dir creates the movement
+                        const wave = Math.sin(normalizedY * 15 - (now * 0.005 * waveSpeed * dirMult));
+                        
+                        // Color Mixing
+                        // Base: Dark Blue (0, 0, 100) -> Surface: Cyan (0, 255, 255)
+                        // Modulated by wave
+                        
+                        // Deep color
+                        const r1=0, g1=10, b1=80; 
+                        // Surface color
+                        const r2=0, g2=150, b2=220;
+                        
+                        // Mix factor based on depth + wave
+                        let mix = relativeDepth + (wave * 0.1); 
+                        if (mix > 1) mix = 1; if (mix < 0) mix = 0;
+                        
+                        r = r1 + (r2-r1)*mix;
+                        g = g1 + (g2-g1)*mix;
+                        b = b1 + (b2-b1)*mix;
+                        
+                        // Add foam/sparkle at the very surface
+                        if (relativeDepth > 0.95) {
+                             // Foam logic
+                             const foam = Math.sin(led.x * 0.2 + now * 0.01);
+                             if (foam > 0) { r+=40; g+=40; b+=40; }
+                        }
+                    } else {
+                        r=0; g=0; b=0;
+                    }
+
+                } else if (mode === 'tideFill2' || mode === 'coralReef') {
                     let normalizedY = 0;
                     if (layout === 'MATRIX') {
                          normalizedY = 1.0 - (led.r / (led.maxR || 1));
@@ -173,12 +240,8 @@ export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams
 
                     const tideLevel = tide / 100.0;
                     
-                    // Logic: If tide is negative, bottom LEDs are "Exposed Ground".
-                    // If tide is positive, LEDs below tideLevel are Water.
-                    
                     if (tideLevel >= 0) {
                         if (normalizedY <= tideLevel) {
-                             // Underwater
                              if (mode === 'coralReef') {
                                  if (normalizedY < 0.2) { r=139; g=90; b=43; } 
                                  else {
@@ -195,17 +258,12 @@ export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams
                                  b = c1.b + (c2.b - c1.b) * idx;
                              }
                         } else {
-                            // Air above water
                             r=0; g=0; b=0;
                         }
                     } else {
-                        // Negative Tide: Water is gone. Bottom is exposed.
-                        // Render "Exposed Rock/Mud" for the bottom area magnitude of the negative tide
                         const exposedHeight = Math.abs(tideLevel);
                         if (normalizedY <= exposedHeight) {
-                            // Mud/Rock Color
-                            r=101; g=67; b=33; // Dark Brown
-                            // Texture
+                            r=101; g=67; b=33; 
                             if ((led.i % 3) === 0) { r+=20; g+=20; b+=10; }
                         } else {
                             r=0; g=0; b=0;
