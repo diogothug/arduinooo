@@ -1,5 +1,4 @@
 
-
 import React, { useState } from 'react';
 import { ConnectionManager } from './ConnectionManager';
 import { LedDebugPanel } from './led/LedDebugPanel';
@@ -9,9 +8,9 @@ export const Esp32Tools: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'CONNECT' | 'DEBUG' | 'LAB'>('CONNECT');
 
     return (
-        <div className="h-full flex flex-col gap-4">
+        <div className="h-full flex flex-col gap-4 overflow-y-auto lg:overflow-hidden pr-2 custom-scrollbar">
             {/* Header Tabs */}
-            <div className="flex bg-slate-800 rounded-lg p-1 border border-slate-700 w-fit">
+            <div className="flex bg-slate-800 rounded-lg p-1 border border-slate-700 w-fit shrink-0">
                 <button 
                     onClick={() => setActiveTab('CONNECT')}
                     className={`flex items-center gap-2 px-4 py-2 rounded text-xs font-bold transition ${activeTab === 'CONNECT' ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:bg-slate-700'}`}
@@ -33,7 +32,7 @@ export const Esp32Tools: React.FC = () => {
             </div>
 
             {/* Content Area */}
-            <div className="flex-1 bg-slate-800 rounded-lg border border-slate-700 p-6 overflow-hidden">
+            <div className="flex-1 bg-slate-800 rounded-lg border border-slate-700 p-6 overflow-hidden min-h-[500px] lg:min-h-0">
                 {activeTab === 'CONNECT' && (
                     <div className="h-full flex flex-col animate-in fade-in">
                         <div className="mb-4">
