@@ -1,4 +1,5 @@
 
+
 export enum EffectType {
   STATIC = 'STATIC',
   WAVE = 'WAVE',
@@ -267,6 +268,12 @@ export interface ShaderConfig {
     }
 }
 
+export interface FluidParams {
+  tension: number; // 0.01 - 0.1 (Hooke's k)
+  damping: number; // 0.01 - 0.1 (Friction)
+  spread: number;  // 0.0 - 0.5 (Neighbor transfer)
+}
+
 export interface FirmwareConfig {
   ssid: string;
   password: string;
@@ -280,6 +287,7 @@ export interface FirmwareConfig {
   weatherApi: WeatherApiConfig;
   autonomous: AutonomousConfig;
   physicalSpecs: PhysicalSpecs; 
+  fluidParams: FluidParams; // New Physics Config
   ledCount: number;
   ledPin: number;
   ledBrightness: number;

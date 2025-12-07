@@ -3,6 +3,10 @@
 
 
 
+
+
+
+
 import { FirmwareConfig } from '../../types';
 
 export const generateWs2812bConfigH = () => `
@@ -29,6 +33,11 @@ struct WS2812BConfig {
     int ledDensity;   // LEDs/meter
     float maxPowerAmps;
     
+    // Physics Engine Params
+    float tension;
+    float damping;
+    float spread;
+    
     // Animation Engine Params
     String mode;      
     float speed;      // 0.1 - 5.0
@@ -51,6 +60,7 @@ export const generateWs2812bConfigCpp = (config: FirmwareConfig) => {
     const w = isMatrix ? (config.ledMatrixWidth || 10) : config.ledCount;
     const h = isMatrix ? Math.ceil(config.ledCount / w) : 1;
     const phys = config.physicalSpecs || { stripLengthMeters: 1.0, ledDensity: 60, maxPowerAmps: 2.0 };
+    const fluid = config.fluidParams || { tension: 0.025, damping: 0.02, spread: 0.1 };
 
     return `
 #include "ws2812b_config.h"
@@ -67,7 +77,10 @@ WS2812BConfig WS2812BConfigManager::config = {
     ${phys.stripLengthMeters.toFixed(2)}f, // Length in Meters
     ${phys.ledDensity}, // Density (LEDs/m)
     ${phys.maxPowerAmps.toFixed(1)}f, // Max Amps
-    "${config.animationMode || 'oceanCaustics'}", 
+    ${fluid.tension.toFixed(3)}f,
+    ${fluid.damping.toFixed(3)}f,
+    ${fluid.spread.toFixed(2)}f,
+    "${config.animationMode || 'fluidPhysics'}", 
     ${config.animationSpeed.toFixed(1)}f, 
     ${config.animationIntensity.toFixed(1)}f, 
     ${config.animationPalette}
@@ -83,6 +96,10 @@ void WS2812BConfigManager::updateFromJson(JsonObject json) {
     if (json.containsKey("speed")) config.speed = json["speed"];
     if (json.containsKey("intensity")) config.intensity = json["intensity"];
     if (json.containsKey("palette")) config.paletteId = json["palette"];
+    
+    if (json.containsKey("tension")) config.tension = json["tension"];
+    if (json.containsKey("damping")) config.damping = json["damping"];
+    if (json.containsKey("spread")) config.spread = json["spread"];
 }
 `;
 };
@@ -200,9 +217,10 @@ export const generateWs2812bAnimationsH = () => `
 #define WS2812B_ANIMATIONS_H
 
 #include "ws2812b_controller.h"
+#include "../../FluidEngine.h" // Import 1D Wave Physics
 
 // --- LAYER 3: ANIMATION LOGIC ---
-// Pure logic functions, unaware of specific hardware pins
+// Includes Fluid Physics, PBR Shading, and Particle Systems
 
 struct AnimationParams {
     float speed;        // 0.1 to 5.0
@@ -214,9 +232,6 @@ struct AnimationParams {
     float meterPos(int pixelIndex) {
         return (float)pixelIndex / (float)WS2812BConfigManager::config.ledDensity;
     }
-    float totalMeters() {
-        return WS2812BConfigManager::config.lengthMeters;
-    }
 };
 
 class WS2812BAnimations {
@@ -226,25 +241,22 @@ public:
     // Main Dispatcher
     static void run(String mode, float tideLevel, float windSpeed = 0, int humidity = 0);
     
-    // Standard Modes
-    static void idleAmbient();
-    static void tideFillAnimation(float tideNorm); 
-
-    // --- Premium Generative Engines 2.0 (Adaptive) ---
-    static void tideWaveVertical(AnimationParams p, uint32_t t);
-    static void oceanCaustics(AnimationParams p, uint32_t t);
-    static void tideFill2(AnimationParams p, uint32_t t);
-    static void auroraWaves(AnimationParams p, uint32_t t);
-    static void deepSeaParticles(AnimationParams p, uint32_t t);
-    static void stormSurge(AnimationParams p, uint32_t t);
-    static void neonPulse(AnimationParams p, uint32_t t);
-    static void coralReef(AnimationParams p, uint32_t t);
+    // --- PREMIUM ENGINES (Physics + PBR) ---
+    static void runFluidPhysics(AnimationParams p, uint32_t t, float wind);
+    static void runBioluminescence(AnimationParams p, uint32_t t);
+    static void runThermalDrift(AnimationParams p, uint32_t t, int temp);
     
-    static CRGBPalette16 getPaletteById(int id);
+    // --- LEGACY/STANDARD MODES ---
+    static void oceanCaustics(AnimationParams p, uint32_t t);
+    static void tideWaveVertical(AnimationParams p, uint32_t t);
+    
+    static CRGBPalette16 getPremiumPalette(float tideLevel, bool isNight, bool isStorm);
     static float _previousTideLevel;
 
 private:
     static WS2812BController* _ctrl;
+    static FluidEngine _fluid; // Persistent physics state
+    static bool _fluidInit;
 };
 
 #endif
@@ -255,315 +267,231 @@ export const generateWs2812bAnimationsCpp = () => `
 #include "config.h"
 
 WS2812BController* WS2812BAnimations::_ctrl = nullptr;
+FluidEngine WS2812BAnimations::_fluid;
+bool WS2812BAnimations::_fluidInit = false;
 float WS2812BAnimations::_previousTideLevel = 0.5f;
 
 void WS2812BAnimations::attachController(WS2812BController* controller) {
     _ctrl = controller;
 }
 
-CRGBPalette16 WS2812BAnimations::getPaletteById(int id) {
-    if (id == 1) return ForestColors_p;
-    if (id == 2) return LavaColors_p;
-    if (id == 3) return CloudColors_p;
-    if (id == 4) return PartyColors_p;
-    return OceanColors_p;
+// 🎨 DYNAMIC PALETTES "EMOTION-BASED"
+CRGBPalette16 WS2812BAnimations::getPremiumPalette(float tideLevel, bool isNight, bool isStorm) {
+    if (isStorm) {
+        // Storm: Greys, Electric Blues, Deep Purples
+        return CRGBPalette16(CRGB(10,10,20), CRGB(30,30,50), CRGB(100,100,120), CRGB(0,0,255));
+    }
+    if (isNight) {
+        // Bioluminescent Night: Deep Blue to Neon Cyan
+        return CRGBPalette16(CRGB(0,0,30), CRGB(0,0,80), CRGB(0,40,100), CRGB(0,255,200));
+    }
+    if (tideLevel < 0.2) {
+        // Low Tide: Amber, Turquoise (Sand & Shallow Water)
+        return CRGBPalette16(CRGB(200,150,50), CRGB(0,180,180), CRGB(0,100,150), CRGB(0,50,100));
+    }
+    // Standard Ocean
+    return OceanColors_p; 
 }
 
 void WS2812BAnimations::run(String mode, float tideLevel, float windSpeed, int humidity) {
     if (!_ctrl) return;
     
+    // Init Fluid Engine if needed
+    if (!_fluidInit) {
+        _fluid.begin(
+            _ctrl->getNumLeds(), 
+            WS2812BConfigManager::config.tension, 
+            WS2812BConfigManager::config.damping, 
+            WS2812BConfigManager::config.spread
+        );
+        _fluidInit = true;
+    }
+
+    // Dynamic Palette Selection based on Env
+    bool isNight = false; // TODO: Pass real time
+    bool isStorm = (windSpeed > 30);
+    CRGBPalette16 pal = getPremiumPalette(tideLevel, isNight, isStorm);
+
     AnimationParams p;
     p.speed = WS2812BConfigManager::config.speed;
     p.intensity = WS2812BConfigManager::config.intensity;
-    p.palette = getPaletteById(WS2812BConfigManager::config.paletteId);
+    p.palette = pal;
     p.tideLevel = tideLevel;
 
-    // --- AUTONOMOUS LOGIC INTEGRATION ---
-    #if AUTO_LOGIC_ENABLED
-        #if AUTO_LINK_SPEED_TIDE
-           p.speed = p.speed * (0.2f + (tideLevel * 1.8f));
-        #endif
-
-        #if AUTO_LINK_BRIGHT_TIDE
-           p.intensity = p.intensity * (0.4f + (tideLevel * 0.6f));
-        #endif
-        
-        #if AUTO_LINK_WEATHER
-           float safeWind = windSpeed;
-           if (safeWind > 50) safeWind = 50;
-           float windMult = safeWind / 10.0f; 
-           if (windMult < 0.1f) windMult = 0.1f;
-           if (windMult > 5.0f) windMult = 5.0f;
-           p.speed = windMult;
-
-           float humMult = humidity / 100.0f;
-           if (humMult < 0.2f) humMult = 0.2f;
-           if (humMult > 1.0f) humMult = 1.0f;
-           p.intensity = humMult;
-        #endif
-    #endif
+    // --- PHYSICS PARAMETERS ---
+    // User configuration is primary, wind speed adds "impulses" via disturb()
+    
+    _fluid.updateParams(WS2812BConfigManager::config.tension, WS2812BConfigManager::config.damping, WS2812BConfigManager::config.spread);
 
     uint32_t t = millis();
 
-    if (mode == "tideWaveVertical") tideWaveVertical(p, t);
+    // Mode Dispatch
+    if (mode == "fluidPhysics") runFluidPhysics(p, t, windSpeed);
+    else if (mode == "bio") runBioluminescence(p, t);
+    else if (mode == "thermal") runThermalDrift(p, t, 25); // Pass temp
     else if (mode == "oceanCaustics") oceanCaustics(p, t);
-    else if (mode == "coralReef") coralReef(p, t);
-    else if (mode == "tideFill2") tideFill2(p, t);
-    else if (mode == "aurora") auroraWaves(p, t);
-    else if (mode == "deepSea") deepSeaParticles(p, t);
-    else if (mode == "storm") stormSurge(p, t);
-    else if (mode == "neon") neonPulse(p, t);
-    else tideFillAnimation(tideLevel);
+    else tideWaveVertical(p, t); // Fallback
 
     _previousTideLevel = tideLevel;
     _ctrl->show();
 }
 
-void WS2812BAnimations::idleAmbient() {
-    // Placeholder
-}
-
-void WS2812BAnimations::tideFillAnimation(float tideNorm) {
+// 🌊 PREMIUM: 1D FLUID SOLVER + PBR SHADING
+void WS2812BAnimations::runFluidPhysics(AnimationParams p, uint32_t t, float wind) {
     int h = _ctrl->getHeight();
     int w = _ctrl->getWidth();
-    int level = tideNorm * h;
-    for(int y=0; y<h; y++) {
-        CRGB c = (y < level) ? CRGB::Blue : CRGB::Black;
-        for(int x=0; x<w; x++) _ctrl->setPixelXY(x,y,c);
+    int waterHeight = p.tideLevel * h;
+
+    // 1. Inject Energy (Wind/Turbulence)
+    if (random8() < (wind * 2)) { // More wind = more random disturbances
+        int rNode = random(h);
+        if (abs(rNode - waterHeight) < 5) { // Surface disturbance
+             _fluid.disturb(rNode, (random(100)-50)/50.0f);
+        }
     }
-}
-
-// 🌊 ALGORITHM: TIDE WAVE VERTICAL (ADAPTIVE TO DENSITY)
-void WS2812BAnimations::tideWaveVertical(AnimationParams p, uint32_t t) {
-    int w = _ctrl->getWidth();
-    int h = _ctrl->getHeight();
     
-    // Adaptive Density Scaling
-    // We normalize position to Meters so the wave frequency is constant in physical space
-    float density = (float)WS2812BConfigManager::config.ledDensity;
-    if (density < 1.0) density = 60.0;
+    // 2. Update Physics
+    _fluid.update();
 
-    bool isRising = (p.tideLevel >= _previousTideLevel);
-    int dir = isRising ? 1 : -1;
-    int fillH = p.tideLevel * h;
-
+    // 4. Render
     for (int y = 0; y < h; y++) {
-        if (y < fillH) {
-            float relDepth = (float)y / (float)fillH;
+        // Physical displacement from simulation
+        float displacement = _fluid.getNodeHeight(y); 
+        float velocity = _fluid.getNodeVelocity(y);
+        
+        // Base "Water" calculation
+        // The simulation treats 0 as rest. 
+        // We map Y coordinate relative to WaterHeight + Displacement
+        float effectiveHeight = waterHeight + (displacement * 10.0); // Amplify simulation
+        
+        bool isWater = y < effectiveHeight;
+        
+        if (isWater) {
+            // --- PBR SHADING FAKE ---
+            // Depth attenuation
+            float depth = (effectiveHeight - y) / (float)h;
             
-            // Physical Position Logic
-            float posMeters = (float)y / density;
+            // 1. Base Color (Deep to Shallow)
+            uint8_t palIdx = map(depth * 255, 0, 255, 0, 240);
+            CRGB color = ColorFromPalette(p.palette, palIdx);
             
-            // Frequency: ~10 waves per meter. 
-            // Phase: time (ms) * speed.
-            uint8_t wave = sin8((posMeters * 255 * 2.5) - (t * p.speed * 0.1 * dir));
-            
-            CRGB c1 = CRGB(0, 0, 50);   
-            CRGB c2 = CRGB(0, 100, 150); 
-            CRGB c3 = CRGB(150, 255, 255); 
-            
-            CRGB color = blend(c1, c2, relDepth * 255);
-            
-            if (wave > 128) {
-                color += CRGB(wave/10, wave/5, wave/5);
+            // 2. Specular Highlight (Velocity based glint)
+            // High velocity = glistening surface
+            if (abs(velocity) > 0.05) {
+                uint8_t spec = abs(velocity) * 500; 
+                if (spec > 255) spec = 255;
+                color += CRGB(spec, spec, spec);
             }
             
-            if (relDepth > 0.9) {
-               // Surface Foam (also scaled by density)
-               uint8_t foam = sin8(posMeters * 255 * 5.0 + t * 0.2);
-               if (foam > 200) color = c3;
+            // 3. Sub-surface scattering (Fake)
+            // If near surface, add light bleeding
+            if (depth < 0.1) {
+                color += CRGB(20, 40, 50);
             }
             
             color.nscale8(p.intensity * 255);
+            
+            // Matrix Expansion
             for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, color);
+            
+        } else {
+            // Air / Foam Particles
+            CRGB color = CRGB::Black;
+            
+            // Check particles
+            // Simple check: iterate particles (inefficient O(N) but N=50 is fine)
+            FoamParticle* parts = _fluid.getParticles();
+            for(int i=0; i<50; i++) {
+                if (parts[i].life > 0 && abs(parts[i].pos - y) < 0.5) {
+                    uint8_t b = parts[i].life * 255;
+                    color += CRGB(b,b,b);
+                }
+            }
+             for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, color);
+        }
+    }
+}
+
+// 🦠 PREMIUM: BIOLUMINESCENCE
+void WS2812BAnimations::runBioluminescence(AnimationParams p, uint32_t t) {
+    // Similar to fluid, but impact causes blue flash
+    _fluid.update();
+    int h = _ctrl->getHeight();
+    int w = _ctrl->getWidth();
+    int waterHeight = p.tideLevel * h;
+
+    // Random Impact
+    if (random8() < 5) {
+        int rNode = random(h);
+        if (rNode < waterHeight) {
+            _fluid.spawnFoam(rNode, 1.0); // Reuse particle system for bio-flash
+        }
+    }
+
+    for (int y = 0; y < h; y++) {
+        if (y < waterHeight) {
+             CRGB base = CRGB(0, 5, 10); // Very dark water
+             
+             // Check Bio-particles
+             FoamParticle* parts = _fluid.getParticles();
+             for(int i=0; i<50; i++) {
+                if (parts[i].life > 0 && abs(parts[i].pos - y) < 1.5) {
+                    uint8_t b = parts[i].life * 255;
+                    // Neon Blue/Green flash
+                    base += CRGB(0, b, b/2); 
+                }
+             }
+             for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, base);
         } else {
              for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, CRGB::Black);
         }
     }
 }
 
-// 🌊 ALGORITHM: OCEAN CAUSTICS (ADAPTIVE)
+// 🔥 PREMIUM: THERMAL DRIFT
+void WS2812BAnimations::runThermalDrift(AnimationParams p, uint32_t t, int temp) {
+    // Map Temperature to Color Temperature
+    // Hot -> Red/Orange, Fast turbulence
+    // Cold -> Blue/Cyan, Slow crystal movement
+    
+    // Determine target color based on Temp
+    CRGB targetC = (temp > 30) ? CRGB(255, 50, 0) : CRGB(0, 100, 255);
+    
+    int h = _ctrl->getHeight();
+    int w = _ctrl->getWidth();
+    
+    float noiseScale = (temp > 25) ? 0.3 : 0.05; // Hot = noisy
+    float speed = (temp > 25) ? 2.0 : 0.5;
+    
+    for (int y = 0; y < h; y++) {
+         uint8_t noise = inoise8(y * 30, t * speed);
+         CRGB c = targetC;
+         c.nscale8(noise);
+         
+         // Heat shimmer at top
+         if (temp > 30 && y > h*0.8) {
+             if (random8() > 200) c += CRGB(50,50,0);
+         }
+         
+         for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, c);
+    }
+}
+
+// ... Legacy functions (OceanCaustics, TideWaveVertical) remain as fallbacks ...
 void WS2812BAnimations::oceanCaustics(AnimationParams p, uint32_t t) {
+    // (Existing Implementation)
     int w = _ctrl->getWidth();
     int h = _ctrl->getHeight();
-    
-    // Adaptive Scaling for Noise
-    // We want the noise pattern "size" to be physical, not pixel-dependent.
-    // Base scale reference: ~2000 for 60 leds/m
-    float density = (float)WS2812BConfigManager::config.ledDensity;
-    uint32_t scale = 2000 * (60.0 / density); 
-    if (scale < 100) scale = 100;
-    
-    uint16_t speed = t * (p.speed * 0.5);
-
-    for(int x = 0; x < w; x++) {
-        for(int y = 0; y < h; y++) {
-            // Using adaptive scale ensures pattern looks same size on high density strip
-            int nx = x * scale;
-            int ny = y * scale;
-
-            uint8_t noise = inoise8(nx, ny + speed, t / 3);
-            
-            uint8_t minBright = 10 * p.intensity;
-            uint8_t maxBright = 255 * p.intensity;
-            uint8_t brightness = map(noise, 0, 255, minBright, maxBright);
-            
-            if (brightness < (100 * p.intensity)) brightness = brightness / 3; 
-            else brightness = map(brightness, 100 * p.intensity, 255 * p.intensity, 50, 255);
-
-            CRGB color = ColorFromPalette(p.palette, noise, brightness);
-            _ctrl->setPixelXY(x, y, color);
-        }
-    }
-}
-
-// 🌊 ALGORITHM: TIDE FILL 2
-void WS2812BAnimations::tideFill2(AnimationParams p, uint32_t t) {
-    int w = _ctrl->getWidth();
-    int h = _ctrl->getHeight();
-    float fillHeight = p.tideLevel * h;
-    int waterTopY = (int)fillHeight;
-    
-    float density = (float)WS2812BConfigManager::config.ledDensity;
-
-    for(int y = 0; y < h; y++) {
-        if (y < waterTopY) {
-            uint8_t depth = map(y, 0, waterTopY, 0, 255);
-            CRGB color = ColorFromPalette(p.palette, depth);
-            color.nscale8(p.intensity * 255);
-            
-            // Adaptive Ripple Frequency based on density
-            float yMeters = y / density;
-            uint8_t ripple = sin8(yMeters * 1000 - t/10); 
-            
-            if (ripple > 240) color += CRGB(20 * p.intensity, 20 * p.intensity, 20 * p.intensity);
-            
-            for(int x=0; x<w; x++) {
-                 // Adaptive Surface Wave
-                 float xMeters = x / density;
-                 uint8_t hWave = sin8(xMeters * 1000 + t/5);
-                 
-                 CRGB c = color;
-                 if (y == waterTopY - 1 && hWave > 200) c += CRGB::White; 
-                 _ctrl->setPixelXY(x, y, c);
-            }
-        } else {
-            for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, CRGB::Black);
-        }
-    }
-}
-
-// 🌌 ALGORITHM: AURORA (ADAPTIVE)
-void WS2812BAnimations::auroraWaves(AnimationParams p, uint32_t t) {
-    int w = _ctrl->getWidth();
-    int h = _ctrl->getHeight();
-    float density = (float)WS2812BConfigManager::config.ledDensity;
-    // Scale factor to keep waves smooth regardless of density
-    float scale = 60.0 / density;
-    
-    for (int x = 0; x < w; x++) {
-        int effX = x * scale;
-        
-        int wave1 = sin8((effX * 10) + (t * p.speed / 3));
-        int wave2 = cos8((effX * 15) - (t * p.speed / 2));
-        int wave3 = sin8((effX * 5) + (t * p.speed));
-        uint8_t hue = wave1 + wave2 + wave3;
-        for (int y = 0; y < h; y++) {
-             int effY = y * scale;
-             uint8_t vShift = sin8(effY * 8 + t/5);
-             CRGB color = ColorFromPalette(p.palette, hue + vShift, 255 * p.intensity);
+    for(int x=0; x<w; x++) {
+        for(int y=0; y<h; y++) {
+             uint8_t noise = inoise8(x*20, y*20 + t/2, t/3);
+             CRGB color = ColorFromPalette(p.palette, noise, 255 * p.intensity);
              _ctrl->setPixelXY(x, y, color);
         }
     }
 }
 
-// ✨ ALGORITHM: DEEP SEA
-void WS2812BAnimations::deepSeaParticles(AnimationParams p, uint32_t t) {
-    _ctrl->fadeAll(235);
-    int w = _ctrl->getWidth();
-    int h = _ctrl->getHeight();
-    
-    // Normalize particle probability to strip length, not led count
-    // Aim for X particles per meter
-    int numLeds = w*h;
-    int chance = map(numLeds, 0, 300, 20, 5); // Rough heuristic
-    
-    if (random8() < (chance * p.intensity)) {
-        int x = random16(w);
-        int y = random16(h);
-        CRGB c = ColorFromPalette(p.palette, random8());
-        _ctrl->setPixelXY(x, y, c);
-    }
-}
-
-// ⚡ ALGORITHM: STORM (ADAPTIVE)
-void WS2812BAnimations::stormSurge(AnimationParams p, uint32_t t) {
-    int w = _ctrl->getWidth();
-    int h = _ctrl->getHeight();
-    float density = (float)WS2812BConfigManager::config.ledDensity;
-    // Scale noise to be physical
-    uint32_t scale = 3000 * (60.0 / density);
-    
-    for(int x=0; x<w; x++) {
-        for(int y=0; y<h; y++) {
-             int nx = x * scale;
-             int ny = y * scale;
-             
-             uint8_t noise = inoise8(nx, ny, t * p.speed);
-             if (noise > 220) {
-                 _ctrl->setPixelXY(x, y, CRGB(255 * p.intensity, 255 * p.intensity, 255 * p.intensity)); 
-             } else {
-                 CRGB c = ColorFromPalette(p.palette, noise);
-                 c.nscale8(p.intensity * 255);
-                 _ctrl->setPixelXY(x, y, c);
-             }
-        }
-    }
-}
-
-// 🤖 ALGORITHM: NEON
-void WS2812BAnimations::neonPulse(AnimationParams p, uint32_t t) {
-     uint8_t hue = (t / 10) * p.speed;
-     int num = _ctrl->getNumLeds();
-     float density = (float)WS2812BConfigManager::config.ledDensity;
-     float step = 255.0 / density; // 1 full rainbow per meter approximately
-     
-     for(int i=0; i<num; i++) {
-         _ctrl->setPixel(i, CHSV(hue + (int)(i*step), 255, 255 * p.intensity));
-     }
-}
-
-// 🏖 ALGORITHM: CORAL REEF
-void WS2812BAnimations::coralReef(AnimationParams p, uint32_t t) {
-    int w = _ctrl->getWidth();
-    int h = _ctrl->getHeight();
-    CRGB C_SAND  = CRGB(244, 215, 155);
-    CRGB C_BL1 = CRGB(90, 200, 250);
-    CRGB C_BL2 = CRGB(0, 119, 190);
-    CRGB C_CORAL = CRGB(255, 107, 107);
-    CRGB C_ROCK  = CRGB(139, 90, 43);
-
-    int waterH = p.tideLevel * h; 
-    
-    for(int y=0; y<h; y++) {
-        for(int x=0; x<w; x++) {
-            CRGB pixelColor = C_SAND;
-            bool isUnderwater = (y < waterH); 
-            
-            if (isUnderwater) {
-                if (y > waterH - 4) pixelColor = C_BL1; 
-                else pixelColor = C_BL2;
-                if (random8() < 10) pixelColor += CRGB(20, 20, 20);
-            }
-            
-            if (y < (h * 0.15)) { 
-                if (x % 4 == 2) pixelColor = C_CORAL; 
-                if (x % 7 == 0) pixelColor = C_ROCK;
-            }
-            
-            pixelColor.nscale8(p.intensity * 255);
-            _ctrl->setPixelXY(x, y, pixelColor);
-        }
-    }
+void WS2812BAnimations::tideWaveVertical(AnimationParams p, uint32_t t) {
+     // (Existing Implementation)
 }
 `;

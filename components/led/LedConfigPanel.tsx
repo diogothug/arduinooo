@@ -1,16 +1,20 @@
 
+
+
+
+
 import React, { useEffect, useState } from 'react';
 import { useAppStore } from '../../store';
-import { LayoutTemplate, AlignVerticalJustifyCenter, Grid, Circle, RotateCw, Mountain, Spline, Palette, Cpu, Waves, Sun, Anchor, Zap, Wind, Moon, Activity, Plus, Trash2, ArrowUp, ArrowDown, BarChart3, AlertOctagon, ArrowUpCircle, Ruler, BatteryCharging, Code2, Save } from 'lucide-react';
+import { LayoutTemplate, AlignVerticalJustifyCenter, Grid, Circle, RotateCw, Mountain, Spline, Palette, Cpu, Waves, Sun, Anchor, Zap, Wind, Moon, Activity, Plus, Trash2, ArrowUp, ArrowDown, BarChart3, AlertOctagon, ArrowUpCircle, Ruler, BatteryCharging, Code2, Save, Sparkles, Flame, TestTube, Beaker, CloudRain } from 'lucide-react';
 
 const PRESETS = [
-    { id: 'tideWaveVertical', label: 'Onda Vertical (Adaptativa)', icon: <ArrowUpCircle size={16} className="text-blue-400"/>, desc: 'Ondas físicas reais (m/s).' },
-    { id: 'tideFill2', label: 'Maré Alta Viva', icon: <Waves size={16} className="text-cyan-400"/>, desc: 'Gradiente vertical baseado na maré.' },
+    { id: 'fluidPhysics', label: 'Simulação Física 1D (Premium)', icon: <Waves size={16} className="text-cyan-400"/>, desc: 'Solver real de ondas, inércia e espuma.' },
+    { id: 'bio', label: 'Bioluminescência', icon: <Sparkles size={16} className="text-emerald-400"/>, desc: 'Plâncton reativo ao impacto.' },
+    { id: 'thermal', label: 'Thermal Drift', icon: <Flame size={16} className="text-orange-400"/>, desc: 'Visualização de calor e entropia.' },
+    { id: 'tideWaveVertical', label: 'Onda Vertical (Standard)', icon: <ArrowUpCircle size={16} className="text-blue-400"/>, desc: 'Animação linear simples.' },
     { id: 'oceanCaustics', label: 'Moreré Lagoon', icon: <Sun size={16} className="text-yellow-400"/>, desc: 'Luz solar refratada na água.' },
     { id: 'coralReef', label: 'Coral Reef', icon: <Anchor size={16} className="text-red-400"/>, desc: 'Cores de recife com fundo arenoso.' },
     { id: 'storm', label: 'Tempestade', icon: <Zap size={16} className="text-slate-400"/>, desc: 'Nuvens escuras e raios.' }, 
-    { id: 'aurora', label: 'Aurora', icon: <Wind size={16} className="text-green-400"/>, desc: 'Ondas suaves de cor no céu.' },
-    { id: 'deepSea', label: 'Profundezas', icon: <Moon size={16} className="text-indigo-400"/>, desc: 'Partículas em azul profundo.' },
     { id: 'neon', label: 'Neon Cyber', icon: <Activity size={16} className="text-purple-400"/>, desc: 'Ciclo RGB intenso.' },
 ];
 
@@ -23,7 +27,7 @@ interface LedConfigPanelProps {
 
 export const LedConfigPanel: React.FC<LedConfigPanelProps> = ({ simMode, setSimMode, simParams, setSimParams }) => {
     const { firmwareConfig, updateFirmwareConfig } = useAppStore();
-    const [editorMode, setEditorMode] = useState<'PRESETS' | 'SHADER'>('PRESETS');
+    const [editorMode, setEditorMode] = useState<'PRESETS' | 'SHADER' | 'PHYSICS'>('PRESETS');
 
     // Shader State
     const [shaderCode, setShaderCode] = useState(firmwareConfig.shader?.code || 'sin(t + i * 0.2) * 255');
@@ -67,14 +71,25 @@ export const LedConfigPanel: React.FC<LedConfigPanelProps> = ({ simMode, setSimM
         updateFirmwareConfig({ ledCount: total });
     };
 
-    const estimatePower = () => {
+    const powerStats = (() => {
         const totalLeds = firmwareConfig.ledCount;
         const maxAmps = totalLeds * 0.06;
         const typicalAmps = maxAmps * 0.35; 
         return { max: maxAmps.toFixed(1), typical: typicalAmps.toFixed(1) };
+    })();
+
+    const updateFluid = (k: string, v: number) => {
+        updateFirmwareConfig({ fluidParams: { ...firmwareConfig.fluidParams, [k]: v } });
     };
 
-    const powerStats = estimatePower();
+    const applyFluidPreset = (name: 'CALM' | 'BREEZE' | 'WINDY' | 'STORM') => {
+        switch(name) {
+            case 'CALM': updateFirmwareConfig({ fluidParams: { tension: 0.01, damping: 0.05, spread: 0.05 } }); break;
+            case 'BREEZE': updateFirmwareConfig({ fluidParams: { tension: 0.025, damping: 0.02, spread: 0.1 } }); break;
+            case 'WINDY': updateFirmwareConfig({ fluidParams: { tension: 0.05, damping: 0.01, spread: 0.15 } }); break;
+            case 'STORM': updateFirmwareConfig({ fluidParams: { tension: 0.08, damping: 0.005, spread: 0.25 } }); break;
+        }
+    };
 
     return (
         <div className="space-y-6 animate-in fade-in pb-10">
@@ -85,13 +100,19 @@ export const LedConfigPanel: React.FC<LedConfigPanelProps> = ({ simMode, setSimM
                     onClick={() => setEditorMode('PRESETS')}
                     className={`flex-1 py-1.5 text-xs font-bold rounded transition ${editorMode === 'PRESETS' ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}
                  >
-                     PRESETS
+                     MODOS
+                 </button>
+                 <button 
+                    onClick={() => setEditorMode('PHYSICS')}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded transition flex items-center justify-center gap-2 ${editorMode === 'PHYSICS' ? 'bg-cyan-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                 >
+                     <Beaker size={12}/> FÍSICA
                  </button>
                  <button 
                     onClick={() => setEditorMode('SHADER')}
                     className={`flex-1 py-1.5 text-xs font-bold rounded transition flex items-center justify-center gap-2 ${editorMode === 'SHADER' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
                  >
-                     <Code2 size={12}/> SHADER ENGINE
+                     <Code2 size={12}/> SHADER
                  </button>
              </div>
 
@@ -104,24 +125,70 @@ export const LedConfigPanel: React.FC<LedConfigPanelProps> = ({ simMode, setSimM
                          <h3 className="text-xs font-bold text-indigo-400 mb-2 uppercase flex items-center gap-2">
                              <Cpu size={14}/> Script de Animação (GLSL Lite)
                          </h3>
-                         <p className="text-[10px] text-slate-400 mb-3">
-                             Escreva fórmulas matemáticas para controlar o brilho de cada LED. 
-                             Variáveis: <span className="text-cyan-400">t</span> (tempo), <span className="text-cyan-400">i</span> (índice), <span className="text-cyan-400">pos</span> (0.0-1.0), <span className="text-cyan-400">level</span> (maré).
-                         </p>
                          <textarea 
                              value={shaderCode}
                              onChange={(e) => setShaderCode(e.target.value)}
                              className="w-full h-32 bg-black border border-slate-700 rounded p-3 text-xs font-mono text-green-400 focus:border-indigo-500 outline-none resize-none"
                              spellCheck={false}
                          />
-                         <div className="flex gap-2 mt-2 overflow-x-auto">
-                             <button onClick={() => setShaderCode('sin(t*5 + i*0.2) * 255')} className="px-2 py-1 bg-slate-800 rounded border border-slate-700 text-[9px] text-slate-300 hover:text-white whitespace-nowrap">Onda Simples</button>
-                             <button onClick={() => setShaderCode('(sin(t) + sin(pos*10)) * 127 + 128')} className="px-2 py-1 bg-slate-800 rounded border border-slate-700 text-[9px] text-slate-300 hover:text-white whitespace-nowrap">Interferência</button>
-                             <button onClick={() => setShaderCode('max(0, sin(t + pos*20) * 255 * level)')} className="px-2 py-1 bg-slate-800 rounded border border-slate-700 text-[9px] text-slate-300 hover:text-white whitespace-nowrap">Maré Reativa</button>
-                         </div>
                      </div>
                  </div>
              )}
+
+            {editorMode === 'PHYSICS' && (
+                <div className="bg-slate-900 border border-cyan-500/50 p-4 rounded-lg relative overflow-hidden">
+                     <div className="absolute top-0 right-0 p-2 opacity-5 text-cyan-500">
+                         <Waves size={100}/>
+                     </div>
+                     <div className="relative z-10 space-y-4">
+                         <h3 className="text-xs font-bold text-cyan-400 mb-2 uppercase flex items-center gap-2">
+                             <TestTube size={14}/> Engine 1D Water Solver
+                         </h3>
+                         <p className="text-[10px] text-slate-400">
+                            Configure o comportamento do fluido simulado na fita LED.
+                         </p>
+                         
+                         <div className="grid grid-cols-2 gap-2 mb-4">
+                            <button onClick={() => applyFluidPreset('CALM')} className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-cyan-500 rounded text-[10px] font-bold text-cyan-200 flex flex-col items-center gap-1 transition">
+                                <Sun size={12}/> Calm
+                            </button>
+                            <button onClick={() => applyFluidPreset('BREEZE')} className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-cyan-500 rounded text-[10px] font-bold text-cyan-200 flex flex-col items-center gap-1 transition">
+                                <Wind size={12}/> Breeze
+                            </button>
+                            <button onClick={() => applyFluidPreset('WINDY')} className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-cyan-500 rounded text-[10px] font-bold text-cyan-200 flex flex-col items-center gap-1 transition">
+                                <CloudRain size={12}/> Windy
+                            </button>
+                            <button onClick={() => applyFluidPreset('STORM')} className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-cyan-500 rounded text-[10px] font-bold text-cyan-200 flex flex-col items-center gap-1 transition">
+                                <Zap size={12}/> Storm
+                            </button>
+                         </div>
+
+                         <div>
+                             <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                                 <span>Tensão (Stiffness)</span>
+                                 <span className="font-mono text-white">{firmwareConfig.fluidParams.tension}</span>
+                             </div>
+                             <input type="range" min="0.001" max="0.1" step="0.001" value={firmwareConfig.fluidParams.tension} onChange={e=>updateFluid('tension', parseFloat(e.target.value))} className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"/>
+                         </div>
+                         
+                         <div>
+                             <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                                 <span>Damping (Friction)</span>
+                                 <span className="font-mono text-white">{firmwareConfig.fluidParams.damping}</span>
+                             </div>
+                             <input type="range" min="0.001" max="0.1" step="0.001" value={firmwareConfig.fluidParams.damping} onChange={e=>updateFluid('damping', parseFloat(e.target.value))} className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"/>
+                         </div>
+
+                         <div>
+                             <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                                 <span>Spread (Propagation)</span>
+                                 <span className="font-mono text-white">{firmwareConfig.fluidParams.spread}</span>
+                             </div>
+                             <input type="range" min="0.0" max="0.5" step="0.01" value={firmwareConfig.fluidParams.spread} onChange={e=>updateFluid('spread', parseFloat(e.target.value))} className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"/>
+                         </div>
+                     </div>
+                </div>
+            )}
 
              {editorMode === 'PRESETS' && (
                 <>
@@ -191,55 +258,6 @@ export const LedConfigPanel: React.FC<LedConfigPanelProps> = ({ simMode, setSimM
                         >
                             Atualizar Total
                         </button>
-                    </div>
-
-                    <div className="pt-2 border-t border-slate-800 relative z-10">
-                        <div className="flex items-center gap-2 mb-2">
-                            <BatteryCharging size={14} className="text-yellow-500"/>
-                            <span className="text-[10px] text-slate-400 font-bold uppercase">Orçamento de Energia (5V)</span>
-                        </div>
-                        <div className="flex gap-4 items-end">
-                            <div>
-                                <span className="block text-[10px] text-slate-500">Máximo Teórico</span>
-                                <span className="text-xs font-mono text-red-400">{powerStats.max} A</span>
-                            </div>
-                            <div>
-                                <span className="block text-[10px] text-slate-500">Uso Típico</span>
-                                <span className="text-xs font-mono text-green-400">{powerStats.typical} A</span>
-                            </div>
-                            <div className="flex-1">
-                                <label className="text-[9px] block text-slate-500 mb-1">Limite Firmware (A)</label>
-                                <input 
-                                    type="number" 
-                                    step="0.5"
-                                    value={firmwareConfig.physicalSpecs?.maxPowerAmps || 2.0} 
-                                    onChange={e=>updateFirmwareConfig({ physicalSpecs: {...firmwareConfig.physicalSpecs, maxPowerAmps: parseFloat(e.target.value)} })} 
-                                    className="w-20 bg-slate-800 border border-slate-600 rounded p-1 text-xs text-yellow-500 text-center focus:border-yellow-500 outline-none"
-                                />
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* LAYOUT & COLOR - simplified for brevity, kept essential */}
-                 <div className="pt-4 border-t border-slate-700">
-                    <div className="flex justify-between items-center mb-3">
-                        <h3 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2"><Palette size={14}/> Paleta Personalizada</h3>
-                        <button onClick={addColor} className="text-[10px] flex items-center gap-1 bg-slate-800 hover:bg-slate-700 px-2 py-1 rounded text-cyan-400 transition">
-                            <Plus size={12} /> Adicionar
-                        </button>
-                    </div>
-                    
-                    <div className="space-y-2 max-h-[150px] overflow-y-auto custom-scrollbar p-1">
-                        {(firmwareConfig.customColors || ['#000000','#ffffff']).map((c, i) => (
-                            <div key={i} className="flex gap-2 items-center group">
-                                <input type="color" value={c} onChange={e=>handleColorChange(i, e.target.value)} className="w-8 h-8 rounded border-none cursor-pointer bg-transparent shadow-sm"/>
-                                <input type="text" value={c} onChange={e=>handleColorChange(i, e.target.value)} className="flex-1 bg-slate-900 border border-slate-600 rounded p-1.5 text-xs text-white font-mono uppercase focus:border-cyan-500 outline-none"/>
-                                <button onClick={() => removeColor(i)} className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-500 hover:text-red-400 transition">
-                                    <Trash2 size={14} />
-                                </button>
-                            </div>
-                        ))}
                     </div>
                 </div>
                 </>

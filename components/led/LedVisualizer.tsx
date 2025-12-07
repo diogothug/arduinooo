@@ -1,4 +1,8 @@
 
+
+
+
+
 import React, { useRef, useEffect } from 'react';
 import { useAppStore } from '../../store';
 
@@ -8,7 +12,72 @@ interface LedVisualizerProps {
     stripDirection: 'HORIZONTAL' | 'VERTICAL';
 }
 
-// Helper: Interpolate Colors
+// 1D Fluid Engine Class (JS Port)
+class FluidEngineJS {
+    nodes: number[];
+    vels: number[];
+    tension: number;
+    damping: number;
+    spread: number;
+
+    constructor(size: number) {
+        this.nodes = new Array(size).fill(0);
+        this.vels = new Array(size).fill(0);
+        this.tension = 0.025;
+        this.damping = 0.02;
+        this.spread = 0.1;
+    }
+
+    resize(size: number) {
+        if(this.nodes.length !== size) {
+            this.nodes = new Array(size).fill(0);
+            this.vels = new Array(size).fill(0);
+        }
+    }
+
+    update(targetLevel: number) { // targetLevel 0..1
+        const size = this.nodes.length;
+        const targetIdx = Math.floor(targetLevel * size);
+        
+        // 1. Spring Physics
+        for(let i=0; i<size; i++) {
+            // Target Height Force (Mass movement)
+            const target = i < targetIdx ? 1.0 : 0.0;
+            const displacement = target - this.nodes[i];
+            
+            // Spring Force (Hooke's)
+            let force = 0;
+            const left = i > 0 ? this.nodes[i-1] : this.nodes[i];
+            const right = i < size-1 ? this.nodes[i+1] : this.nodes[i];
+            
+            const springF = this.tension * (left + right - 2 * this.nodes[i]);
+            
+            // External Force (Tide Push) - Slow fill
+            const pushF = displacement * 0.005; // Gentle push
+
+            this.vels[i] += springF + pushF;
+            this.vels[i] *= (1 - this.damping);
+            this.nodes[i] += this.vels[i];
+        }
+
+        // 2. Spread (Smoothing) Pass
+        if (this.spread > 0) {
+            for(let pass=0; pass<2; pass++) {
+                // To avoid bias, ideally we'd use a buffer, but for visuals in-place is okay
+                for(let i=0; i<size; i++) {
+                    const left = i > 0 ? this.nodes[i-1] : this.nodes[i];
+                    const right = i < size-1 ? this.nodes[i+1] : this.nodes[i];
+                    this.nodes[i] += this.spread * ((left + right)/2.0 - this.nodes[i]);
+                }
+            }
+        }
+    }
+
+    disturb(idx: number, amount: number) {
+        if(idx>=0 && idx<this.nodes.length) this.vels[idx] += amount;
+    }
+}
+
 const interpolateColor = (color1: string, color2: string, factor: number) => {
     if (factor > 1) factor = 1; if (factor < 0) factor = 0;
     const r1 = parseInt(color1.substring(1, 3), 16);
@@ -23,19 +92,12 @@ const interpolateColor = (color1: string, color2: string, factor: number) => {
     return `rgb(${r},${g},${b})`;
 };
 
-// Helper: Hex to RGB Object
-const hexToRgb = (hex: string) => {
-    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return result ? {
-        r: parseInt(result[1], 16),
-        g: parseInt(result[2], 16),
-        b: parseInt(result[3], 16)
-    } : { r: 0, g: 0, b: 0 };
-};
-
 export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams, stripDirection }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const { firmwareConfig, keyframes, simulatedTime, weatherData } = useAppStore();
+
+    // Persistent Physics Engine in Ref
+    const fluidRef = useRef<FluidEngineJS | null>(null);
 
     // REF PATTERN: Keep latest config in ref to avoid re-running useEffect loop on every slider change
     const configRef = useRef(firmwareConfig);
@@ -51,14 +113,11 @@ export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams
         if (!ctx) return;
 
         let animId: number;
-        let lastTime = Date.now();
         let startTime = Date.now();
 
         const render = () => {
             const now = Date.now();
             const timeSec = (now - startTime) / 1000;
-            const delta = (now - lastTime) / 1000;
-            lastTime = now;
 
             const cfg = configRef.current;
             const data = dataRef.current;
@@ -66,16 +125,24 @@ export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams
             const h = canvas.height;
             const cx = w / 2;
             const cy = h / 2;
+            const count = cfg.ledCount;
+
+            // Init Fluid Engine if needed
+            if (!fluidRef.current) fluidRef.current = new FluidEngineJS(count);
+            const fluid = fluidRef.current;
+            fluid.resize(count);
+            // Update Fluid Params live
+            fluid.tension = cfg.fluidParams?.tension || 0.025;
+            fluid.damping = cfg.fluidParams?.damping || 0.02;
+            fluid.spread = cfg.fluidParams?.spread || 0.1;
 
             // 1. Determine Environment Variables
-            let tide = 50, wind = 0, hum = 0, night = false;
+            let tide = 50, wind = 0, intensity = cfg.animationIntensity;
             let isRising = true;
 
             if (data.simMode) {
                 tide = data.simParams.tide; 
                 wind = data.simParams.wind; 
-                hum = data.simParams.humidity; 
-                night = data.simParams.isNight;
                 isRising = data.simParams.tideDirection === 'RISING';
             } else {
                 const cycle = cfg.cycleDuration || 24;
@@ -105,17 +172,20 @@ export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams
                     tide = currentH;
                 }
                 wind = data.weatherData.windSpeed; 
-                hum = data.weatherData.humidity;
-                const tod = data.simulatedTime % 24;
-                const { startHour, endHour, enabled } = cfg.nightMode;
-                if (enabled) {
-                    night = startHour > endHour ? (tod >= startHour || tod < endHour) : (tod >= startHour && tod < endHour);
+            }
+
+            // 2. Physics Update Step
+            if (cfg.animationMode === 'fluidPhysics' || cfg.animationMode === 'bio') {
+                fluid.update(tide / 100.0);
+                // Random Disturbance (Wind)
+                if (Math.random() < (wind * 0.005) + 0.01) {
+                    const rIdx = Math.floor(Math.random() * count);
+                    fluid.disturb(rIdx, (Math.random()-0.5) * 0.2);
                 }
             }
 
-            // 2. Generate LED Coordinates
+            // 3. Generate LED Coordinates
             const layout = cfg.ledLayoutType;
-            const count = cfg.ledCount;
             const leds = [];
             
             if (layout === 'STRIP') {
@@ -129,34 +199,8 @@ export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams
                         i
                     });
                 }
-            } else if (layout === 'MATRIX') {
-                const mw = cfg.ledMatrixWidth || 10;
-                const mh = cfg.ledMatrixHeight || Math.ceil(count / mw);
-                const cell = Math.min((w - 60) / mw, (h - 60) / mh);
-                const sx = (w - cell * mw) / 2 + cell / 2;
-                const sy = (h - cell * mh) / 2 + cell / 2;
-                for(let i=0; i<count; i++) {
-                    let r = Math.floor(i / mw); 
-                    let c = i % mw;
-                    if (cfg.ledSerpentine && r % 2 !== 0) c = (mw - 1) - c;
-                    leds.push({x: sx + c * cell, y: sy + r * cell, i, r, c, maxR: mh, maxC: mw});
-                }
-            } else if (layout === 'RING') {
-                const r = Math.min(w, h) * 0.35;
-                for(let i=0; i<count; i++) {
-                    const a = (i / count) * Math.PI * 2 - Math.PI / 2;
-                    leds.push({x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r, i});
-                }
-            } else if (layout === 'SPIRAL') {
-                const turns = cfg.ledSpiralTurns || 3;
-                const maxR = Math.min(w, h) * 0.4;
-                for(let i=0; i<count; i++) {
-                    const prog = i / count;
-                    const r = prog * maxR;
-                    const a = prog * Math.PI * 2 * turns - Math.PI / 2;
-                    leds.push({x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r, i});
-                }
             } else {
+                 // Simple fallback for matrix/ring visualization in 1D physics context
                  const margin = 40; const sp = (w - margin * 2) / (count - 1 || 1);
                  for(let i=0; i<count; i++) {
                      const x = margin + i * sp;
@@ -165,108 +209,73 @@ export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams
                  }
             }
 
-            // 3. Clear Canvas
+            // 4. Render Logic
             ctx.fillStyle = '#0f172a'; // Slate-900
             ctx.fillRect(0, 0, w, h);
 
-            // 4. Render Logic
-            const mode = cfg.animationMode;
-            const speed = cfg.animationSpeed; 
-            const intensity = cfg.animationIntensity;
-            const colors = (cfg.customColors && cfg.customColors.length > 0) ? cfg.customColors : ['#000044', '#ffffff'];
-
-            // === SHADER PREVIEW ===
-            let shaderFunc: Function | null = null;
-            if (cfg.shader?.enabled) {
-                try {
-                    // Safe evaluation environment
-                    const funcBody = `
-                        const sin = Math.sin; const cos = Math.cos; const min = Math.min; const max = Math.max; 
-                        const abs = Math.abs; const PI = Math.PI;
-                        return (${cfg.shader.code});
-                    `;
-                    shaderFunc = new Function('t', 'i', 'pos', 'level', funcBody);
-                } catch (e) {
-                    // Ignore syntax errors while typing
-                }
-            }
-
             leds.forEach((led) => {
                 let r=0, g=0, b=0;
-
-                if (shaderFunc) {
-                    try {
-                        const pos = led.i / count;
-                        const tideNorm = tide / 100.0;
-                        const val = shaderFunc(timeSec, led.i, pos, tideNorm);
-                        // Map result (0-255) to a color (Simple blue gradient for now)
-                        let v = Math.max(0, Math.min(255, val));
-                        r = 0; g = v * 0.5; b = v; // Cyan/Blue gradient
-                    } catch(e) { r=255; g=0; b=0; } // Error red
-                } else {
-                    // STANDARD ANIMATION LOGIC (Existing code block)
-                    if (mode === 'tideWaveVertical') {
-                        // ... (Existing Logic)
-                        let normalizedY = 0;
-                        if (layout === 'MATRIX') {
-                             normalizedY = 1.0 - (led.r / (led.maxR || 1));
-                        } else {
-                             normalizedY = led.i / count;
+                
+                if (cfg.animationMode === 'fluidPhysics') {
+                    // --- FLUID RENDER (MATCHES C++) ---
+                    // Fluid node value is 0..1 (approx)
+                    // We map physical position i/count vs fluid height
+                    
+                    // Simple viz: Node value determines brightness/color
+                    const val = Math.max(0, Math.min(1, fluid.nodes[led.i]));
+                    // Fake PBR: velocity
+                    const vel = Math.abs(fluid.vels[led.i]);
+                    
+                    if (val > 0.1) {
+                        // Water
+                        r = 0; g = val * 100; b = val * 200;
+                        // Specular
+                        if (vel > 0.02) {
+                            r+=vel*1000; g+=vel*1000; b+=vel*1000;
                         }
-                        const tideLevel = tide / 100.0;
-                        if (normalizedY <= tideLevel) {
-                            const relativeDepth = normalizedY / (tideLevel || 0.001);
-                            const dirMult = isRising ? 1 : -1;
-                            const waveSpeed = speed * 2.0;
-                            const wave = Math.sin(normalizedY * 15 - (now * 0.005 * waveSpeed * dirMult));
-                            
-                            const r1=0, g1=10, b1=80; 
-                            const r2=0, g2=150, b2=220;
-                            let mix = relativeDepth + (wave * 0.1); 
-                            if (mix > 1) mix = 1; if (mix < 0) mix = 0;
-                            r = r1 + (r2-r1)*mix; g = g1 + (g2-g1)*mix; b = b1 + (b2-b1)*mix;
-                        }
-                    } 
-                    else if (mode === 'neon') {
-                        const hue = (now * 0.1 * speed + led.i * 5) % 360;
-                        const s = 1, v = 1 * intensity;
-                        const c = v * s;
-                        const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
-                        const m = v - c;
-                        let r1=0, g1=0, b1=0;
-                        if (hue < 60) { r1=c; g1=x; b1=0; }
-                        else if (hue < 120) { r1=x; g1=c; b1=0; }
-                        else if (hue < 180) { r1=0; g1=c; b1=x; }
-                        else if (hue < 240) { r1=0; g1=x; b1=c; }
-                        else if (hue < 300) { r1=x; g1=0; b1=c; }
-                        else { r1=c; g1=0; b1=x; }
-                        r = (r1 + m) * 255; g = (g1 + m) * 255; b = (b1 + m) * 255;
-                    } 
-                    else {
-                        // Default Fallback to Color Interpolation
-                        const stops = colors.length - 1;
-                        const phase = (led.i / count) + (now * 0.0001 * speed);
-                        const cyclePhase = phase % 1;
-                        const pos = cyclePhase * stops;
-                        const idx = Math.floor(pos);
-                        const f = pos - idx;
-                        const c1 = colors[idx % colors.length];
-                        const c2 = colors[(idx + 1) % colors.length];
-                        const rgb = interpolateColor(c1, c2, f);
-                        const parsed = rgb.match(/\d+/g)?.map(Number) || [0,0,0];
-                        r=parsed[0]; g=parsed[1]; b=parsed[2];
+                    } else {
+                        // Air
+                        r=0; g=0; b=0;
                     }
+                } 
+                else if (cfg.animationMode === 'bio') {
+                     // Dark water with flashes
+                     const val = Math.max(0, Math.min(1, fluid.nodes[led.i]));
+                     const vel = Math.abs(fluid.vels[led.i]);
+                     
+                     if (val > 0.1) {
+                         r=0; g=10; b=20;
+                         if (vel > 0.05) {
+                             // Flash
+                             g+=150; b+=200;
+                         }
+                     }
+                }
+                else if (cfg.animationMode === 'thermal') {
+                    // Heat map
+                    // Simulating temp noise
+                    const noise = (Math.sin(led.i * 0.5 + timeSec) + 1) / 2;
+                    r = noise * 255; g = noise * 100; b = 0;
+                }
+                else {
+                    // Fallback to Standard
+                     const colors = (cfg.customColors && cfg.customColors.length > 0) ? cfg.customColors : ['#000044', '#ffffff'];
+                     const stops = colors.length - 1;
+                     const phase = (led.i / count) + (now * 0.0001 * cfg.animationSpeed);
+                     const pos = (phase % 1) * stops;
+                     const idx = Math.floor(pos);
+                     const rgb = interpolateColor(colors[idx % colors.length], colors[(idx + 1) % colors.length], pos - idx);
+                     const parsed = rgb.match(/\d+/g)?.map(Number) || [0,0,0];
+                     r=parsed[0]; g=parsed[1]; b=parsed[2];
                 }
 
-                // Global Intensity & Night Mode
-                let globalBright = intensity;
-                if (night) globalBright *= 0.5;
-                r *= globalBright; g *= globalBright; b *= globalBright;
+                // Global Intensity
+                r *= intensity; g *= intensity; b *= intensity;
                 r = Math.min(255, Math.max(0, r)); g = Math.min(255, Math.max(0, g)); b = Math.min(255, Math.max(0, b));
 
                 // Draw
                 ctx.beginPath();
-                const radius = layout === 'MATRIX' ? Math.min(w, h) / (cfg.ledMatrixWidth||10) / 2.5 : 6;
+                const radius = 6;
                 ctx.arc(led.x, led.y, radius, 0, Math.PI * 2);
                 ctx.fillStyle = `rgb(${r},${g},${b})`;
                 ctx.fill();
@@ -297,16 +306,10 @@ export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams
                     </div>
                 )}
                  <div className="text-[10px] font-bold text-cyan-400 bg-cyan-900/20 border border-cyan-500/50 px-2 py-1 rounded">
-                     {firmwareConfig.shader?.enabled ? 'SHADER MODE' : `PRESET: ${firmwareConfig.animationMode.toUpperCase()}`}
+                     {firmwareConfig.animationMode.toUpperCase()}
                  </div>
             </div>
             
-            {firmwareConfig.ledLayoutType === 'MATRIX' && (
-                <div className="absolute inset-0 z-0 opacity-10" 
-                     style={{backgroundImage: 'radial-gradient(circle, #334155 1px, transparent 1px)', backgroundSize: '20px 20px'}}>
-                </div>
-            )}
-
             <canvas ref={canvasRef} width={800} height={600} className="w-full h-full object-contain relative z-1" />
         </div>
     );

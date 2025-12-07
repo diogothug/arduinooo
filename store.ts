@@ -1,4 +1,5 @@
 
+
 import { create } from 'zustand';
 import { Keyframe, Device, ViewState, EffectType, FirmwareConfig, DisplayConfig, DisplayWidget, WidgetType, DisplayDriver, ConnectionType, DisplayTheme, RenderMode, DataSourceConfig, TideSourceType, MockWaveType, WeatherData, Notification, DisplayType, SavedMock } from './types';
 
@@ -101,7 +102,8 @@ export const useAppStore = create<AppState>((set) => ({
     weatherApi: { enabled: true, apiKey: 'KEY', location: '-13.613295,-38.908930', intervalMinutes: 60 },
     autonomous: { enabled: true, linkSpeedToTide: true, linkBrightnessToTide: false, linkPaletteToTime: false, linkWeatherToLeds: true },
     physicalSpecs: { stripLengthMeters: 1.0, ledDensity: 60, maxPowerAmps: 2.0 },
-    animationMode: 'oceanCaustics',
+    fluidParams: { tension: 0.025, damping: 0.02, spread: 0.1 },
+    animationMode: 'fluidPhysics',
     animationSpeed: 1.0,
     animationIntensity: 0.5,
     animationPalette: 0,
@@ -178,6 +180,10 @@ export const useAppStore = create<AppState>((set) => ({
     // Merge Physical
     if (config.physicalSpecs && state.firmwareConfig.physicalSpecs) {
         newConfig.physicalSpecs = { ...state.firmwareConfig.physicalSpecs, ...config.physicalSpecs };
+    }
+    // Merge Fluid
+    if (config.fluidParams && state.firmwareConfig.fluidParams) {
+        newConfig.fluidParams = { ...state.firmwareConfig.fluidParams, ...config.fluidParams };
     }
     return { firmwareConfig: newConfig };
   }),

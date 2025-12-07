@@ -1,4 +1,5 @@
 
+
 export const generateShaderEngineH = () => `
 #ifndef SHADER_ENGINE_H
 #define SHADER_ENGINE_H
@@ -422,5 +423,165 @@ void PerformanceManager::evaluate() {
 
 bool PerformanceManager::isThrottled() {
     return _throttled;
+}
+`;
+
+// --- NEW FLUID PHYSICS ENGINE (1D Solver) ---
+
+export const generateFluidEngineH = () => `
+#ifndef FLUID_ENGINE_H
+#define FLUID_ENGINE_H
+
+#include <Arduino.h>
+
+struct FoamParticle {
+    float pos; // 0..numLeds
+    float vel;
+    float life; // 0..1
+};
+
+class FluidEngine {
+public:
+    void begin(int numNodes, float tension, float damping, float spread);
+    void update();
+    void setTargetHeight(float percent); // The tide level pushes the fluid mass
+    void disturb(int node, float amount);
+    
+    float getNodeHeight(int i);
+    float getNodeVelocity(int i);
+    
+    // Particle System
+    void spawnFoam(int node, float strength);
+    int getFoamCount() { return _particleCount; }
+    FoamParticle* getParticles() { return _particles; }
+    
+    void updateParams(float t, float d, float s) { _k = t; _d = d; _spread = s; }
+
+private:
+    int _numNodes;
+    float* _nodes;
+    float* _vels;
+    float* _targetBase; // Target level for mass movement
+    
+    float _k; // Tension
+    float _d; // Damping
+    float _spread; 
+    
+    // Particles (Max 50 for ESP32)
+    static const int MAX_PARTICLES = 50;
+    FoamParticle _particles[MAX_PARTICLES];
+    int _particleCount = 0;
+};
+
+#endif
+`;
+
+export const generateFluidEngineCpp = () => `
+#include "FluidEngine.h"
+
+void FluidEngine::begin(int numNodes, float tension, float damping, float spread) {
+    _numNodes = numNodes;
+    _k = tension;
+    _d = damping;
+    _spread = spread;
+    
+    if(_nodes) delete[] _nodes;
+    if(_vels) delete[] _vels;
+    if(_targetBase) delete[] _targetBase;
+    
+    _nodes = new float[_numNodes];
+    _vels = new float[_numNodes];
+    _targetBase = new float[_numNodes];
+    
+    for(int i=0; i<_numNodes; i++) {
+        _nodes[i] = 0; _vels[i] = 0; _targetBase[i] = 0;
+    }
+    
+    // Clear particles
+    for(int i=0; i<MAX_PARTICLES; i++) _particles[i].life = 0;
+}
+
+void FluidEngine::setTargetHeight(float percent) {
+    // Fill mechanics: The water rises to a target level
+    // In a vertical strip, nodes below 'percent' try to be 1.0, above 0.0
+    int targetNode = (_numNodes * percent);
+    for(int i=0; i<_numNodes; i++) {
+        if (i < targetNode) _targetBase[i] = 1.0f; 
+        else _targetBase[i] = 0.0f;
+    }
+}
+
+void FluidEngine::disturb(int node, float amount) {
+    if (node >= 0 && node < _numNodes) {
+        _vels[node] += amount;
+    }
+}
+
+void FluidEngine::spawnFoam(int node, float strength) {
+    // Find dead particle slot
+    for(int i=0; i<MAX_PARTICLES; i++) {
+        if (_particles[i].life <= 0) {
+            _particles[i].pos = node;
+            _particles[i].vel = (random(100) - 50) / 100.0f; // drift
+            _particles[i].life = strength;
+            if (_particleCount <= i) _particleCount = i + 1;
+            return;
+        }
+    }
+}
+
+void FluidEngine::update() {
+    // 1. Hooke's Law (Springs between nodes)
+    
+    for (int i = 0; i < _numNodes; i++) {
+        // Standard Algorithm: Force from neighbors
+        float left = (i > 0) ? _nodes[i-1] : _nodes[i];
+        float right = (i < _numNodes-1) ? _nodes[i+1] : _nodes[i];
+        
+        // Acceleration = Force / Mass (Mass=1)
+        // Force = k * displacement
+        float force = _k * (left + right - 2 * _nodes[i]);
+        
+        _vels[i] += force;
+        _vels[i] *= (1.0 - _d); // Damping
+        _nodes[i] += _vels[i];
+    }
+    
+    // 2. Spread / Smoothing Pass (Lateral Propagation)
+    // Run two passes for stability as per design notes
+    if (_spread > 0) {
+        for(int pass=0; pass<2; pass++) {
+            for (int i = 0; i < _numNodes; i++) {
+                float left = (i > 0) ? _nodes[i-1] : _nodes[i];
+                float right = (i < _numNodes-1) ? _nodes[i+1] : _nodes[i];
+                // Smooth differences
+                _nodes[i] += _spread * ( (left + right)/2.0 - _nodes[i] );
+            }
+        }
+    }
+
+    // 3. Particle Update
+    for(int i=0; i<MAX_PARTICLES; i++) {
+        if (_particles[i].life > 0) {
+            _particles[i].pos += _particles[i].vel;
+            _particles[i].life -= 0.02; // Fade out
+            // Foam rides the wave
+            int n = (int)_particles[i].pos;
+            if (n >= 0 && n < _numNodes) {
+                 // Push particle by wave velocity
+                 _particles[i].pos += _vels[n] * 0.5;
+            }
+        }
+    }
+}
+
+float FluidEngine::getNodeHeight(int i) {
+    if (i < 0 || i >= _numNodes) return 0;
+    return _nodes[i];
+}
+
+float FluidEngine::getNodeVelocity(int i) {
+    if (i < 0 || i >= _numNodes) return 0;
+    return _vels[i];
 }
 `;
