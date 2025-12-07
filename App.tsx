@@ -8,7 +8,7 @@ import { DisplayEditor } from './components/DisplayEditor';
 import { LedMaster } from './components/LedMaster';
 import { ConnectionManager } from './components/ConnectionManager';
 import { Esp32Tools } from './components/Esp32Tools';
-import { LayoutDashboard, Waves, Cpu, Settings, Activity, Monitor, Link2, Wifi, Usb, Bluetooth, AlertCircle, CheckCircle, Info, X, Lightbulb, Database, Shield, ChevronDown, ChevronRight, Calculator, Globe, MapPin } from 'lucide-react';
+import { LayoutDashboard, Waves, Cpu, Settings, Activity, Monitor, Link2, Wifi, Usb, Bluetooth, AlertCircle, CheckCircle, Info, X, Lightbulb, Database, Shield, ChevronDown, ChevronRight, Calculator, Globe, MapPin, Thermometer } from 'lucide-react';
 
 const NotificationToast = () => {
     const { notification, clearNotification } = useAppStore();
@@ -81,7 +81,7 @@ const App: React.FC = () => {
                     >
                         <div className="flex items-center gap-3">
                             <Database size={20} />
-                            <span className="hidden lg:block">Dados</span>
+                            <span className="hidden lg:block">Dados & Fontes</span>
                         </div>
                         <div className="hidden lg:block">
                             {expandedData ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}
@@ -92,23 +92,23 @@ const App: React.FC = () => {
                         <div className="mt-1 ml-4 border-l border-slate-700 pl-2 space-y-1">
                              <SubNavButton 
                                 onClick={() => handleDataSourceSelect(TideSourceType.TABUA_MARE)}
-                                label="API (Tábua Maré)"
+                                label="Tábua Maré (BR)"
                                 icon={<MapPin size={14}/>}
                              />
                              <SubNavButton 
                                 onClick={() => handleDataSourceSelect(TideSourceType.API)}
-                                label="Sensores (Clima)"
+                                label="Weather API"
                                 icon={<Globe size={14}/>}
                              />
                              <SubNavButton 
-                                onClick={() => handleDataSourceSelect(TideSourceType.MOCK)}
-                                label="Mockados"
-                                icon={<Activity size={14}/>}
+                                onClick={() => handleDataSourceSelect(TideSourceType.CALCULATED)}
+                                label="Calculadora Senoidal"
+                                icon={<Calculator size={14}/>}
                              />
                              <SubNavButton 
-                                onClick={() => handleDataSourceSelect(TideSourceType.CALCULATED)}
-                                label="Calculados"
-                                icon={<Calculator size={14}/>}
+                                onClick={() => handleDataSourceSelect(TideSourceType.MOCK)}
+                                label="Mocks & Snapshots"
+                                icon={<Activity size={14}/>}
                              />
                         </div>
                     )}
