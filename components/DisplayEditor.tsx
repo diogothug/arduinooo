@@ -7,14 +7,14 @@ export const DisplayEditor: React.FC = () => {
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-auto">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-auto items-start">
         {/* Left Column: Config */}
         <div className="h-auto">
             <DisplaySidebar />
         </div>
 
         {/* Center: Simulator */}
-        <div className="min-h-[400px]">
+        <div>
             <DisplayCanvas selectedWidgetId={selectedWidgetId} setSelectedWidgetId={setSelectedWidgetId} />
         </div>
 

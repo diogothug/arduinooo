@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect } from 'react';
 import { useAppStore } from '../../store';
 
@@ -284,7 +283,7 @@ export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams
     }, [stripDirection]); 
 
     return (
-        <div className="bg-slate-950 border border-slate-800 rounded-lg flex flex-col overflow-hidden relative h-full shadow-inner">
+        <div className="bg-slate-950 border border-slate-800 rounded-lg flex flex-col overflow-hidden relative h-[500px] shadow-inner">
              <div className="absolute top-4 right-4 z-10 flex flex-col items-end pointer-events-none gap-1">
                 <div className="text-[10px] font-bold text-slate-400 bg-slate-900/80 px-2 py-1 rounded border border-slate-700">
                     {firmwareConfig.ledLayoutType} • {firmwareConfig.ledCount} LEDS

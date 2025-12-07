@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef } from 'react';
 import { useAppStore } from '../../store';
 import { WidgetType, DisplayType, DisplayTheme } from '../../types';
@@ -308,7 +307,7 @@ export const DisplayCanvas: React.FC<DisplayCanvasProps> = ({ selectedWidgetId, 
     }, [displayWidgets, selectedWidgetId, simulatedTime, keyframes, displayConfig, weatherData, firmwareConfig]);
 
     return (
-        <div className="flex flex-col items-center justify-center bg-slate-900 rounded-lg border border-slate-700 p-8 relative overflow-hidden h-full">
+        <div className="flex flex-col items-center bg-slate-900 rounded-lg border border-slate-700 p-6 relative overflow-hidden">
              <div className="absolute top-4 left-4 flex gap-2 z-10">
                  <button onClick={() => setDisplayConfig({ type: displayConfig.type === DisplayType.GC9A01_240 ? DisplayType.OLED_128 : DisplayType.GC9A01_240 })} 
                          className={`p-2 rounded flex gap-2 items-center text-xs font-bold ${displayConfig.type === DisplayType.OLED_128 ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-500 border border-slate-700'}`}>

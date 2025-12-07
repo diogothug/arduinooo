@@ -200,7 +200,7 @@ export const LedSimulator: React.FC = () => {
   }, [keyframes, simulatedTime, numLeds, firmwareConfig.nightMode, tideStats]);
 
   return (
-    <div className="bg-black rounded-xl border border-slate-700 shadow-xl overflow-hidden h-[600px] flex flex-col items-center p-4">
+    <div className="bg-black rounded-xl border border-slate-700 shadow-xl overflow-hidden h-[500px] flex flex-col items-center p-4">
       <h3 className="text-slate-400 text-xs font-bold tracking-widest uppercase mb-4">Simulação LED</h3>
       
       <div className="mb-2 flex flex-col gap-1 items-center">

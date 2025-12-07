@@ -24,7 +24,7 @@ export const LedMaster: React.FC = () => {
     });
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-auto">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-auto items-start">
             {/* LEFT SIDEBAR: CONFIG */}
             <div className="lg:col-span-3 flex flex-col gap-4 h-auto">
                  <div className="bg-slate-800 rounded-lg border border-slate-700 p-2 grid grid-cols-3 gap-2 shrink-0">
@@ -48,7 +48,7 @@ export const LedMaster: React.FC = () => {
             </div>
 
             {/* CENTER: CANVAS VISUALIZER */}
-            <div className="lg:col-span-9 min-h-[500px]">
+            <div className="lg:col-span-9">
                 <LedVisualizer simMode={simMode} simParams={simParams} stripDirection='HORIZONTAL' />
             </div>
         </div>
