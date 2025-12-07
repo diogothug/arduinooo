@@ -1,20 +1,19 @@
 
-
-
-
-
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../../store';
-import { LayoutTemplate, AlignVerticalJustifyCenter, Grid, Circle, RotateCw, Mountain, Spline, Palette, Cpu, Waves, Sun, Anchor, Zap, Wind, Moon, Activity, Plus, Trash2, ArrowUp, ArrowDown, BarChart3, AlertOctagon, ArrowUpCircle, Ruler, BatteryCharging, Code2, Save, Sparkles, Flame, TestTube, Beaker, CloudRain } from 'lucide-react';
+import { 
+    Cpu, Waves, Sun, Anchor, Zap, Activity, Flame, Sparkles, 
+    Settings, Ruler, Grid, Circle, AlignJustify, ChevronDown, ChevronRight,
+    Play, Beaker, Code2, Palette, ArrowUp, ArrowDown, Wind, Box
+} from 'lucide-react';
 
 const PRESETS = [
-    { id: 'fluidPhysics', label: 'Simulação Física 1D (Premium)', icon: <Waves size={16} className="text-cyan-400"/>, desc: 'Solver real de ondas, inércia e espuma.' },
+    { id: 'fluidPhysics', label: 'Simulação Física 1D (Premium)', icon: <Waves size={16} className="text-cyan-400"/>, desc: 'Solver real de ondas e inércia.' },
     { id: 'bio', label: 'Bioluminescência', icon: <Sparkles size={16} className="text-emerald-400"/>, desc: 'Plâncton reativo ao impacto.' },
-    { id: 'thermal', label: 'Thermal Drift', icon: <Flame size={16} className="text-orange-400"/>, desc: 'Visualização de calor e entropia.' },
-    { id: 'tideWaveVertical', label: 'Onda Vertical (Standard)', icon: <ArrowUpCircle size={16} className="text-blue-400"/>, desc: 'Animação linear simples.' },
-    { id: 'oceanCaustics', label: 'Moreré Lagoon', icon: <Sun size={16} className="text-yellow-400"/>, desc: 'Luz solar refratada na água.' },
-    { id: 'coralReef', label: 'Coral Reef', icon: <Anchor size={16} className="text-red-400"/>, desc: 'Cores de recife com fundo arenoso.' },
-    { id: 'storm', label: 'Tempestade', icon: <Zap size={16} className="text-slate-400"/>, desc: 'Nuvens escuras e raios.' }, 
+    { id: 'thermal', label: 'Thermal Drift', icon: <Flame size={16} className="text-orange-400"/>, desc: 'Visualização de calor.' },
+    { id: 'tideWaveVertical', label: 'Onda Vertical', icon: <ArrowUp size={16} className="text-blue-400"/>, desc: 'Animação linear simples.' },
+    { id: 'oceanCaustics', label: 'Moreré Lagoon', icon: <Sun size={16} className="text-yellow-400"/>, desc: 'Refração de luz na água.' },
+    { id: 'storm', label: 'Tempestade', icon: <Zap size={16} className="text-slate-400"/>, desc: 'Nuvens e raios.' }, 
     { id: 'neon', label: 'Neon Cyber', icon: <Activity size={16} className="text-purple-400"/>, desc: 'Ciclo RGB intenso.' },
 ];
 
@@ -27,277 +26,270 @@ interface LedConfigPanelProps {
 
 export const LedConfigPanel: React.FC<LedConfigPanelProps> = ({ simMode, setSimMode, simParams, setSimParams }) => {
     const { firmwareConfig, updateFirmwareConfig } = useAppStore();
-    const [editorMode, setEditorMode] = useState<'PRESETS' | 'SHADER' | 'PHYSICS'>('PRESETS');
+    const [expandedSection, setExpandedSection] = useState<string | null>('ANIMATION');
 
-    // Shader State
-    const [shaderCode, setShaderCode] = useState(firmwareConfig.shader?.code || 'sin(t + i * 0.2) * 255');
+    const toggleSection = (id: string) => setExpandedSection(expandedSection === id ? null : id);
 
-    // Sync shader code to store debounce
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            updateFirmwareConfig({ 
-                shader: { 
-                    ...firmwareConfig.shader, 
-                    code: shaderCode,
-                    enabled: editorMode === 'SHADER'
-                } 
-            });
-        }, 500);
-        return () => clearTimeout(timer);
-    }, [shaderCode, editorMode]);
-
-    const handleColorChange = (idx: number, val: string) => {
-        const c = [...(firmwareConfig.customColors || [])];
-        c[idx] = val;
-        updateFirmwareConfig({ customColors: c });
+    const updatePhys = (key: string, val: any) => {
+        updateFirmwareConfig({ physicalSpecs: { ...firmwareConfig.physicalSpecs, [key]: val } });
     };
 
-    const addColor = () => {
-        const c = [...(firmwareConfig.customColors || []), '#ffffff'];
-        updateFirmwareConfig({ customColors: c });
-    };
-
-    const removeColor = (idx: number) => {
-        const c = [...(firmwareConfig.customColors || [])];
-        if (c.length > 1) {
-            c.splice(idx, 1);
-            updateFirmwareConfig({ customColors: c });
-        }
-    };
-
-    const applyPhysicalCalculation = () => {
-        const { stripLengthMeters, ledDensity } = firmwareConfig.physicalSpecs;
-        const total = Math.round(stripLengthMeters * ledDensity);
-        updateFirmwareConfig({ ledCount: total });
-    };
-
-    const powerStats = (() => {
-        const totalLeds = firmwareConfig.ledCount;
-        const maxAmps = totalLeds * 0.06;
-        const typicalAmps = maxAmps * 0.35; 
-        return { max: maxAmps.toFixed(1), typical: typicalAmps.toFixed(1) };
-    })();
-
-    const updateFluid = (k: string, v: number) => {
-        updateFirmwareConfig({ fluidParams: { ...firmwareConfig.fluidParams, [k]: v } });
-    };
-
-    const applyFluidPreset = (name: 'CALM' | 'BREEZE' | 'WINDY' | 'STORM') => {
-        switch(name) {
-            case 'CALM': updateFirmwareConfig({ fluidParams: { tension: 0.01, damping: 0.05, spread: 0.05 } }); break;
-            case 'BREEZE': updateFirmwareConfig({ fluidParams: { tension: 0.025, damping: 0.02, spread: 0.1 } }); break;
-            case 'WINDY': updateFirmwareConfig({ fluidParams: { tension: 0.05, damping: 0.01, spread: 0.15 } }); break;
-            case 'STORM': updateFirmwareConfig({ fluidParams: { tension: 0.08, damping: 0.005, spread: 0.25 } }); break;
-        }
+    const updateFluid = (key: string, val: any) => {
+        updateFirmwareConfig({ fluidParams: { ...firmwareConfig.fluidParams, [key]: val } });
     };
 
     return (
-        <div className="space-y-6 animate-in fade-in pb-10">
-             
-             {/* MODE SWITCHER */}
-             <div className="bg-slate-900 p-1 rounded-lg border border-slate-700 flex">
-                 <button 
-                    onClick={() => setEditorMode('PRESETS')}
-                    className={`flex-1 py-1.5 text-xs font-bold rounded transition ${editorMode === 'PRESETS' ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}
-                 >
-                     MODOS
-                 </button>
-                 <button 
-                    onClick={() => setEditorMode('PHYSICS')}
-                    className={`flex-1 py-1.5 text-xs font-bold rounded transition flex items-center justify-center gap-2 ${editorMode === 'PHYSICS' ? 'bg-cyan-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-                 >
-                     <Beaker size={12}/> FÍSICA
-                 </button>
-                 <button 
-                    onClick={() => setEditorMode('SHADER')}
-                    className={`flex-1 py-1.5 text-xs font-bold rounded transition flex items-center justify-center gap-2 ${editorMode === 'SHADER' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-                 >
-                     <Code2 size={12}/> SHADER
-                 </button>
-             </div>
+        <div className="space-y-4 pb-20">
+            
+            {/* --- SECTION 1: HARDWARE & TOPOLOGY --- */}
+            <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
+                <button onClick={() => toggleSection('HARDWARE')} className="w-full flex items-center justify-between p-3 bg-slate-800 hover:bg-slate-750 transition">
+                    <span className="text-xs font-bold text-slate-300 flex items-center gap-2">
+                        <Cpu size={14} className="text-amber-400"/> Hardware & Topologia
+                    </span>
+                    {expandedSection === 'HARDWARE' ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}
+                </button>
+                
+                {expandedSection === 'HARDWARE' && (
+                    <div className="p-4 bg-slate-900/50 border-t border-slate-700 space-y-4">
+                        {/* Layout Selector */}
+                        <div className="grid grid-cols-3 gap-2">
+                            {[
+                                { id: 'STRIP', label: 'Fita', icon: <AlignJustify size={14}/> },
+                                { id: 'MATRIX', label: 'Matriz', icon: <Grid size={14}/> },
+                                { id: 'RING', label: 'Anel', icon: <Circle size={14}/> },
+                            ].map(l => (
+                                <button 
+                                    key={l.id}
+                                    onClick={() => updateFirmwareConfig({ ledLayoutType: l.id as any })}
+                                    className={`p-2 rounded border flex flex-col items-center gap-1 transition ${firmwareConfig.ledLayoutType === l.id ? 'bg-amber-900/30 border-amber-500 text-amber-300' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'}`}
+                                >
+                                    {l.icon}
+                                    <span className="text-[10px] font-bold">{l.label}</span>
+                                </button>
+                            ))}
+                        </div>
 
-             {editorMode === 'SHADER' && (
-                 <div className="bg-slate-900 border border-indigo-500/50 p-4 rounded-lg relative overflow-hidden">
-                     <div className="absolute top-0 right-0 p-2 opacity-5 text-indigo-500">
-                         <Code2 size={100}/>
-                     </div>
-                     <div className="relative z-10">
-                         <h3 className="text-xs font-bold text-indigo-400 mb-2 uppercase flex items-center gap-2">
-                             <Cpu size={14}/> Script de Animação (GLSL Lite)
-                         </h3>
-                         <textarea 
-                             value={shaderCode}
-                             onChange={(e) => setShaderCode(e.target.value)}
-                             className="w-full h-32 bg-black border border-slate-700 rounded p-3 text-xs font-mono text-green-400 focus:border-indigo-500 outline-none resize-none"
-                             spellCheck={false}
-                         />
-                     </div>
-                 </div>
-             )}
+                        {/* Dimensions Input */}
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="text-[9px] text-slate-500 font-bold uppercase block mb-1">Total LEDs</label>
+                                <input 
+                                    type="number" 
+                                    value={firmwareConfig.ledCount} 
+                                    onChange={e => updateFirmwareConfig({ ledCount: parseInt(e.target.value) })}
+                                    className="w-full bg-slate-800 border border-slate-600 rounded p-1.5 text-white text-xs font-mono"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[9px] text-slate-500 font-bold uppercase block mb-1">GPIO Pin</label>
+                                <input 
+                                    type="number" 
+                                    value={firmwareConfig.ledPin} 
+                                    onChange={e => updateFirmwareConfig({ ledPin: parseInt(e.target.value) })}
+                                    className="w-full bg-slate-800 border border-slate-600 rounded p-1.5 text-white text-xs font-mono"
+                                />
+                            </div>
+                        </div>
 
-            {editorMode === 'PHYSICS' && (
-                <div className="bg-slate-900 border border-cyan-500/50 p-4 rounded-lg relative overflow-hidden">
-                     <div className="absolute top-0 right-0 p-2 opacity-5 text-cyan-500">
-                         <Waves size={100}/>
-                     </div>
-                     <div className="relative z-10 space-y-4">
-                         <h3 className="text-xs font-bold text-cyan-400 mb-2 uppercase flex items-center gap-2">
-                             <TestTube size={14}/> Engine 1D Water Solver
-                         </h3>
-                         <p className="text-[10px] text-slate-400">
-                            Configure o comportamento do fluido simulado na fita LED.
-                         </p>
-                         
-                         <div className="grid grid-cols-2 gap-2 mb-4">
-                            <button onClick={() => applyFluidPreset('CALM')} className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-cyan-500 rounded text-[10px] font-bold text-cyan-200 flex flex-col items-center gap-1 transition">
-                                <Sun size={12}/> Calm
-                            </button>
-                            <button onClick={() => applyFluidPreset('BREEZE')} className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-cyan-500 rounded text-[10px] font-bold text-cyan-200 flex flex-col items-center gap-1 transition">
-                                <Wind size={12}/> Breeze
-                            </button>
-                            <button onClick={() => applyFluidPreset('WINDY')} className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-cyan-500 rounded text-[10px] font-bold text-cyan-200 flex flex-col items-center gap-1 transition">
-                                <CloudRain size={12}/> Windy
-                            </button>
-                            <button onClick={() => applyFluidPreset('STORM')} className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-cyan-500 rounded text-[10px] font-bold text-cyan-200 flex flex-col items-center gap-1 transition">
-                                <Zap size={12}/> Storm
-                            </button>
-                         </div>
-
-                         <div>
-                             <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-                                 <span>Tensão (Stiffness)</span>
-                                 <span className="font-mono text-white">{firmwareConfig.fluidParams.tension}</span>
-                             </div>
-                             <input type="range" min="0.001" max="0.1" step="0.001" value={firmwareConfig.fluidParams.tension} onChange={e=>updateFluid('tension', parseFloat(e.target.value))} className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"/>
-                         </div>
-                         
-                         <div>
-                             <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-                                 <span>Damping (Friction)</span>
-                                 <span className="font-mono text-white">{firmwareConfig.fluidParams.damping}</span>
-                             </div>
-                             <input type="range" min="0.001" max="0.1" step="0.001" value={firmwareConfig.fluidParams.damping} onChange={e=>updateFluid('damping', parseFloat(e.target.value))} className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"/>
-                         </div>
-
-                         <div>
-                             <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-                                 <span>Spread (Propagation)</span>
-                                 <span className="font-mono text-white">{firmwareConfig.fluidParams.spread}</span>
-                             </div>
-                             <input type="range" min="0.0" max="0.5" step="0.01" value={firmwareConfig.fluidParams.spread} onChange={e=>updateFluid('spread', parseFloat(e.target.value))} className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"/>
-                         </div>
-                     </div>
-                </div>
-            )}
-
-             {editorMode === 'PRESETS' && (
-                <>
-                {/* PRESETS */}
-                <div>
-                    <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-2">Preset de Animação</h4>
-                    <div className="grid grid-cols-1 gap-2">
-                        {PRESETS.map(p => (
-                            <button key={p.id} onClick={()=>updateFirmwareConfig({ animationMode: p.id })} className={`flex items-center gap-3 p-3 rounded-lg border text-left transition hover:border-slate-500 ${firmwareConfig.animationMode===p.id ? 'bg-gradient-to-r from-cyan-900/40 to-slate-900 border-cyan-500 shadow-lg shadow-cyan-900/20' : 'bg-slate-900 border-slate-700 opacity-70 hover:opacity-100'}`}>
-                                <div className={`p-2 rounded-full ${firmwareConfig.animationMode===p.id ? 'bg-cyan-500/20 text-cyan-400' : 'bg-slate-800 text-slate-500'}`}>
-                                    {p.icon}
+                        {/* Conditional Matrix Inputs */}
+                        {firmwareConfig.ledLayoutType === 'MATRIX' && (
+                            <div className="bg-slate-800 p-2 rounded border border-slate-700 grid grid-cols-2 gap-3 animate-in fade-in">
+                                <div>
+                                    <label className="text-[9px] text-slate-500 font-bold uppercase block mb-1">Largura (Cols)</label>
+                                    <input 
+                                        type="number" 
+                                        value={firmwareConfig.ledMatrixWidth || 16} 
+                                        onChange={e => updateFirmwareConfig({ ledMatrixWidth: parseInt(e.target.value) })}
+                                        className="w-full bg-slate-900 border border-slate-600 rounded p-1.5 text-white text-xs font-mono"
+                                    />
                                 </div>
                                 <div>
-                                    <div className={`text-xs font-bold ${firmwareConfig.animationMode===p.id ? 'text-white' : 'text-slate-400'}`}>{p.label}</div>
-                                    <div className="text-[10px] opacity-60 text-slate-400">{p.desc}</div>
+                                    <label className="text-[9px] text-slate-500 font-bold uppercase block mb-1">Serpentina?</label>
+                                    <button 
+                                        onClick={() => updateFirmwareConfig({ ledSerpentine: !firmwareConfig.ledSerpentine })}
+                                        className={`w-full p-1.5 rounded text-xs font-bold border ${firmwareConfig.ledSerpentine ? 'bg-green-900/30 border-green-600 text-green-400' : 'bg-slate-900 border-slate-600 text-slate-400'}`}
+                                    >
+                                        {firmwareConfig.ledSerpentine ? 'SIM (ZigZag)' : 'NÃO (Linear)'}
+                                    </button>
                                 </div>
-                            </button>
-                        ))}
-                    </div>
-                </div>
+                            </div>
+                        )}
 
-                {/* PHYSICAL SPECS & POWER */}
-                <div className="bg-slate-900 p-4 rounded border border-slate-700 space-y-4 relative overflow-hidden mt-4">
-                    <div className="absolute top-0 right-0 p-2 opacity-10">
-                        <Ruler size={64} />
+                        <div className="pt-2 border-t border-slate-700/50">
+                            <label className="text-[9px] text-slate-500 font-bold uppercase block mb-1 flex items-center gap-1">
+                                <Box size={10} /> Densidade Física
+                            </label>
+                            <div className="flex gap-2">
+                                <input 
+                                    type="number" placeholder="Comp (m)" step="0.1"
+                                    value={firmwareConfig.physicalSpecs?.stripLengthMeters || 1}
+                                    onChange={e => updatePhys('stripLengthMeters', parseFloat(e.target.value))}
+                                    className="flex-1 bg-slate-800 border border-slate-600 rounded p-1.5 text-white text-xs"
+                                />
+                                <select 
+                                    value={firmwareConfig.physicalSpecs?.ledDensity || 60}
+                                    onChange={e => updatePhys('ledDensity', parseInt(e.target.value))}
+                                    className="flex-1 bg-slate-800 border border-slate-600 rounded p-1.5 text-white text-xs"
+                                >
+                                    <option value={30}>30 LEDs/m</option>
+                                    <option value={60}>60 LEDs/m</option>
+                                    <option value={144}>144 LEDs/m</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
-                    <h3 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2 relative z-10">
-                        <Ruler size={14}/> Física & Energia (Adaptativo)
-                    </h3>
-                    
-                    <div className="grid grid-cols-2 gap-4 relative z-10">
+                )}
+            </div>
+
+            {/* --- SECTION 2: ANIMATION & PRESETS --- */}
+            <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
+                <button onClick={() => toggleSection('ANIMATION')} className="w-full flex items-center justify-between p-3 bg-slate-800 hover:bg-slate-750 transition">
+                    <span className="text-xs font-bold text-slate-300 flex items-center gap-2">
+                        <Play size={14} className="text-cyan-400"/> Animação & Efeitos
+                    </span>
+                    {expandedSection === 'ANIMATION' ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}
+                </button>
+                
+                {expandedSection === 'ANIMATION' && (
+                    <div className="p-4 bg-slate-900/50 border-t border-slate-700 space-y-4">
+                        <div className="space-y-2">
+                            {PRESETS.map(p => (
+                                <button 
+                                    key={p.id} 
+                                    onClick={() => updateFirmwareConfig({ animationMode: p.id })} 
+                                    className={`w-full flex items-center gap-3 p-2 rounded border text-left transition ${firmwareConfig.animationMode === p.id ? 'bg-cyan-900/30 border-cyan-500 shadow-sm' : 'bg-slate-800 border-slate-700 hover:border-slate-500'}`}
+                                >
+                                    <div className={`p-1.5 rounded-full ${firmwareConfig.animationMode === p.id ? 'bg-cyan-500 text-slate-900' : 'bg-slate-700 text-slate-400'}`}>
+                                        {p.icon}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className={`text-xs font-bold ${firmwareConfig.animationMode === p.id ? 'text-cyan-100' : 'text-slate-300'}`}>{p.label}</div>
+                                        <div className="text-[10px] text-slate-500 truncate">{p.desc}</div>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-700/50">
+                            <div>
+                                <label className="text-[9px] text-slate-500 font-bold uppercase block mb-1">Velocidade</label>
+                                <input 
+                                    type="range" min="0.1" max="5.0" step="0.1"
+                                    value={firmwareConfig.animationSpeed}
+                                    onChange={e => updateFirmwareConfig({ animationSpeed: parseFloat(e.target.value) })}
+                                    className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[9px] text-slate-500 font-bold uppercase block mb-1">Intensidade</label>
+                                <input 
+                                    type="range" min="0" max="1" step="0.1"
+                                    value={firmwareConfig.animationIntensity}
+                                    onChange={e => updateFirmwareConfig({ animationIntensity: parseFloat(e.target.value) })}
+                                    className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                                />
+                            </div>
+                        </div>
+                        
                         <div>
-                            <label className="text-[9px] block text-slate-500 font-bold uppercase mb-1">Comprimento (m)</label>
-                            <input 
-                                type="number" 
-                                step="0.1"
-                                value={firmwareConfig.physicalSpecs?.stripLengthMeters || 1.0} 
-                                onChange={e=>updateFirmwareConfig({ physicalSpecs: {...firmwareConfig.physicalSpecs, stripLengthMeters: parseFloat(e.target.value)} })} 
-                                className="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white text-xs focus:border-cyan-500 outline-none"
-                            />
-                        </div>
-                        <div>
-                            <label className="text-[9px] block text-slate-500 font-bold uppercase mb-1">Densidade (LEDs/m)</label>
-                            <select 
-                                value={firmwareConfig.physicalSpecs?.ledDensity || 60} 
-                                onChange={e=>updateFirmwareConfig({ physicalSpecs: {...firmwareConfig.physicalSpecs, ledDensity: parseInt(e.target.value) as any} })}
-                                className="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white text-xs focus:border-cyan-500 outline-none"
-                            >
-                                <option value={30}>30 LEDs/m</option>
-                                <option value={60}>60 LEDs/m</option>
-                                <option value={96}>96 LEDs/m</option>
-                                <option value={144}>144 LEDs/m</option>
-                            </select>
+                             <label className="text-[9px] text-slate-500 font-bold uppercase block mb-1">Brilho Global ({firmwareConfig.ledBrightness})</label>
+                             <input 
+                                type="range" min="0" max="255"
+                                value={firmwareConfig.ledBrightness}
+                                onChange={e => updateFirmwareConfig({ ledBrightness: parseInt(e.target.value) })}
+                                className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-white"
+                             />
                         </div>
                     </div>
+                )}
+            </div>
 
-                    <div className="flex items-center justify-between bg-slate-800/50 p-2 rounded border border-slate-700/50 relative z-10">
-                        <div className="flex flex-col">
-                            <span className="text-[9px] text-slate-500 uppercase">Total Calculado</span>
-                            <span className="text-sm font-mono text-cyan-400 font-bold">
-                                {Math.round((firmwareConfig.physicalSpecs?.stripLengthMeters || 1) * (firmwareConfig.physicalSpecs?.ledDensity || 60))} LEDs
-                            </span>
-                        </div>
-                        <button 
-                            onClick={applyPhysicalCalculation}
-                            className="text-[10px] bg-cyan-900/30 hover:bg-cyan-900/50 text-cyan-300 border border-cyan-800/50 px-3 py-1.5 rounded transition font-bold"
-                        >
-                            Atualizar Total
-                        </button>
+            {/* --- SECTION 3: PHYSICS ENGINE --- */}
+            <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
+                <button onClick={() => toggleSection('PHYSICS')} className="w-full flex items-center justify-between p-3 bg-slate-800 hover:bg-slate-750 transition">
+                    <span className="text-xs font-bold text-slate-300 flex items-center gap-2">
+                        <Beaker size={14} className="text-purple-400"/> Física de Fluidos (Solver)
+                    </span>
+                    {expandedSection === 'PHYSICS' ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}
+                </button>
+                
+                {expandedSection === 'PHYSICS' && (
+                    <div className="p-4 bg-slate-900/50 border-t border-slate-700 space-y-4">
+                         <div className="bg-purple-900/20 p-2 rounded border border-purple-500/30 text-[10px] text-purple-200 mb-2">
+                             Ajuste fino do comportamento da água virtual.
+                         </div>
+                         
+                         <div>
+                             <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                                 <span>Tensão (Rigidez)</span>
+                                 <span className="font-mono text-white">{firmwareConfig.fluidParams?.tension}</span>
+                             </div>
+                             <input type="range" min="0.001" max="0.1" step="0.001" value={firmwareConfig.fluidParams?.tension} onChange={e=>updateFluid('tension', parseFloat(e.target.value))} className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"/>
+                         </div>
+                         
+                         <div>
+                             <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                                 <span>Amortecimento (Viscosidade)</span>
+                                 <span className="font-mono text-white">{firmwareConfig.fluidParams?.damping}</span>
+                             </div>
+                             <input type="range" min="0.001" max="0.1" step="0.001" value={firmwareConfig.fluidParams?.damping} onChange={e=>updateFluid('damping', parseFloat(e.target.value))} className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"/>
+                         </div>
+
+                         <div>
+                             <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                                 <span>Propagação (Spread)</span>
+                                 <span className="font-mono text-white">{firmwareConfig.fluidParams?.spread}</span>
+                             </div>
+                             <input type="range" min="0.0" max="0.5" step="0.01" value={firmwareConfig.fluidParams?.spread} onChange={e=>updateFluid('spread', parseFloat(e.target.value))} className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"/>
+                         </div>
                     </div>
-                </div>
-                </>
-             )}
+                )}
+            </div>
 
-             {/* SIMULATOR CONTROLS */}
-             <div className="pt-4 border-t border-slate-700">
+            {/* --- SECTION 4: SIMULATION CONTROLS --- */}
+            <div className="border-t border-slate-700 pt-4 mt-4">
                 <div className="flex justify-between items-center mb-3">
-                     <h4 className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Cpu size={12}/> Simulador de Variáveis</h4>
+                     <h4 className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><Settings size={12}/> Simulador de Variáveis</h4>
                      <button onClick={()=>setSimMode(!simMode)} className={`text-[9px] px-2 py-0.5 rounded border transition ${simMode?'bg-green-600 text-white border-green-500 shadow-green-900/50 shadow-md':'bg-slate-800 text-slate-500 border-slate-600'}`}>
-                         {simMode ? 'ATIVO' : 'AUTO (STORE)'}
+                         {simMode ? 'ATIVO (OVERRIDE)' : 'DESATIVADO (AUTO)'}
                      </button>
                 </div>
                 
-                <div className={`space-y-4 p-3 rounded border transition-all ${simMode ? 'bg-slate-900 border-green-900/30' : 'bg-slate-900/30 border-slate-800 opacity-50 grayscale'}`}>
+                <div className={`space-y-4 p-3 rounded border transition-all ${simMode ? 'bg-slate-900 border-green-900/30' : 'bg-slate-900/30 border-slate-800 opacity-50 grayscale pointer-events-none'}`}>
                     
-                    {/* Direction Toggle */}
                     <div className="grid grid-cols-2 gap-2">
-                        <button disabled={!simMode} onClick={()=>setSimParams({...simParams, tideDirection: 'RISING'})} className={`p-2 rounded border text-[10px] font-bold flex items-center justify-center gap-1 ${simParams.tideDirection === 'RISING' ? 'bg-blue-600 text-white border-blue-500' : 'bg-slate-800 border-slate-700 text-slate-500'}`}>
+                        <button onClick={()=>setSimParams({...simParams, tideDirection: 'RISING'})} className={`p-2 rounded border text-[10px] font-bold flex items-center justify-center gap-1 ${simParams.tideDirection === 'RISING' ? 'bg-blue-600 text-white border-blue-500' : 'bg-slate-800 border-slate-700 text-slate-500'}`}>
                             <ArrowUp size={12}/> ENCHENTE
                         </button>
-                        <button disabled={!simMode} onClick={()=>setSimParams({...simParams, tideDirection: 'FALLING'})} className={`p-2 rounded border text-[10px] font-bold flex items-center justify-center gap-1 ${simParams.tideDirection === 'FALLING' ? 'bg-amber-600 text-white border-amber-500' : 'bg-slate-800 border-slate-700 text-slate-500'}`}>
+                        <button onClick={()=>setSimParams({...simParams, tideDirection: 'FALLING'})} className={`p-2 rounded border text-[10px] font-bold flex items-center justify-center gap-1 ${simParams.tideDirection === 'FALLING' ? 'bg-amber-600 text-white border-amber-500' : 'bg-slate-800 border-slate-700 text-slate-500'}`}>
                             <ArrowDown size={12}/> VAZANTE
                         </button>
                     </div>
 
-                    {/* Main Tide Slider */}
                     <div>
                         <div className="flex justify-between text-[10px] text-slate-400 mb-1">
                             <span className="font-bold flex items-center gap-1"><Waves size={10}/> Nível Maré</span>
                             <span className={`font-mono ${simParams.tide < 0 ? 'text-amber-500' : 'text-white'}`}>{simParams.tide}%</span>
                         </div>
                         <input 
-                            type="range" 
-                            disabled={!simMode} 
-                            min={simParams.allowNegative ? "-20" : "0"} 
-                            max="120" 
+                            type="range" min="-10" max="110" 
                             value={simParams.tide} 
                             onChange={e=>setSimParams({...simParams, tide: parseInt(e.target.value)})} 
                             className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                        />
+                    </div>
+
+                    <div>
+                        <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                            <span className="font-bold flex items-center gap-1"><Wind size={10}/> Vento (Turbulência)</span>
+                            <span className="font-mono text-white">{simParams.wind}km/h</span>
+                        </div>
+                        <input 
+                            type="range" min="0" max="100" 
+                            value={simParams.wind} 
+                            onChange={e=>setSimParams({...simParams, wind: parseInt(e.target.value)})} 
+                            className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-slate-400"
                         />
                     </div>
                 </div>

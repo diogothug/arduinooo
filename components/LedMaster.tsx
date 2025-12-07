@@ -1,55 +1,84 @@
+
 import React, { useState } from 'react';
-import { BrainCircuit, LayoutTemplate, Grid } from 'lucide-react';
+import { BrainCircuit, LayoutTemplate, Grid, ChevronLeft } from 'lucide-react';
 import { LedConfigPanel } from './led/LedConfigPanel';
 import { LedVisualizer } from './led/LedVisualizer';
 import { PixelArtStudio } from './led/PixelArtStudio';
 
-type TabMode = 'DESIGN' | 'AUTONOMOUS' | 'PIXEL_ART';
+type TabMode = 'CONTROLLER' | 'PIXEL_ART';
 
 export const LedMaster: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<TabMode>('AUTONOMOUS');
+    const [activeTab, setActiveTab] = useState<TabMode>('CONTROLLER');
     
-    // Lifted state for simulation to ensure synchronization between panel and visualizer
+    // Lifted state for simulation to ensure synchronization
     const [simMode, setSimMode] = useState(false);
     const [simParams, setSimParams] = useState({ 
         wind: 15, 
         humidity: 60, 
         tide: 50, 
         isNight: false,
-        // New Parameters
-        tideDirection: 'RISING', // RISING or FALLING
+        tideDirection: 'RISING',
         dayMax: 100,
         dayMin: 0,
         allowNegative: false
     });
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-auto items-start">
-            {/* LEFT SIDEBAR: CONFIG */}
-            <div className="lg:col-span-3 flex flex-col gap-4 h-auto">
-                 <div className="bg-slate-800 rounded-lg border border-slate-700 p-2 grid grid-cols-3 gap-2 shrink-0">
-                     <button onClick={()=>setActiveTab('AUTONOMOUS')} className={`p-2 rounded text-xs font-bold flex flex-col items-center gap-1 transition-all ${activeTab==='AUTONOMOUS'?'bg-cyan-600 text-white shadow-lg shadow-cyan-900/50':'bg-slate-900 text-slate-400 hover:bg-slate-800'}`}>
-                         <BrainCircuit size={16}/> Lógica
-                     </button>
-                     <button onClick={()=>setActiveTab('DESIGN')} className={`p-2 rounded text-xs font-bold flex flex-col items-center gap-1 transition-all ${activeTab==='DESIGN'?'bg-purple-600 text-white shadow-lg shadow-purple-900/50':'bg-slate-900 text-slate-400 hover:bg-slate-800'}`}>
-                         <LayoutTemplate size={16}/> Design
-                     </button>
-                     <button onClick={()=>setActiveTab('PIXEL_ART')} className={`p-2 rounded text-xs font-bold flex flex-col items-center gap-1 transition-all ${activeTab==='PIXEL_ART'?'bg-pink-600 text-white shadow-lg shadow-pink-900/50':'bg-slate-900 text-slate-400 hover:bg-slate-800'}`}>
-                         <Grid size={16}/> Pixel
-                     </button>
-                 </div>
+        <div className="flex h-full w-full gap-0 overflow-hidden bg-slate-950">
+            {/* LEFT SIDEBAR: CONFIGURATION */}
+            <div className="w-[380px] shrink-0 border-r border-slate-800 bg-slate-900 flex flex-col h-full z-10 shadow-xl">
+                
+                {/* Header / Tab Switcher */}
+                <div className="p-4 border-b border-slate-800 bg-slate-900">
+                    <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700">
+                        <button 
+                            onClick={()=>setActiveTab('CONTROLLER')} 
+                            className={`flex-1 py-2 px-3 rounded text-xs font-bold flex items-center justify-center gap-2 transition-all ${activeTab==='CONTROLLER'?'bg-cyan-600 text-white shadow':'text-slate-400 hover:text-white'}`}
+                        >
+                            <BrainCircuit size={14}/> Controlador
+                        </button>
+                        <button 
+                            onClick={()=>setActiveTab('PIXEL_ART')} 
+                            className={`flex-1 py-2 px-3 rounded text-xs font-bold flex items-center justify-center gap-2 transition-all ${activeTab==='PIXEL_ART'?'bg-pink-600 text-white shadow':'text-slate-400 hover:text-white'}`}
+                        >
+                            <Grid size={14}/> Pixel Art
+                        </button>
+                    </div>
+                </div>
 
-                 <div className="bg-slate-800 rounded-lg border border-slate-700 p-5 flex-1">
-                    {(activeTab === 'DESIGN' || activeTab === 'AUTONOMOUS') && (
-                        <LedConfigPanel simMode={simMode} setSimMode={setSimMode} simParams={simParams} setSimParams={setSimParams} />
-                    )}
-                    {activeTab === 'PIXEL_ART' && <PixelArtStudio />}
-                 </div>
+                {/* Scrollable Content */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+                   {activeTab === 'CONTROLLER' ? (
+                       <LedConfigPanel 
+                           simMode={simMode} 
+                           setSimMode={setSimMode} 
+                           simParams={simParams} 
+                           setSimParams={setSimParams} 
+                       />
+                   ) : (
+                       <PixelArtStudio />
+                   )}
+                </div>
             </div>
 
             {/* CENTER: CANVAS VISUALIZER */}
-            <div className="lg:col-span-9">
-                <LedVisualizer simMode={simMode} simParams={simParams} stripDirection='HORIZONTAL' />
+            <div className="flex-1 flex flex-col bg-slate-950 relative overflow-hidden">
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black pointer-events-none"></div>
+                
+                {/* Toolbar Overlay */}
+                <div className="absolute top-4 left-6 z-10 flex gap-4">
+                     <div className="bg-slate-900/80 backdrop-blur border border-slate-700 rounded-full px-4 py-1.5 text-xs text-slate-300 font-mono">
+                         Visualização em Tempo Real
+                     </div>
+                </div>
+
+                <div className="flex-1 p-6 flex items-center justify-center">
+                    <LedVisualizer 
+                        simMode={simMode} 
+                        simParams={simParams} 
+                        stripDirection='HORIZONTAL' 
+                    />
+                </div>
             </div>
         </div>
     );
