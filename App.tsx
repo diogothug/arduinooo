@@ -9,8 +9,8 @@ import { FirmwareBuilder } from './components/FirmwareBuilder';
 import { DisplayEditor } from './components/DisplayEditor';
 import { LedMaster } from './components/LedMaster';
 import { ConnectionManager } from './components/ConnectionManager';
-import { LedDebugPanel } from './components/led/LedDebugPanel';
-import { LayoutDashboard, Waves, Cpu, Settings, Activity, Monitor, Link2, Wifi, Usb, Bluetooth, AlertCircle, CheckCircle, Info, X, Lightbulb, Database, Terminal, Shield, ChevronDown, ChevronRight, Calculator, Globe, MapPin } from 'lucide-react';
+import { Esp32Tools } from './components/Esp32Tools';
+import { LayoutDashboard, Waves, Cpu, Settings, Activity, Monitor, Link2, Wifi, Usb, Bluetooth, AlertCircle, CheckCircle, Info, X, Lightbulb, Database, Shield, ChevronDown, ChevronRight, Calculator, Globe, MapPin } from 'lucide-react';
 
 const NotificationToast = () => {
     const { notification, clearNotification } = useAppStore();
@@ -74,18 +74,6 @@ const App: React.FC = () => {
                     icon={<LayoutDashboard size={20}/>} 
                     label="Painel" 
                 />
-                <NavButton 
-                    active={currentView === ViewState.LED_MASTER} 
-                    onClick={() => setView(ViewState.LED_MASTER)} 
-                    icon={<Lightbulb size={20}/>} 
-                    label="Leds" 
-                />
-                <NavButton 
-                    active={currentView === ViewState.DISPLAY} 
-                    onClick={() => setView(ViewState.DISPLAY)} 
-                    icon={<Monitor size={20}/>} 
-                    label="Displays" 
-                />
                 
                 {/* DADOS GROUP */}
                 <div className="pt-2">
@@ -128,19 +116,26 @@ const App: React.FC = () => {
                     )}
                 </div>
 
+                <NavButton 
+                    active={currentView === ViewState.LED_MASTER} 
+                    onClick={() => setView(ViewState.LED_MASTER)} 
+                    icon={<Lightbulb size={20}/>} 
+                    label="Leds" 
+                />
+                <NavButton 
+                    active={currentView === ViewState.DISPLAY} 
+                    onClick={() => setView(ViewState.DISPLAY)} 
+                    icon={<Monitor size={20}/>} 
+                    label="Displays" 
+                />
+
                 <div className="w-full h-px bg-slate-800 my-2"></div>
 
-                <NavButton 
-                    active={currentView === ViewState.DEBUG} 
-                    onClick={() => setView(ViewState.DEBUG)} 
-                    icon={<Terminal size={20}/>} 
-                    label="Debug" 
-                />
                 <NavButton 
                     active={currentView === ViewState.ESP32} 
                     onClick={() => setView(ViewState.ESP32)} 
                     icon={<Shield size={20}/>} 
-                    label="ESP32" 
+                    label="ESP32 & Debug" 
                 />
                 <NavButton 
                     active={currentView === ViewState.FIRMWARE} 
@@ -169,8 +164,7 @@ const App: React.FC = () => {
                 {currentView === ViewState.DISPLAY && 'Designer do Display'}
                 {currentView === ViewState.LED_MASTER && 'LED Master WS2812B'}
                 {currentView === ViewState.FIRMWARE && 'Gerador de Firmware'}
-                {currentView === ViewState.DEBUG && 'Console de Debug'}
-                {currentView === ViewState.ESP32 && 'Gerenciador de Conexão ESP32'}
+                {currentView === ViewState.ESP32 && 'ESP32 & Ferramentas'}
             </h2>
             <div className="flex items-center gap-4">
                  
@@ -269,19 +263,9 @@ const App: React.FC = () => {
                  </div>
              )}
 
-             {currentView === ViewState.DEBUG && (
-                 <div className="h-full bg-slate-800 rounded-lg border border-slate-700 p-6 flex flex-col">
-                     <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                         <Terminal size={20} className="text-green-400" />
-                         Laboratório de Debug
-                     </h3>
-                     <LedDebugPanel />
-                 </div>
-             )}
-
              {currentView === ViewState.ESP32 && (
                  <div className="h-full">
-                     <ConnectionManager isEmbed={true} />
+                     <Esp32Tools />
                  </div>
              )}
 

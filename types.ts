@@ -44,6 +44,20 @@ export enum MockWaveType {
   STEP = 'STEP'
 }
 
+export interface CalculationParams {
+  period: number;
+  amplitude: number;
+  offset: number;
+  phase: number;
+}
+
+export interface SavedMock {
+  id: string;
+  name: string;
+  frames: Keyframe[];
+  description?: string;
+}
+
 export interface ApiConfig {
   url: string;
   token: string;
@@ -72,13 +86,14 @@ export interface DataSourceConfig {
   api: ApiConfig;
   tabuaMare: TabuaMareConfig;
   mock: MockConfig;
+  calculation: CalculationParams; // New
   lastValidData: Keyframe | null;
 }
 
 export enum DisplayDriver {
   TFT_ESPI = 'TFT_eSPI',
   ARDUINO_GFX = 'Arduino_GFX',
-  U8G2_OLED = 'U8G2_OLED' // New
+  U8G2_OLED = 'U8G2_OLED'
 }
 
 export enum DisplayType {
@@ -113,7 +128,6 @@ export enum WidgetType {
   WEATHER_WIND_TEXT = 'WEATHER_WIND_TEXT',
   WEATHER_CONDITION_TEXT = 'WEATHER_CONDITION_TEXT',
   
-  // New OLED Specific
   OLED_MODERN_RING = 'OLED_MODERN_RING',
   OLED_STATUS_BAR = 'OLED_STATUS_BAR',
   OLED_MINI_GRAPH = 'OLED_MINI_GRAPH'
@@ -136,8 +150,6 @@ export enum DisplayTheme {
   NEON_RIPPLES = 'NEON_RIPPLES',
   RETRO_SUNSET = 'RETRO_SUNSET',
   CORAL_REEF = 'CORAL_REEF',
-  
-  // New
   OLED_MODERN = 'OLED_MODERN'
 }
 
@@ -183,7 +195,7 @@ export interface DisplayWidget {
 }
 
 export interface DisplayConfig {
-  type: DisplayType; // New: Switch between GC9A01 and OLED
+  type: DisplayType; 
   driver: DisplayDriver;
   pinSCK: number;
   pinMOSI: number;

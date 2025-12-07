@@ -1,6 +1,7 @@
 
+
 import { create } from 'zustand';
-import { Keyframe, Device, ViewState, EffectType, FirmwareConfig, DisplayConfig, DisplayWidget, WidgetType, DisplayDriver, ConnectionType, DisplayTheme, RenderMode, DataSourceConfig, TideSourceType, MockWaveType, WeatherData, Notification, DisplayType } from './types';
+import { Keyframe, Device, ViewState, EffectType, FirmwareConfig, DisplayConfig, DisplayWidget, WidgetType, DisplayDriver, ConnectionType, DisplayTheme, RenderMode, DataSourceConfig, TideSourceType, MockWaveType, WeatherData, Notification, DisplayType, SavedMock } from './types';
 
 console.log("🟦 [Store] Loading store.ts module...");
 
@@ -10,6 +11,7 @@ interface AppState {
   activeDeviceId: string | null;
   connectionType: ConnectionType;
   keyframes: Keyframe[];
+  savedMocks: SavedMock[]; 
   simulatedTime: number; 
   firmwareConfig: FirmwareConfig;
   dataSourceConfig: DataSourceConfig;
@@ -30,6 +32,10 @@ interface AppState {
   addKeyframe: (keyframe: Keyframe) => void;
   updateKeyframe: (id: string, updates: Partial<Keyframe>) => void;
   removeKeyframe: (id: string) => void;
+  
+  saveMock: (name: string, frames: Keyframe[]) => void;
+  deleteMock: (id: string) => void;
+
   setSimulatedTime: (time: number) => void;
   updateFirmwareConfig: (config: Partial<FirmwareConfig>) => void;
   updateDataSourceConfig: (config: Partial<DataSourceConfig>) => void;
@@ -55,6 +61,19 @@ export const useAppStore = create<AppState>((set) => ({
   keyframes: [
     { id: '1', timeOffset: 0, height: 20, color: '#0066cc', intensity: 100, effect: EffectType.GLOW },
     { id: '2', timeOffset: 6, height: 80, color: '#00ccff', intensity: 200, effect: EffectType.WAVE },
+  ],
+  savedMocks: [
+      { 
+          id: 'mock_default', 
+          name: 'Moreré Padrão 2025', 
+          frames: [
+            { id: 'm1', timeOffset: 2.18, height: 15, color: '#004488', intensity: 50, effect: EffectType.STATIC },
+            { id: 'm2', timeOffset: 8.65, height: 95, color: '#00eebb', intensity: 200, effect: EffectType.WAVE },
+            { id: 'm3', timeOffset: 14.45, height: 20, color: '#004488', intensity: 50, effect: EffectType.STATIC },
+            { id: 'm4', timeOffset: 20.85, height: 90, color: '#00eebb', intensity: 200, effect: EffectType.WAVE }
+          ],
+          description: "Dados estáticos baseados na tábua de dez/2025"
+      }
   ],
   simulatedTime: 12,
   firmwareConfig: {
@@ -86,13 +105,13 @@ export const useAppStore = create<AppState>((set) => ({
   dataSourceConfig: {
     activeSource: TideSourceType.TABUA_MARE,
     api: { url: '', token: '', intervalMinutes: 60, locationId: '' },
-    // Changed to Harbor ID 7 (Salvador) as per troubleshooting request
     tabuaMare: { baseUrl: 'https://tabuamare.devtu.qzz.io/api/v1', uf: 'ba', lat: -12.97, lng: -38.50, harborId: 7 },
     mock: { minHeight: 10, maxHeight: 90, periodHours: 12.42, waveType: MockWaveType.SINE },
+    calculation: { period: 12.42, amplitude: 45, offset: 50, phase: 0 },
     lastValidData: null
   },
   displayConfig: {
-    type: DisplayType.GC9A01_240, // Default to standard
+    type: DisplayType.GC9A01_240, 
     driver: DisplayDriver.TFT_ESPI,
     pinSCK: 18, pinMOSI: 23, pinCS: 5, pinDC: 2, pinRST: 4, pinBLK: 22, 
     rotation: 0, brightness: 200, fps: 30,
@@ -121,6 +140,17 @@ export const useAppStore = create<AppState>((set) => ({
   addKeyframe: (keyframe) => set((state) => ({ keyframes: [...state.keyframes, keyframe].sort((a, b) => a.timeOffset - b.timeOffset) })),
   updateKeyframe: (id, updates) => set((state) => ({ keyframes: state.keyframes.map((k) => (k.id === id ? { ...k, ...updates } : k)).sort((a, b) => a.timeOffset - b.timeOffset) })),
   removeKeyframe: (id) => set((state) => ({ keyframes: state.keyframes.filter((k) => k.id !== id) })),
+  
+  saveMock: (name, frames) => set((state) => ({ 
+      savedMocks: [...state.savedMocks, { 
+          id: Math.random().toString(36).substr(2,9), 
+          name, 
+          frames, 
+          description: `Criado em ${new Date().toLocaleTimeString()}` 
+      }] 
+  })),
+  deleteMock: (id) => set((state) => ({ savedMocks: state.savedMocks.filter(m => m.id !== id) })),
+
   setSimulatedTime: (time) => set({ simulatedTime: time }),
   updateFirmwareConfig: (config) => set((state) => ({ firmwareConfig: { ...state.firmwareConfig, ...config } })),
   updateDataSourceConfig: (config) => set((state) => ({ dataSourceConfig: { ...state.dataSourceConfig, ...config } })),
