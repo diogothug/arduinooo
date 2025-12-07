@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { useAppStore } from '../store';
 import { ConnectionType, TideSourceType, MockWaveType, EffectType, Keyframe } from '../types';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot } from 'recharts';
-import { Play, Pause, RefreshCw, UploadCloud, Usb, Bluetooth, Wifi, CalendarClock, Server, Activity, Database, MapPin, Search, AlertCircle, CheckCircle, Terminal, Clipboard, CloudSun, Thermometer, Wind, Droplets, Battery, Moon, Sliders, Sun, Globe, Calculator, Save, Trash2, FolderOpen } from 'lucide-react';
+import { Play, Pause, RefreshCw, UploadCloud, Usb, Bluetooth, Wifi, CalendarClock, Server, Activity, Database, MapPin, Search, AlertCircle, CheckCircle, Terminal, Clipboard, CloudSun, Thermometer, Wind, Droplets, Battery, Moon, Sliders, Sun, Globe, Calculator, Save, Trash2, FolderOpen, FunctionSquare, ArrowRight } from 'lucide-react';
 import { hardwareBridge } from '../services/hardwareBridge';
 import { generateSevenDayForecast } from '../utils/tideLogic';
 import { tideSourceService } from '../services/tideSourceService';
@@ -71,20 +71,23 @@ export const TideEditor: React.FC = () => {
       setIsGeneratingSource(true);
       setApiStatus(true, null);
       try {
-          // Force logic: If using Tabua Mare, we attempt 30 days (managed inside service with fallback to 2)
-          // If using Mock, we use cycleLimit
           const durationToFetch = dataSourceConfig.activeSource === TideSourceType.TABUA_MARE ? 30 : cycleLimit;
-          
           const { frames, sourceUsed, weather } = await tideSourceService.getTideData(dataSourceConfig, durationToFetch);
           
           setKeyframes(frames);
           setSimulatedTime(0);
           
+          // Auto-switch to 7 day mode if data is extensive to prevent "truncation" look
+          if (frames.length > 0 && frames[frames.length-1].timeOffset > 25) {
+              setUseSevenDayMode(true);
+              setNotification('info', 'Modo 7 Dias ativado para visualização completa.');
+          }
+
           if (weather) {
               setWeatherData(weather);
-              setNotification('success', `Dados Atualizados: ${frames.length} pontos + Clima`);
+              setNotification('success', `Dados Atualizados: ${frames.length} pts + Clima`);
           } else {
-              setNotification('success', `Dados de maré gerados via: ${sourceUsed}`);
+              setNotification('success', `Dados gerados via: ${sourceUsed}`);
           }
           setApiStatus(false, null);
 
@@ -130,19 +133,13 @@ export const TideEditor: React.FC = () => {
     setIsSyncing(true);
     try {
         updateFirmwareConfig({ cycleDuration: cycleLimit });
-        
         const payload = {
             frames: useSevenDayMode ? activeData : keyframes,
             cycleDuration: cycleLimit,
             harborId: dataSourceConfig.tabuaMare.harborId || 0
         };
-
-        await hardwareBridge.sendData(
-          payload, 
-          connectionType, 
-          activeDevice?.ip
-        );
-        setNotification('success', `Sincronizado: ${useSevenDayMode ? '7 Dias' : '24h'} + Porto ID ${payload.harborId}`);
+        await hardwareBridge.sendData(payload, connectionType, activeDevice?.ip);
+        setNotification('success', `Sincronizado: ${useSevenDayMode ? '7 Dias' : '24h'}`);
     } catch (error: any) {
         console.error(error);
         setNotification('error', `Falha no Sync: ${error.message}`);
@@ -151,25 +148,25 @@ export const TideEditor: React.FC = () => {
     }
   };
 
+  const handleSaveMock = () => {
+      const name = newMockName || `Snapshot ${new Date().toLocaleTimeString()}`;
+      saveMock(name, keyframes);
+      setNewMockName('');
+      setNotification('success', 'Mock salvo com sucesso!');
+  };
+
   const copyLogToClipboard = () => {
     if (apiDebugLog) {
         navigator.clipboard.writeText(apiDebugLog);
-        setNotification('success', "Log copiado para a área de transferência!");
+        setNotification('success', "Log copiado!");
     }
-  };
-
-  const handleSaveMock = () => {
-      if (!newMockName) { setNotification('error', 'Digite um nome para o Mock'); return; }
-      saveMock(newMockName, keyframes);
-      setNewMockName('');
-      setNotification('success', 'Mock salvo com sucesso!');
   };
 
   return (
     <div className="flex flex-col h-full gap-4">
       
       {/* 1. TOP TOOLBAR: STATUS & SYNC */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-800 p-4 rounded-lg border border-slate-700 gap-4 shadow-sm">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-800 p-4 rounded-lg border border-slate-700 gap-4 shadow-sm shrink-0">
         <div className="flex items-center gap-4">
            <button 
              onClick={() => setIsPlaying(!isPlaying)}
@@ -200,7 +197,7 @@ export const TideEditor: React.FC = () => {
                 }`}
             >
                 <CalendarClock size={16} />
-                {useSevenDayMode ? 'Modo 7 Dias (Offline)' : 'Modo 24 Horas'}
+                {useSevenDayMode ? 'Modo 7 Dias' : 'Modo 24 Horas'}
             </button>
 
             <button 
@@ -213,13 +210,13 @@ export const TideEditor: React.FC = () => {
                 }`}
             >
                 {isSyncing ? <RefreshCw className="animate-spin" size={18} /> : <UploadCloud size={18} />}
-                {isSyncing ? 'Sincronizando...' : 'Enviar para ESP32'}
+                {isSyncing ? 'Enviando...' : 'Enviar'}
             </button>
         </div>
       </div>
 
       {/* 2. VISUALIZATION CHART */}
-      <div className="flex-[2] bg-slate-800 rounded-lg border border-slate-700 p-1 min-h-[250px] relative flex flex-col shadow-inner overflow-hidden">
+      <div className="flex-[2] bg-slate-800 rounded-lg border border-slate-700 p-1 min-h-[200px] relative flex flex-col shadow-inner overflow-hidden shrink-0">
         <div className="absolute top-3 left-4 z-10 bg-slate-900/80 px-3 py-1 rounded border border-slate-700 backdrop-blur-sm">
             <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest flex items-center gap-2">
                 <Activity size={12} className="text-cyan-400"/>
@@ -230,14 +227,11 @@ export const TideEditor: React.FC = () => {
              <div className="text-xs font-mono text-cyan-400">
                 T+{simulatedTime.toFixed(1)}h
             </div>
-             <div className="text-xs font-mono text-slate-400">
-                Total: {cycleLimit}h
-            </div>
         </div>
 
         <div className="flex-1 w-full mt-4">
             <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={activeData} margin={{top: 20, right: 10, left: -20, bottom: 0}}>
+            <AreaChart data={activeData} margin={{top: 20, right: 20, left: -20, bottom: 0}}>
                 <defs>
                 <linearGradient id="colorHeight" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.6}/>
@@ -249,10 +243,11 @@ export const TideEditor: React.FC = () => {
                     dataKey="timeOffset" 
                     type="number" 
                     domain={[0, cycleLimit]} 
-                    allowDataOverflow={true}
+                    allowDataOverflow={true} // Clips data outside domain
                     stroke="#64748b" 
                     fontSize={10}
                     tickFormatter={(val) => `${val}h`}
+                    // Adjust ticks to avoid crowding in 7 day mode
                     ticks={useSevenDayMode ? [0, 24, 48, 72, 96, 120, 144, 168] : [0, 6, 12, 18, 24]}
                 />
                 <YAxis domain={[0, 100]} stroke="#64748b" fontSize={10} unit="%" />
@@ -268,7 +263,7 @@ export const TideEditor: React.FC = () => {
                     strokeWidth={2}
                     fillOpacity={1} 
                     fill="url(#colorHeight)" 
-                    isAnimationActive={false} // Disable animation for performance when dragging sliders
+                    isAnimationActive={false} 
                 />
                 <ReferenceDot x={simulatedTime} y={50} r={4} fill="#f59e0b" stroke="#fff" strokeWidth={1} />
             </AreaChart>
@@ -277,15 +272,15 @@ export const TideEditor: React.FC = () => {
       </div>
 
       {/* 3. DATA COMMAND CENTER */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 overflow-hidden">
           
           {/* LEFT: SOURCE CONFIGURATION (8 cols) */}
-          <div className="lg:col-span-8 bg-slate-800 rounded-lg border border-slate-700 p-4 flex flex-col">
-              <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2 border-b border-slate-700 pb-2">
+          <div className="lg:col-span-8 bg-slate-800 rounded-lg border border-slate-700 p-4 flex flex-col overflow-hidden">
+              <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2 border-b border-slate-700 pb-2 shrink-0">
                    <Database size={16} className="text-purple-400"/> Fonte de Dados
               </h3>
               
-              <div className="flex gap-2 mb-4 bg-slate-900/50 p-1 rounded-lg w-fit overflow-x-auto">
+              <div className="flex gap-2 mb-4 bg-slate-900/50 p-1 rounded-lg w-fit overflow-x-auto shrink-0">
                    <button 
                       onClick={() => updateDataSourceConfig({ activeSource: TideSourceType.TABUA_MARE })}
                       className={`px-3 py-1.5 rounded text-xs font-bold flex items-center gap-2 transition ${dataSourceConfig.activeSource === TideSourceType.TABUA_MARE ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' : 'text-slate-400 hover:text-slate-200'}`}
@@ -313,7 +308,7 @@ export const TideEditor: React.FC = () => {
               </div>
 
               {/* CONFIG PANEL - DYNAMIC */}
-              <div className="flex-1 bg-slate-900 rounded-lg border border-slate-700 p-4 overflow-y-auto min-h-[160px]">
+              <div className="flex-1 bg-slate-900 rounded-lg border border-slate-700 p-4 overflow-y-auto custom-scrollbar">
                   
                   {dataSourceConfig.activeSource === TideSourceType.TABUA_MARE && (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in">
@@ -357,13 +352,22 @@ export const TideEditor: React.FC = () => {
                                       <input type="number" value={dataSourceConfig.tabuaMare.lng} onChange={(e) => updateDataSourceConfig({ tabuaMare: {...dataSourceConfig.tabuaMare, lng: parseFloat(e.target.value)} })} className="w-full mt-1 bg-slate-800 border border-slate-600 rounded p-2 text-xs text-white"/>
                                   </div>
                               </div>
-                              <button 
-                                onClick={handleSourceGenerate}
-                                disabled={isGeneratingSource}
-                                className="w-full bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-2 rounded flex items-center justify-center gap-2 transition shadow-lg"
-                              >
-                                {isGeneratingSource ? <RefreshCw className="animate-spin" size={14} /> : <Server size={14} />} Buscar Dados
-                              </button>
+                              <div className="flex gap-2">
+                                <button 
+                                    onClick={handleSourceGenerate}
+                                    disabled={isGeneratingSource}
+                                    className="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-2 rounded flex items-center justify-center gap-2 transition shadow-lg"
+                                >
+                                    {isGeneratingSource ? <RefreshCw className="animate-spin" size={14} /> : <Server size={14} />} Buscar Dados
+                                </button>
+                                <button 
+                                    onClick={handleSaveMock}
+                                    className="px-3 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded border border-slate-600 flex items-center justify-center transition"
+                                    title="Salvar resultado como Mock"
+                                >
+                                    <Save size={16}/>
+                                </button>
+                              </div>
                           </div>
                       </div>
                   )}
@@ -371,21 +375,39 @@ export const TideEditor: React.FC = () => {
                   {dataSourceConfig.activeSource === TideSourceType.API && (
                       <div className="space-y-3 animate-in fade-in">
                            <div>
-                               <label className="text-[10px] text-slate-500 uppercase font-bold">Local ID</label>
+                               <label className="text-[10px] text-slate-500 uppercase font-bold">Local ID (Lat,Long ou Nome)</label>
                                <input type="text" value={dataSourceConfig.api.locationId} onChange={(e) => updateDataSourceConfig({ api: {...dataSourceConfig.api, locationId: e.target.value} })} className="w-full mt-1 bg-slate-800 border border-slate-600 rounded p-2 text-xs text-white"/>
                            </div>
-                           <button 
-                                onClick={handleSourceGenerate}
-                                disabled={isGeneratingSource}
-                                className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2 rounded flex items-center justify-center gap-2 transition shadow-lg"
-                              >
-                                {isGeneratingSource ? <RefreshCw className="animate-spin" size={14} /> : <Server size={14} />} Buscar Dados
-                              </button>
+                           <div className="flex gap-2">
+                                <button 
+                                        onClick={handleSourceGenerate}
+                                        disabled={isGeneratingSource}
+                                        className="flex-1 bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2 rounded flex items-center justify-center gap-2 transition shadow-lg"
+                                    >
+                                        {isGeneratingSource ? <RefreshCw className="animate-spin" size={14} /> : <Server size={14} />} Buscar Dados
+                                </button>
+                                <button 
+                                    onClick={handleSaveMock}
+                                    className="px-3 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded border border-slate-600 flex items-center justify-center transition"
+                                    title="Salvar resultado como Mock"
+                                >
+                                    <Save size={16}/>
+                                </button>
+                            </div>
                       </div>
                   )}
 
                   {dataSourceConfig.activeSource === TideSourceType.CALCULATED && (
-                      <div className="animate-in fade-in">
+                      <div className="animate-in fade-in h-full flex flex-col">
+                          {/* VISUAL FORMULA */}
+                          <div className="bg-black/50 p-4 rounded-lg border border-slate-700 mb-4 font-mono text-center flex flex-col items-center justify-center gap-2">
+                              <div className="text-[10px] text-slate-500 uppercase tracking-widest">Matemática de Cálculo</div>
+                              <div className="text-sm md:text-base text-pink-400">
+                                  y(t) = <span className="text-white">{dataSourceConfig.calculation.offset}</span> + <span className="text-white">{dataSourceConfig.calculation.amplitude}</span> · sin(
+                                  <span className="text-cyan-400">2π</span> · (t + <span className="text-white">{dataSourceConfig.calculation.phase}</span>) / <span className="text-white">{dataSourceConfig.calculation.period}</span>)
+                              </div>
+                          </div>
+
                           <div className="grid grid-cols-2 gap-4">
                               <div>
                                   <label className="text-[10px] text-slate-500 uppercase font-bold block mb-1">Período (Horas)</label>
@@ -416,38 +438,45 @@ export const TideEditor: React.FC = () => {
                                   </div>
                               </div>
                           </div>
-                          <p className="text-[10px] text-slate-500 mt-4 italic">
-                              * Ajuste os parâmetros para simular curvas matemáticas senoidais. A visualização é atualizada em tempo real.
-                          </p>
                       </div>
                   )}
 
                   {dataSourceConfig.activeSource === TideSourceType.MOCK && (
                       <div className="animate-in fade-in flex flex-col h-full">
-                           <div className="flex gap-2 mb-4">
-                               <input type="text" value={newMockName} onChange={e=>setNewMockName(e.target.value)} placeholder="Nome do snapshot" className="flex-1 bg-slate-800 border border-slate-600 rounded p-2 text-xs text-white"/>
-                               <button onClick={handleSaveMock} className="bg-slate-700 hover:bg-slate-600 text-white px-3 rounded text-xs font-bold flex items-center gap-2">
-                                   <Save size={14}/> Salvar Atual
-                               </button>
+                           <div className="bg-slate-900/50 p-2 rounded mb-3 border border-slate-700">
+                               <label className="text-[10px] text-slate-500 uppercase font-bold block mb-2">Criar Novo Mock</label>
+                               <div className="flex gap-2">
+                                   <input type="text" value={newMockName} onChange={e=>setNewMockName(e.target.value)} placeholder="Nome do snapshot" className="flex-1 bg-slate-800 border border-slate-600 rounded p-2 text-xs text-white"/>
+                                   <button onClick={handleSaveMock} className="bg-green-600 hover:bg-green-500 text-white px-3 rounded text-xs font-bold flex items-center gap-2">
+                                       <Save size={14}/> Salvar Estado Atual
+                                   </button>
+                               </div>
                            </div>
                            
-                           <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar max-h-[140px]">
+                           <label className="text-[10px] text-slate-500 uppercase font-bold block mb-2">Mocks Salvos</label>
+                           <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
                                {savedMocks.map(mock => (
-                                   <div key={mock.id} className="bg-slate-800 p-2 rounded border border-slate-700 flex justify-between items-center group hover:border-green-500/50 transition">
+                                   <div key={mock.id} className="bg-slate-800 p-3 rounded border border-slate-700 flex justify-between items-center group hover:border-green-500/50 transition">
                                        <div onClick={() => { setKeyframes(mock.frames); setNotification('success', `Mock "${mock.name}" carregado!`); }} className="cursor-pointer flex-1">
-                                           <div className="text-xs font-bold text-slate-200">{mock.name}</div>
-                                           <div className="text-[9px] text-slate-500">{mock.description} • {mock.frames.length} pts</div>
+                                           <div className="text-sm font-bold text-slate-200 group-hover:text-green-400 transition">{mock.name}</div>
+                                           <div className="text-[10px] text-slate-500 flex items-center gap-2 mt-0.5">
+                                               <span className="bg-slate-700 px-1 rounded">{mock.frames.length} pts</span>
+                                               <span>{mock.description || 'Sem descrição'}</span>
+                                            </div>
                                        </div>
                                        <div className="flex gap-2">
-                                           <button onClick={() => { setKeyframes(mock.frames); setNotification('success', `Mock "${mock.name}" carregado!`); }} className="text-green-400 hover:text-green-300 p-1" title="Carregar">
-                                               <FolderOpen size={14}/>
+                                           <button onClick={() => { setKeyframes(mock.frames); setNotification('success', `Mock "${mock.name}" carregado!`); }} className="text-slate-400 hover:text-green-400 p-2 rounded hover:bg-slate-700 transition" title="Carregar">
+                                               <FolderOpen size={16}/>
                                            </button>
-                                           <button onClick={() => deleteMock(mock.id)} className="text-red-400 hover:text-red-300 p-1 opacity-0 group-hover:opacity-100 transition" title="Excluir">
-                                               <Trash2 size={14}/>
+                                           <button onClick={() => deleteMock(mock.id)} className="text-slate-400 hover:text-red-400 p-2 rounded hover:bg-slate-700 transition" title="Excluir">
+                                               <Trash2 size={16}/>
                                            </button>
                                        </div>
                                    </div>
                                ))}
+                               {savedMocks.length === 0 && (
+                                   <div className="text-center py-8 text-slate-500 text-xs italic">Nenhum mock salvo.</div>
+                               )}
                            </div>
                       </div>
                   )}
@@ -455,8 +484,8 @@ export const TideEditor: React.FC = () => {
           </div>
 
           {/* RIGHT: ENVIRONMENT CONTROLS (4 cols) */}
-          <div className="lg:col-span-4 bg-slate-800 rounded-lg border border-slate-700 p-4 flex flex-col">
-               <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2 border-b border-slate-700 pb-2">
+          <div className="lg:col-span-4 bg-slate-800 rounded-lg border border-slate-700 p-4 flex flex-col overflow-hidden">
+               <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2 border-b border-slate-700 pb-2 shrink-0">
                    <Sliders size={16} className="text-orange-400"/> Ambiente (Override)
               </h3>
               
@@ -500,7 +529,7 @@ export const TideEditor: React.FC = () => {
 
               {/* Debug Log Toggler */}
               {apiDebugLog && (
-                 <div className="mt-4 pt-2 border-t border-slate-700">
+                 <div className="mt-4 pt-2 border-t border-slate-700 shrink-0">
                       <button 
                          onClick={copyLogToClipboard}
                          className="w-full text-[10px] text-slate-500 hover:text-white flex items-center justify-center gap-2 py-1 rounded hover:bg-slate-700 transition"

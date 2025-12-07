@@ -95,7 +95,7 @@ export const useAppStore = create<AppState>((set) => ({
     cycleDuration: 24,
     nightMode: { enabled: true, startHour: 22.0, endHour: 4.75, brightnessFactor: 0.5 },
     lowPowerMode: { enabled: true, idleFps: 5, dimBacklight: true, batteryThreshold: 20 },
-    weatherApi: { enabled: true, apiKey: 'KEY', location: 'Moreré', intervalMinutes: 60 },
+    weatherApi: { enabled: true, apiKey: 'KEY', location: '-13.613295,-38.908930', intervalMinutes: 60 },
     autonomous: { enabled: true, linkSpeedToTide: true, linkBrightnessToTide: false, linkPaletteToTime: false, linkWeatherToLeds: true },
     animationMode: 'oceanCaustics',
     animationSpeed: 1.0,
@@ -146,7 +146,7 @@ export const useAppStore = create<AppState>((set) => ({
           id: Math.random().toString(36).substr(2,9), 
           name, 
           frames, 
-          description: `Criado em ${new Date().toLocaleTimeString()}` 
+          description: `Snapshot ${new Date().toLocaleTimeString()} • ${frames.length} pts` 
       }] 
   })),
   deleteMock: (id) => set((state) => ({ savedMocks: state.savedMocks.filter(m => m.id !== id) })),

@@ -86,7 +86,7 @@ export interface DataSourceConfig {
   api: ApiConfig;
   tabuaMare: TabuaMareConfig;
   mock: MockConfig;
-  calculation: CalculationParams; // New
+  calculation: CalculationParams; 
   lastValidData: Keyframe | null;
 }
 
@@ -299,7 +299,6 @@ export enum ViewState {
   DISPLAY = 'DISPLAY',
   LED_MASTER = 'LED_MASTER',
   FIRMWARE = 'FIRMWARE',
-  DEBUG = 'DEBUG',
   ESP32 = 'ESP32'
 }
 
