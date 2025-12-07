@@ -4,6 +4,8 @@
 
 
 
+
+
 import { create } from 'zustand';
 import { Keyframe, Device, ViewState, EffectType, FirmwareConfig, DisplayConfig, DisplayWidget, WidgetType, DisplayDriver, ConnectionType, DisplayTheme, RenderMode, DataSourceConfig, TideSourceType, MockWaveType, WeatherData, Notification, DisplayType, SavedMock } from './types';
 
@@ -99,6 +101,7 @@ export const useAppStore = create<AppState>((set) => ({
     deviceName: 'MareFlux_ESP32',
     enableBLE: true,
     enableSerial: true,
+    ota: { enabled: true, password: '' },
     cycleDuration: 24,
     nightMode: { enabled: true, startHour: 22.0, endHour: 4.75, brightnessFactor: 0.5 },
     lowPowerMode: { enabled: true, idleFps: 5, dimBacklight: true, batteryThreshold: 20 },
@@ -162,7 +165,14 @@ export const useAppStore = create<AppState>((set) => ({
 
   setSimulatedTime: (time) => set({ simulatedTime: time }),
   setSystemTime: (time) => set({ systemTime: time }),
-  updateFirmwareConfig: (config) => set((state) => ({ firmwareConfig: { ...state.firmwareConfig, ...config } })),
+  updateFirmwareConfig: (config) => set((state) => {
+    // Merge OTA deeply if present
+    const newConfig = { ...state.firmwareConfig, ...config };
+    if (config.ota && state.firmwareConfig.ota) {
+        newConfig.ota = { ...state.firmwareConfig.ota, ...config.ota };
+    }
+    return { firmwareConfig: newConfig };
+  }),
   updateDataSourceConfig: (config) => set((state) => ({ dataSourceConfig: { ...state.dataSourceConfig, ...config } })),
   setDisplayConfig: (config) => set((state) => ({ displayConfig: { ...state.displayConfig, ...config } })),
   setDisplayWidgets: (widgets) => set({ displayWidgets: widgets }),

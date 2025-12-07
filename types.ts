@@ -2,6 +2,8 @@
 
 
 
+
+
 export enum EffectType {
   STATIC = 'STATIC',
   WAVE = 'WAVE',
@@ -239,6 +241,11 @@ export interface AutonomousConfig {
     linkWeatherToLeds: boolean;
 }
 
+export interface OtaConfig {
+    enabled: boolean;
+    password?: string;
+}
+
 export interface CompiledData {
     timestamp: number;
     frames: Keyframe[];
@@ -260,12 +267,13 @@ export interface FirmwareConfig {
   deviceName: string;
   enableBLE: boolean;
   enableSerial: boolean;
+  ota: OtaConfig; // New OTA config
   cycleDuration: number;
   nightMode: LedNightMode;
   lowPowerMode: LowPowerConfig;
   weatherApi: WeatherApiConfig;
   autonomous: AutonomousConfig;
-  physicalSpecs: PhysicalSpecs; // New Adaptive Config
+  physicalSpecs: PhysicalSpecs; 
   ledCount: number;
   ledPin: number;
   ledBrightness: number;

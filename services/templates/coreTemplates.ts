@@ -1,6 +1,3 @@
-
-
-
 import { FirmwareConfig, DisplayConfig, Keyframe } from '../../types';
 
 export const generatePlatformIO = (config: FirmwareConfig, display: DisplayConfig) => `
@@ -9,6 +6,7 @@ platform = espressif32
 board = esp32dev
 framework = arduino
 monitor_speed = 115200
+board_build.partitions = min_spiffs.csv
 
 lib_deps =
     fastled/FastLED @ ^3.6.0
@@ -31,18 +29,15 @@ build_flags =
     -D LOAD_FONT2=1
     -D LOAD_FONT4=1
     -D SPI_FREQUENCY=${display.spi.frequency}
-    -D SPI_READ_FREQUENCY=20000000
-    -D SPI_TOUCH_FREQUENCY=2500000
+    -D CORE_DEBUG_LEVEL=0 ; Disable system debug to use our LogManager
 `;
 
 export const generateConfigH = (config: FirmwareConfig, keyframes: Keyframe[] = []) => {
-  // Logic: If user compiled custom data, use that. Otherwise use the passed keyframes (usually current chart).
   const sourceFrames = config.compiledData?.frames || keyframes;
   const useFixedWeather = config.compiledData?.useFixedWeather || false;
   const defTemp = config.compiledData?.defaultTemp || 25;
   const defWind = config.compiledData?.defaultWind || 0;
 
-  // Serialize keyframes for fallback C++ array
   const fallbackData = sourceFrames.map(k => 
       `    {${k.timeOffset.toFixed(2)}f, ${k.height}, 0x${k.color.replace('#', '')}, ${k.intensity}, ${(k.effect === 'STATIC' ? 0 : k.effect === 'WAVE' ? 1 : k.effect === 'PULSE' ? 2 : 3)}}`
   ).join(',\n');
@@ -53,54 +48,25 @@ export const generateConfigH = (config: FirmwareConfig, keyframes: Keyframe[] = 
 
 #include <Arduino.h>
 
-#define WIFI_SSID "${config.ssid}"
-#define WIFI_PASSWORD "${config.password}"
-#define DEVICE_NAME "${config.deviceName}"
-
+// --- HARDWARE PIN DEFAULTS ---
 #define LED_PIN ${config.ledPin}
-#define NUM_LEDS ${config.ledCount}
-#define LED_BRIGHTNESS 200
+#define NUM_LEDS_DEFAULT ${config.ledCount}
 
-// Autonomous Logic Configuration (Logic on Chip)
-#define AUTO_LOGIC_ENABLED ${config.autonomous.enabled ? 'true' : 'false'}
-#define AUTO_LINK_SPEED_TIDE ${config.autonomous.linkSpeedToTide ? 'true' : 'false'}
-#define AUTO_LINK_BRIGHT_TIDE ${config.autonomous.linkBrightnessToTide ? 'true' : 'false'}
-#define AUTO_LINK_PALETTE_TIME ${config.autonomous.linkPaletteToTime ? 'true' : 'false'}
-#define AUTO_LINK_WEATHER ${config.autonomous.linkWeatherToLeds ? 'true' : 'false'}
+// --- NETWORK DEFAULTS ---
+#define WIFI_SSID_DEFAULT "${config.ssid}"
+#define WIFI_PASSWORD_DEFAULT "${config.password}"
+#define DEVICE_NAME_DEFAULT "${config.deviceName}"
 
-// Night Mode
-#define NIGHT_MODE_ENABLED ${config.nightMode.enabled ? 'true' : 'false'}
-#define NIGHT_START_HOUR ${config.nightMode.startHour}
-#define NIGHT_END_HOUR ${config.nightMode.endHour}
-#define NIGHT_BRIGHTNESS_FACTOR ${config.nightMode.brightnessFactor}
+// --- SYSTEM ---
+#define WDT_TIMEOUT_SECONDS 10
+#define LOG_BUFFER_SIZE 200
 
-// Low Power Island Mode
-#define LP_MODE_ENABLED ${config.lowPowerMode.enabled ? 'true' : 'false'}
-#define LP_BATTERY_THRESH ${config.lowPowerMode.batteryThreshold}
-#define LP_IDLE_FPS ${config.lowPowerMode.idleFps}
+// --- FEATURE FLAGS (Compile Time) ---
+#define ENABLE_BLE ${config.enableBLE ? '1' : '0'}
+#define ENABLE_WEATHER ${config.weatherApi?.enabled ? '1' : '0'}
+#define ENABLE_OTA ${config.ota?.enabled ? '1' : '0'}
 
-// Weather API
-#define WEATHER_API_ENABLED ${config.weatherApi?.enabled ? 'true' : 'false'}
-#define WEATHER_API_KEY "${config.weatherApi?.apiKey || ''}"
-#define WEATHER_LOCATION "${config.weatherApi?.location || ''}"
-#define WEATHER_INTERVAL ${config.weatherApi?.intervalMinutes || 15}
-#define TABUA_MARE_HARBOR_ID_DEFAULT ${config.weatherApi?.enabled ? 0 : 8} 
-
-// Static Weather Defaults (User Compiled)
-#define FIXED_WEATHER_ENABLED ${useFixedWeather ? 'true' : 'false'}
-#define FIXED_TEMP ${defTemp}
-#define FIXED_WIND ${defWind}
-
-#define API_PORT 80
-#define DEFAULT_CYCLE_DURATION ${config.cycleDuration}.0f
-
-// UUIDs for BLE
-#define SERVICE_UUID        "12345678-1234-1234-1234-1234567890ab"
-#define CHARACTERISTIC_UUID "87654321-4321-4321-4321-ba0987654321"
-
-// --- DATA ROBUSTNESS LAYER ---
-// Hardcoded Fallback Data (Generated from App State)
-// Used if API fails or device is offline
+// --- FALLBACK DATA ---
 struct TideKeyframeConfig {
     float timeOffset;
     uint8_t height;
@@ -118,136 +84,279 @@ ${fallbackData}
 `;
 };
 
+export const generateLogManagerH = () => `
+#ifndef LOG_MANAGER_H
+#define LOG_MANAGER_H
+
+#include <Arduino.h>
+#include <vector>
+
+enum LogLevel {
+    LOG_ERROR = 0,
+    LOG_WARN  = 1,
+    LOG_INFO  = 2,
+    LOG_DEBUG = 3,
+    LOG_TRACE = 4
+};
+
+struct LogEntry {
+    uint32_t timestamp;
+    LogLevel level;
+    String message;
+};
+
+class LogManager {
+public:
+    static void begin(LogLevel level = LOG_INFO);
+    static void log(LogLevel level, const char* format, ...);
+    static void setLevel(LogLevel level);
+    static String getBufferJson();
+    static void clear();
+
+private:
+    static LogLevel _currentLevel;
+    static std::vector<LogEntry> _buffer;
+    static const size_t _maxBufferSize = 200;
+};
+
+// Macros for cleaner code
+#define TIDE_LOGE(fmt, ...) LogManager::log(LOG_ERROR, fmt, ##__VA_ARGS__)
+#define TIDE_LOGW(fmt, ...) LogManager::log(LOG_WARN, fmt, ##__VA_ARGS__)
+#define TIDE_LOGI(fmt, ...) LogManager::log(LOG_INFO, fmt, ##__VA_ARGS__)
+#define TIDE_LOGD(fmt, ...) LogManager::log(LOG_DEBUG, fmt, ##__VA_ARGS__)
+
+#endif
+`;
+
+export const generateLogManagerCpp = () => `
+#include "LogManager.h"
+
+LogLevel LogManager::_currentLevel = LOG_INFO;
+std::vector<LogEntry> LogManager::_buffer;
+
+void LogManager::begin(LogLevel level) {
+    _currentLevel = level;
+    Serial.begin(115200);
+    _buffer.reserve(_maxBufferSize);
+    TIDE_LOGI("Log System Initialized");
+}
+
+void LogManager::setLevel(LogLevel level) {
+    _currentLevel = level;
+    TIDE_LOGI("Log Level changed to %d", level);
+}
+
+void LogManager::log(LogLevel level, const char* format, ...) {
+    if (level > _currentLevel) return;
+
+    char loc_buf[64];
+    char * temp = loc_buf;
+    va_list arg;
+    va_list copy;
+    va_start(arg, format);
+    va_copy(copy, arg);
+    int len = vsnprintf(temp, sizeof(loc_buf), format, copy);
+    va_end(copy);
+    if(len < 0) {
+        va_end(arg);
+        return;
+    };
+    if(len >= sizeof(loc_buf)){
+        temp = (char*) malloc(len+1);
+        if(temp == NULL) {
+            va_end(arg);
+            return;
+        }
+        vsnprintf(temp, len+1, format, arg);
+    }
+    va_end(arg);
+
+    // 1. Print to Serial
+    const char* tag = "[UNK]";
+    if (level == LOG_ERROR) tag = "[ERR]";
+    else if (level == LOG_WARN) tag = "[WRN]";
+    else if (level == LOG_INFO) tag = "[INF]";
+    else if (level == LOG_DEBUG) tag = "[DBG]";
+
+    Serial.printf("%s (%lu) %s\\n", tag, millis(), temp);
+
+    // 2. Buffer Logic (Circular)
+    if (_buffer.size() >= _maxBufferSize) {
+        _buffer.erase(_buffer.begin());
+    }
+    _buffer.push_back({millis(), level, String(temp)});
+
+    if(temp != loc_buf){
+        free(temp);
+    }
+}
+
+String LogManager::getBufferJson() {
+    String json = "[";
+    for(size_t i=0; i<_buffer.size(); i++) {
+        json += "{\\"t\\":";
+        json += _buffer[i].timestamp;
+        json += ",\\"l\\":";
+        json += _buffer[i].level;
+        json += ",\\"m\\":\\"";
+        json += _buffer[i].message;
+        json += "\\"}";
+        if (i < _buffer.size() - 1) json += ",";
+    }
+    json += "]";
+    return json;
+}
+
+void LogManager::clear() {
+    _buffer.clear();
+}
+`;
+
 export const generateMainCpp = (displayConfig: DisplayConfig) => `
 #include <Arduino.h>
+#include <esp_task_wdt.h>
 #include "config.h"
+#include "LogManager.h"
+#include "NVSManager.h"
 #include "WifiManager.h"
-#include "MareEngine.h" // Tide Data Manager
+#include "OTAManager.h"
+#include "MareEngine.h"
 #include "RestServer.h"
 #include "DisplayManager.h"
-#include "SerialManager.h"
-
-// --- NEW MODULAR LED SYSTEM ---
 #include "modules/led_ws2812b/ws2812b_controller.h"
 #include "modules/led_ws2812b/ws2812b_animations.h"
 #include "modules/led_ws2812b/ws2812b_config.h"
 
-#ifdef ENABLE_BLE
-#include "BleManager.h"
-#endif
-#if WEATHER_API_ENABLED
-#include "WeatherManager.h"
-#endif
-
-// Global Instances
+// --- GLOBAL OBJECTS ---
 WS2812BController ledController;
 WifiManager wifiManager;
-MareEngine engine; // Holds Tide Data
+OTAManager otaManager;
+MareEngine engine;
 RestServer server(&engine);
 DisplayManager display;
-SerialManager serialManager(&engine);
 
-#ifdef ENABLE_BLE
-BleManager bleManager(&engine);
-#endif
+// --- TASK HANDLES ---
+TaskHandle_t TaskHandle_Net;
+TaskHandle_t TaskHandle_Anim;
 
-#if WEATHER_API_ENABLED
-WeatherManager weatherManager(&engine);
-#endif
+// --- SHARED DATA (Protected via atomic or critical section in prod) ---
+volatile float shared_TideNorm = 0.5;
+volatile float shared_Wind = 0;
+volatile int shared_Humidity = 60;
+bool safeMode = false;
 
-// Fake sensor reading
-float readBatteryLevel() { return 100.0; } 
+// --- TASK: NETWORK & SYSTEM (Core 0) ---
+void TaskNetwork(void *pvParameters) {
+    TIDE_LOGI("Task Network started on Core %d", xPortGetCoreID());
+    
+    // WDT for this task
+    esp_task_wdt_init(WDT_TIMEOUT_SECONDS, true);
+    esp_task_wdt_add(NULL);
+
+    // Connect
+    if (!wifiManager.connect()) {
+        TIDE_LOGE("Wifi Failed. System in Offline Mode.");
+    }
+    otaManager.begin();
+    server.begin();
+
+    while(1) {
+        // Critical System Loop
+        otaManager.handle();
+        server.handle();
+        
+        // Feed Dog
+        esp_task_wdt_reset();
+        
+        // Yield to let IDLE task run (needed for ESP functionality)
+        vTaskDelay(10 / portTICK_PERIOD_MS);
+    }
+}
+
+// --- TASK: ANIMATION & LOGIC (Core 1) ---
+void TaskAnimation(void *pvParameters) {
+    TIDE_LOGI("Task Animation started on Core %d", xPortGetCoreID());
+    
+    // Init Hardware
+    WS2812BConfigManager::load(); // Load NVS Config
+    ledController.begin();
+    WS2812BAnimations::attachController(&ledController);
+    
+    display.begin();
+    display.setBrightness(${displayConfig.brightness});
+    display.showSplashScreen();
+
+    // WDT for this task
+    esp_task_wdt_add(NULL);
+
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = 30; // ~33 FPS
+
+    while(1) {
+        if (!safeMode) {
+            // 1. Logic Update
+            engine.update();
+            shared_TideNorm = engine.getNormalizedTide();
+            
+            // 2. Display Update
+            display.update(engine.getCurrentHeightPercent());
+
+            // 3. LED Update
+            String mode = WS2812BConfigManager::config.mode;
+            WS2812BAnimations::run(mode, shared_TideNorm, shared_Wind, shared_Humidity);
+        } else {
+             // Safe Mode Blink
+             ledController.clear();
+             ledController.setPixel(0, CRGB::Red);
+             ledController.show();
+             vTaskDelay(500 / portTICK_PERIOD_MS);
+             ledController.clear();
+             ledController.show();
+             vTaskDelay(500 / portTICK_PERIOD_MS);
+        }
+        
+        esp_task_wdt_reset();
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
+}
 
 void setup() {
-  Serial.begin(115200);
-  delay(1000);
-  Serial.println("\n\n==================================");
-  Serial.println("[SYSTEM] Iniciando Controlador TideFlux...");
-  Serial.println("==================================");
+    // 1. Early Init
+    LogManager::begin(LOG_DEBUG);
+    TIDE_LOGI("BOOT: TideFlux System v2.1");
 
-  // Init LED Module
-  Serial.println("[INIT] WS2812B LED Controller...");
-  WS2812BConfigManager::load();
-  ledController.begin();
-  WS2812BAnimations::attachController(&ledController);
-  WS2812BAnimations::idleAmbient(); // Start with idle
+    // 2. NVS & Recovery Check
+    if (!NVSManager::begin()) {
+        TIDE_LOGE("NVS Mount Failed!");
+    }
+    
+    int crashCount = NVSManager::getInt("crash_count", 0);
+    if (crashCount > 3) {
+        TIDE_LOGE("Too many crashes (%d). Entering SAFE MODE.", crashCount);
+        safeMode = true;
+    }
+    // Increment crash count (cleared after successful boot duration)
+    NVSManager::setInt("crash_count", crashCount + 1);
 
-  // Display Setup
-  Serial.println("[INIT] Display GC9A01...");
-  display.begin();
-  display.setBrightness(${displayConfig.brightness});
-  display.showSplashScreen();
-  delay(2000);
+    // 3. Create Tasks
+    // Network on Core 0
+    xTaskCreatePinnedToCore(
+        TaskNetwork, "NetTask", 8192, NULL, 1, &TaskHandle_Net, 0
+    );
 
-  // --- Dependency Injection for Weather/Port Config ---
-  #if WEATHER_API_ENABLED
-  Serial.println("[INIT] Weather Manager Dependencies...");
-  serialManager.setWeatherManager(&weatherManager);
-  server.setWeatherManager(&weatherManager);
-  #ifdef ENABLE_BLE
-  bleManager.setWeatherManager(&weatherManager);
-  #endif
-  #endif
+    // Animation on Core 1 (FastLED prefers this)
+    xTaskCreatePinnedToCore(
+        TaskAnimation, "AnimTask", 8192, NULL, 1, &TaskHandle_Anim, 1
+    );
 
-  // WiFi
-  wifiManager.connect();
-  
-  // Servers
-  Serial.println("[INIT] Starting REST Server...");
-  server.begin();
-
-  #ifdef ENABLE_BLE
-  Serial.println("[INIT] Starting BLE Stack...");
-  bleManager.begin(DEVICE_NAME);
-  #endif
-
-  Serial.println("[SYSTEM] Sistema Pronto. Loop ativo.");
+    // 4. Mark Boot Successful after 10s
+    delay(10000); 
+    NVSManager::setInt("crash_count", 0);
+    TIDE_LOGI("Boot Verified Stable.");
 }
 
 void loop() {
-  server.handle();
-  engine.update();
-  serialManager.handle(); 
-  
-  // Variables for Logic
-  float currentWindSpeed = 0.0f;
-  int currentHumidity = 0;
-
-  #if WEATHER_API_ENABLED
-  weatherManager.update();
-  WeatherData w = weatherManager.getData();
-  display.setWeatherData(w.temp, w.humidity, w.windSpeed, w.windDir);
-  currentWindSpeed = w.windSpeed;
-  currentHumidity = w.humidity;
-  #else
-    // Check if fixed weather compiled in
-    #if FIXED_WEATHER_ENABLED
-       currentWindSpeed = FIXED_WIND;
-       // Humidity not currently compiled in template but could be added
-       display.setWeatherData(FIXED_TEMP, 60, FIXED_WIND, 0);
-    #endif
-  #endif
-
-  // --- HIERARCHY INTEGRATION ---
-  // 1. Get Data (Data Manager)
-  float tideNorm = engine.getNormalizedTide(); // 0.0 - 1.0
-  float tidePct = engine.getCurrentHeightPercent();
-  
-  // 2. Update Display
-  display.update(tidePct);
-
-  // 3. Update LEDs (Animations Module)
-  // The Run() method in Animations now handles Autonomous Logic based on config.h flags
-  // We pass the current Animation Mode string from config manager AND weather data
-  WS2812BAnimations::run(WS2812BConfigManager::config.mode, tideNorm, currentWindSpeed, currentHumidity);
-  
-  // --- LOW POWER ---
-  int frameDelay = 30; 
-  if (LP_MODE_ENABLED) {
-      if (readBatteryLevel() < LP_BATTERY_THRESH) {
-          frameDelay = 1000 / LP_IDLE_FPS; 
-      }
-  }
-  delay(frameDelay); 
+    // Main loop is empty in FreeRTOS paradigm
+    vTaskDelete(NULL);
 }
 `;

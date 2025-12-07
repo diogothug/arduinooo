@@ -2,15 +2,17 @@ import React, { useState } from 'react';
 import { useAppStore } from '../store';
 import { 
     generateMainCpp, generateConfigH, generateMareEngineCpp, generateMareEngineH,
-    generateWifiManagerCpp, generateWifiManagerH, 
+    generateWifiManagerCpp, generateWifiManagerH, generateOTAManagerCpp, generateOTAManagerH,
     generateRestServerCpp, generateRestServerH, generateDisplayManagerCpp, generateDisplayManagerH,
     generatePlatformIO, generateSerialManagerCpp, generateSerialManagerH, generateBleManagerCpp, generateBleManagerH,
     generateWeatherManagerCpp, generateWeatherManagerH,
     generateWs2812bConfigH, generateWs2812bConfigCpp,
     generateWs2812bControllerH, generateWs2812bControllerCpp,
-    generateWs2812bAnimationsH, generateWs2812bAnimationsCpp
+    generateWs2812bAnimationsH, generateWs2812bAnimationsCpp,
+    generateLogManagerH, generateLogManagerCpp,
+    generateNVSManagerH, generateNVSManagerCpp
 } from '../services/firmwareTemplates';
-import { Download, Cpu, Code, Wifi, Package, FileCode, Bluetooth, Usb, Sun, Moon, CloudSun, FolderTree, Database, Check, BrainCircuit, Activity, Zap, Wind, Lock, Terminal } from 'lucide-react';
+import { Download, Cpu, Code, Wifi, Package, FileCode, Bluetooth, Usb, Sun, Moon, CloudSun, FolderTree, Database, Check, BrainCircuit, Activity, Zap, Wind, Lock, Terminal, Radio } from 'lucide-react';
 import JSZip from 'jszip';
 
 export const FirmwareBuilder: React.FC = () => {
@@ -21,9 +23,15 @@ export const FirmwareBuilder: React.FC = () => {
   const files: Record<string, string> = {
       'platformio.ini': generatePlatformIO(firmwareConfig, displayConfig),
       'src/main.cpp': generateMainCpp(displayConfig),
-      'src/config.h': generateConfigH(firmwareConfig, keyframes), // Pass keyframes here
+      'src/config.h': generateConfigH(firmwareConfig, keyframes),
+      'src/LogManager.h': generateLogManagerH(),
+      'src/LogManager.cpp': generateLogManagerCpp(),
+      'src/NVSManager.h': generateNVSManagerH(),
+      'src/NVSManager.cpp': generateNVSManagerCpp(),
       'src/WifiManager.h': generateWifiManagerH(),
       'src/WifiManager.cpp': generateWifiManagerCpp(),
+      'src/OTAManager.h': generateOTAManagerH(),
+      'src/OTAManager.cpp': generateOTAManagerCpp(),
       'src/MareEngine.h': generateMareEngineH(),
       'src/MareEngine.cpp': generateMareEngineCpp(keyframes), 
       'src/RestServer.h': generateRestServerH(),
@@ -122,46 +130,12 @@ export const FirmwareBuilder: React.FC = () => {
                                 className="w-4 h-4 cursor-pointer"
                              />
                         </div>
-                        <div className="flex items-center justify-between bg-slate-900 p-3 rounded border border-slate-700">
-                             <div className="flex items-center gap-2">
-                                 <Terminal size={16} className={firmwareConfig.enableSerial ? "text-green-400" : "text-slate-500"} />
-                                 <span className="text-xs font-bold text-slate-300">Serial Debug Monitor</span>
-                             </div>
-                             <input 
-                                type="checkbox" 
-                                checked={firmwareConfig.enableSerial}
-                                onChange={e => updateFirmwareConfig({ enableSerial: e.target.checked })}
-                                className="w-4 h-4 cursor-pointer"
-                             />
-                        </div>
                     </div>
                  </div>
-                
-                {/* Logic Summary (Read-Only) */}
-                <div className="pt-4 border-t border-slate-700">
-                    <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
-                       <BrainCircuit size={14} className="text-pink-400" /> Resumo da Lógica (Read-Only)
-                    </h3>
-                    <div className="bg-slate-900 p-4 rounded border border-slate-700 space-y-3">
-                         <div className="flex items-center justify-between text-xs">
-                             <span className="text-slate-400">Modo Autônomo</span>
-                             <span className={`font-bold ${firmwareConfig.autonomous.enabled ? 'text-green-400' : 'text-slate-500'}`}>
-                                 {firmwareConfig.autonomous.enabled ? 'ATIVO' : 'INATIVO'}
-                             </span>
-                         </div>
-                         <div className="flex items-center justify-between text-xs">
-                             <span className="text-slate-400">Layout</span>
-                             <span className="font-bold text-cyan-400">{firmwareConfig.ledLayoutType}</span>
-                         </div>
-                         <div className="mt-2 text-[10px] text-slate-500 italic flex items-center gap-1">
-                             <Lock size={10}/> Ajuste estas opções na aba 'LED Master'.
-                         </div>
-                    </div>
-                </div>
 
                 <div className="pt-4 border-t border-slate-700">
                     <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
-                        <Wifi size={16} /> Credenciais WiFi
+                        <Wifi size={16} /> Rede & OTA
                     </h3>
                     <div className="space-y-3">
                          <div>
@@ -181,6 +155,21 @@ export const FirmwareBuilder: React.FC = () => {
                                 onChange={(e) => updateFirmwareConfig({ password: e.target.value })}
                                 className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-white"
                             />
+                        </div>
+                    </div>
+                    
+                    <div className="mt-3 bg-slate-900 p-3 rounded border border-slate-700">
+                        <div className="flex items-center justify-between mb-2">
+                             <div className="flex items-center gap-2">
+                                 <Radio size={14} className={firmwareConfig.ota?.enabled ? "text-amber-400" : "text-slate-500"} />
+                                 <span className="text-xs font-bold text-slate-300">OTA Update</span>
+                             </div>
+                             <input 
+                                type="checkbox" 
+                                checked={firmwareConfig.ota?.enabled}
+                                onChange={e => updateFirmwareConfig({ ota: { ...firmwareConfig.ota, enabled: e.target.checked } })}
+                                className="w-4 h-4 cursor-pointer"
+                             />
                         </div>
                     </div>
                 </div>
@@ -204,21 +193,6 @@ export const FirmwareBuilder: React.FC = () => {
                         className={`px-4 py-3 text-sm font-medium flex items-center gap-2 whitespace-nowrap ${activeTab === fileName ? 'text-cyan-400 bg-slate-900 border-t-2 border-cyan-400' : 'text-slate-400 hover:text-slate-200'}`}
                     >
                         <FileCode size={14} /> {fileName.replace('src/', '')}
-                    </button>
-                ))}
-            </div>
-            {/* Sub-bar for modules */}
-            <div className="flex border-b border-slate-700 bg-slate-950/50 overflow-x-auto custom-scrollbar shrink-0">
-                <div className="px-3 py-2 text-xs text-slate-500 flex items-center gap-1">
-                    <FolderTree size={12}/> modules/led_ws2812b/
-                </div>
-                {Object.keys(files).filter(f => f.includes("modules/")).map(fileName => (
-                     <button 
-                        key={fileName}
-                        onClick={() => setActiveTab(fileName)}
-                        className={`px-3 py-2 text-xs font-medium flex items-center gap-2 whitespace-nowrap ${activeTab === fileName ? 'text-amber-400 bg-slate-900' : 'text-slate-500 hover:text-slate-300'}`}
-                    >
-                        {fileName.split('/').pop()}
                     </button>
                 ))}
             </div>
