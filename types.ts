@@ -247,6 +247,12 @@ export interface CompiledData {
     useFixedWeather: boolean;
 }
 
+export interface PhysicalSpecs {
+    stripLengthMeters: number;
+    ledDensity: 30 | 60 | 96 | 144; // LEDs per meter
+    maxPowerAmps: number; // For brightness limiting
+}
+
 export interface FirmwareConfig {
   ssid: string;
   password: string;
@@ -258,6 +264,7 @@ export interface FirmwareConfig {
   lowPowerMode: LowPowerConfig;
   weatherApi: WeatherApiConfig;
   autonomous: AutonomousConfig;
+  physicalSpecs: PhysicalSpecs; // New Adaptive Config
   ledCount: number;
   ledPin: number;
   ledBrightness: number;

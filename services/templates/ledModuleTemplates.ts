@@ -1,4 +1,6 @@
 
+
+
 import { FirmwareConfig } from '../../types';
 
 export const generateWs2812bConfigH = () => `
@@ -19,6 +21,11 @@ struct WS2812BConfig {
     int matrixHeight; 
     String layout;    // "STRIP", "MATRIX", "RING"
     String order;     // "GRB"
+    
+    // Physical Specs for Adaptive Animation
+    float lengthMeters;
+    int ledDensity;   // LEDs/meter
+    float maxPowerAmps;
     
     // Animation Engine Params
     String mode;      
@@ -41,6 +48,7 @@ export const generateWs2812bConfigCpp = (config: FirmwareConfig) => {
     const isMatrix = config.ledLayoutType === 'MATRIX';
     const w = isMatrix ? (config.ledMatrixWidth || 10) : config.ledCount;
     const h = isMatrix ? Math.ceil(config.ledCount / w) : 1;
+    const phys = config.physicalSpecs || { stripLengthMeters: 1.0, ledDensity: 60, maxPowerAmps: 2.0 };
 
     return `
 #include "ws2812b_config.h"
@@ -54,6 +62,9 @@ WS2812BConfig WS2812BConfigManager::config = {
     ${h}, // Height
     "${config.ledLayoutType}",
     "GRB",
+    ${phys.stripLengthMeters.toFixed(2)}f, // Length in Meters
+    ${phys.ledDensity}, // Density (LEDs/m)
+    ${phys.maxPowerAmps.toFixed(1)}f, // Max Amps
     "${config.animationMode || 'oceanCaustics'}", 
     ${config.animationSpeed.toFixed(1)}f, 
     ${config.animationIntensity.toFixed(1)}f, 
@@ -129,6 +140,14 @@ void WS2812BController::begin() {
     leds = new CRGB[_numLeds];
     
     FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, _numLeds).setCorrection(TypicalLEDStrip);
+    
+    // Power Limiting (Adaptive Brightness)
+    // 5V * MaxAmps * 1000 = mW
+    float maxAmps = WS2812BConfigManager::config.maxPowerAmps;
+    if (maxAmps > 0.1) {
+        FastLED.setMaxPowerInVoltsAndMilliamps(5, maxAmps * 1000);
+    }
+
     FastLED.setBrightness(WS2812BConfigManager::config.brightness);
     
     clear();
@@ -188,6 +207,14 @@ struct AnimationParams {
     float intensity;    // 0.0 to 1.0
     CRGBPalette16 palette;
     float tideLevel;    // 0.0 to 1.0 (Normalized)
+    
+    // Adaptive Physical Params
+    float meterPos(int pixelIndex) {
+        return (float)pixelIndex / (float)WS2812BConfigManager::config.ledDensity;
+    }
+    float totalMeters() {
+        return WS2812BConfigManager::config.lengthMeters;
+    }
 };
 
 class WS2812BAnimations {
@@ -201,7 +228,7 @@ public:
     static void idleAmbient();
     static void tideFillAnimation(float tideNorm); 
 
-    // --- Premium Generative Engines 2.0 ---
+    // --- Premium Generative Engines 2.0 (Adaptive) ---
     static void tideWaveVertical(AnimationParams p, uint32_t t);
     static void oceanCaustics(AnimationParams p, uint32_t t);
     static void tideFill2(AnimationParams p, uint32_t t);
@@ -304,11 +331,17 @@ void WS2812BAnimations::tideFillAnimation(float tideNorm) {
     }
 }
 
-// 🌊 ALGORITHM: TIDE WAVE VERTICAL
+// 🌊 ALGORITHM: TIDE WAVE VERTICAL (ADAPTIVE)
 void WS2812BAnimations::tideWaveVertical(AnimationParams p, uint32_t t) {
     int w = _ctrl->getWidth();
     int h = _ctrl->getHeight();
     
+    // Density Adaptation:
+    // Scale the wave logic so that 1 meter has constant wave frequency
+    // regardless of whether we have 30 or 144 LEDs.
+    float pixelsPerMeter = (float)WS2812BConfigManager::config.ledDensity;
+    if (pixelsPerMeter < 1) pixelsPerMeter = 30; // Safety
+
     bool isRising = (p.tideLevel >= _previousTideLevel);
     int dir = isRising ? 1 : -1;
     int fillH = p.tideLevel * h;
@@ -317,8 +350,15 @@ void WS2812BAnimations::tideWaveVertical(AnimationParams p, uint32_t t) {
         if (y < fillH) {
             float relDepth = (float)y / (float)fillH;
             
-            // Frequency: Spatial (y) and Temporal (t)
-            uint8_t wave = sin8((y * 10) - (t * p.speed * 0.1 * dir));
+            // Physical Position (in Meters)
+            float posMeters = y / pixelsPerMeter;
+            
+            // Frequency: ~10 waves per meter? Adjusted constant 30 -> 10 per meter
+            // Time: t is ms. 1000ms = 1 sec.
+            // Speed = 1 m/s (approx).
+            
+            // Use physical coords for the sine wave
+            uint8_t wave = sin8((posMeters * 50) - (t * p.speed * 0.1 * dir));
             
             CRGB c1 = CRGB(0, 0, 50);   
             CRGB c2 = CRGB(0, 100, 150); 
@@ -331,7 +371,8 @@ void WS2812BAnimations::tideWaveVertical(AnimationParams p, uint32_t t) {
             }
             
             if (relDepth > 0.9) {
-               uint8_t foam = sin8(y * 20 + t * 0.2);
+               // Foam at top
+               uint8_t foam = sin8(posMeters * 100 + t * 0.2);
                if (foam > 200) color = c3;
             }
             
@@ -343,17 +384,46 @@ void WS2812BAnimations::tideWaveVertical(AnimationParams p, uint32_t t) {
     }
 }
 
-// 🌊 ALGORITHM: OCEAN CAUSTICS
+// 🌊 ALGORITHM: OCEAN CAUSTICS (ADAPTIVE)
 void WS2812BAnimations::oceanCaustics(AnimationParams p, uint32_t t) {
     int w = _ctrl->getWidth();
     int h = _ctrl->getHeight();
     
-    uint16_t scale = 30; 
+    // Adaptive Scaling
+    float density = (float)WS2812BConfigManager::config.ledDensity;
+    // Base scale for noise. A scale of 30 was used for ~60leds/m.
+    // If we have 144 leds/m, we need a smaller step per pixel to keep pattern size same.
+    // Base density 60 -> Scale 30. Ratio = 0.5.
+    float scale = (30.0 / 60.0) * density; 
+    
     uint16_t speed = t * (p.speed * 0.5);
 
     for(int x = 0; x < w; x++) {
         for(int y = 0; y < h; y++) {
-            uint8_t noise = inoise8(x * scale, y * scale + speed, t / 3);
+            // x/y are pixels. If density doubles, x doubles for same physical distance.
+            // We want noise lookup to stay constant for distance.
+            // inoise8 expects integer input.
+            // Original: x * 30.
+            // Adaptive: x * (30/60 * density) ? No.
+            // If density is 120, x is 2x larger. To keep texture size same, we must sample slower?
+            // Wait. High Density = More pixels per meter.
+            // To cover same noise 'area' in 1 meter:
+            // 60 pixels * Step S = NoiseArea
+            // 120 pixels * Step S2 = NoiseArea -> S2 must be S/2.
+            
+            // So Scale factor should be INVERSE to density.
+            // Let's normalize everything to "Meters".
+            // float xMeters = x / density;
+            // float yMeters = y / density;
+            // int noiseInputX = xMeters * CONSTANT_NOISE_SCALE;
+            
+            // Constant to make it look good (approx 2000 units per meter for noise function)
+            uint32_t noiseScale = 2000; 
+            
+            int nx = (x * noiseScale) / density;
+            int ny = (y * noiseScale) / density;
+
+            uint8_t noise = inoise8(nx, ny + speed, t / 3);
             
             uint8_t minBright = 10 * p.intensity;
             uint8_t maxBright = 255 * p.intensity;
@@ -374,6 +444,7 @@ void WS2812BAnimations::tideFill2(AnimationParams p, uint32_t t) {
     int h = _ctrl->getHeight();
     float fillHeight = p.tideLevel * h;
     int waterTopY = (int)fillHeight;
+    float density = (float)WS2812BConfigManager::config.ledDensity;
 
     for(int y = 0; y < h; y++) {
         if (y < waterTopY) {
@@ -381,11 +452,18 @@ void WS2812BAnimations::tideFill2(AnimationParams p, uint32_t t) {
             CRGB color = ColorFromPalette(p.palette, depth);
             color.nscale8(p.intensity * 255);
             
-            uint8_t ripple = sin8(y * 10 - t/10);
+            // Adaptive Ripple Frequency
+            // Use physical Y (y/density) to determine wave phase
+            float yMeters = y / density;
+            uint8_t ripple = sin8(yMeters * 600 - t/10); // 600 is arbitrary tuning freq
+            
             if (ripple > 240) color += CRGB(20 * p.intensity, 20 * p.intensity, 20 * p.intensity);
             
             for(int x=0; x<w; x++) {
-                 uint8_t hWave = sin8(x*10 + t/5);
+                 // Adaptive Surface Wave
+                 float xMeters = x / density;
+                 uint8_t hWave = sin8(xMeters*600 + t/5);
+                 
                  CRGB c = color;
                  if (y == waterTopY - 1 && hWave > 200) c += CRGB::White; 
                  _ctrl->setPixelXY(x, y, c);
@@ -400,13 +478,20 @@ void WS2812BAnimations::tideFill2(AnimationParams p, uint32_t t) {
 void WS2812BAnimations::auroraWaves(AnimationParams p, uint32_t t) {
     int w = _ctrl->getWidth();
     int h = _ctrl->getHeight();
+    // Simplified adaptive scaling for Aurora
+    // Just scaling input coordinates down if density is high
+    float scale = 60.0 / (float)WS2812BConfigManager::config.ledDensity;
+    
     for (int x = 0; x < w; x++) {
-        int wave1 = sin8((x * 10) + (t * p.speed / 3));
-        int wave2 = cos8((x * 15) - (t * p.speed / 2));
-        int wave3 = sin8((x * 5) + (t * p.speed));
+        int effX = x * scale;
+        
+        int wave1 = sin8((effX * 10) + (t * p.speed / 3));
+        int wave2 = cos8((effX * 15) - (t * p.speed / 2));
+        int wave3 = sin8((effX * 5) + (t * p.speed));
         uint8_t hue = wave1 + wave2 + wave3;
         for (int y = 0; y < h; y++) {
-             uint8_t vShift = sin8(y * 8 + t/5);
+             int effY = y * scale;
+             uint8_t vShift = sin8(effY * 8 + t/5);
              CRGB color = ColorFromPalette(p.palette, hue + vShift, 255 * p.intensity);
              _ctrl->setPixelXY(x, y, color);
         }
@@ -418,7 +503,13 @@ void WS2812BAnimations::deepSeaParticles(AnimationParams p, uint32_t t) {
     _ctrl->fadeAll(235);
     int w = _ctrl->getWidth();
     int h = _ctrl->getHeight();
-    if (random8() < (20 * p.intensity)) {
+    
+    // Probability scaled by total LEDs to keep particle count density similar
+    // Base probability 20 for ~60 LEDs.
+    int numLeds = w*h;
+    int chance = map(numLeds, 0, 300, 20, 5); 
+    
+    if (random8() < (chance * p.intensity)) {
         int x = random16(w);
         int y = random16(h);
         CRGB c = ColorFromPalette(p.palette, random8());
@@ -430,9 +521,16 @@ void WS2812BAnimations::deepSeaParticles(AnimationParams p, uint32_t t) {
 void WS2812BAnimations::stormSurge(AnimationParams p, uint32_t t) {
     int w = _ctrl->getWidth();
     int h = _ctrl->getHeight();
+    float density = (float)WS2812BConfigManager::config.ledDensity;
+    // Noise Scale ~3000 per meter
+    uint32_t scale = 3000;
+    
     for(int x=0; x<w; x++) {
         for(int y=0; y<h; y++) {
-             uint8_t noise = inoise8(x*50, y*50, t * p.speed);
+             int nx = (x * scale) / density;
+             int ny = (y * scale) / density;
+             
+             uint8_t noise = inoise8(nx, ny, t * p.speed);
              if (noise > 220) {
                  _ctrl->setPixelXY(x, y, CRGB(255 * p.intensity, 255 * p.intensity, 255 * p.intensity)); 
              } else {
@@ -456,10 +554,13 @@ void WS2812BAnimations::coralReef(AnimationParams p, uint32_t t) {
 
     int waterH = p.tideLevel * h; 
     
+    // Pixel-Art style logic, harder to make fully adaptive without losing grid alignment
+    // We will just scale the region sizes roughly
+    
     for(int y=0; y<h; y++) {
         for(int x=0; x<w; x++) {
             CRGB pixelColor = C_SAND;
-            bool isUnderwater = (y < waterH); // Simple check from bottom (0) to waterH
+            bool isUnderwater = (y < waterH); 
             
             if (isUnderwater) {
                 if (y > waterH - 4) pixelColor = C_BL1; 
@@ -467,7 +568,8 @@ void WS2812BAnimations::coralReef(AnimationParams p, uint32_t t) {
                 if (random8() < 10) pixelColor += CRGB(20, 20, 20);
             }
             
-            if (y >= 0 && y <= 3) { // Bottom elements
+            // Bottom 10% is sea floor
+            if (y < (h * 0.15)) { 
                 if (x % 4 == 2) pixelColor = C_CORAL; 
                 if (x % 7 == 0) pixelColor = C_ROCK;
             }
@@ -482,8 +584,12 @@ void WS2812BAnimations::coralReef(AnimationParams p, uint32_t t) {
 void WS2812BAnimations::neonPulse(AnimationParams p, uint32_t t) {
      uint8_t hue = (t / 10) * p.speed;
      int num = _ctrl->getNumLeds();
+     // Adaptive gradient width
+     float density = (float)WS2812BConfigManager::config.ledDensity;
+     float step = 255.0 / density; // 1 full rainbow per meter approximately? 
+     
      for(int i=0; i<num; i++) {
-         _ctrl->setPixel(i, CHSV(hue + (i*5), 255, 255 * p.intensity));
+         _ctrl->setPixel(i, CHSV(hue + (int)(i*step), 255, 255 * p.intensity));
      }
 }
 `;

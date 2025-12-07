@@ -1,8 +1,10 @@
 
 
-import React from 'react';
+
+
+import React, { useEffect } from 'react';
 import { useAppStore } from '../../store';
-import { LayoutTemplate, AlignVerticalJustifyCenter, Grid, Circle, RotateCw, Mountain, Spline, Palette, Cpu, Waves, Sun, Anchor, Zap, Wind, Moon, Activity, Plus, Trash2, ArrowUp, ArrowDown, BarChart3, AlertOctagon, ArrowUpCircle } from 'lucide-react';
+import { LayoutTemplate, AlignVerticalJustifyCenter, Grid, Circle, RotateCw, Mountain, Spline, Palette, Cpu, Waves, Sun, Anchor, Zap, Wind, Moon, Activity, Plus, Trash2, ArrowUp, ArrowDown, BarChart3, AlertOctagon, ArrowUpCircle, Ruler, BatteryCharging } from 'lucide-react';
 
 const PRESETS = [
     { id: 'tideWaveVertical', label: 'Onda Vertical (Direção)', icon: <ArrowUpCircle size={16} className="text-blue-400"/>, desc: 'Ondas sobem/descem conforme a maré.' },
@@ -44,11 +46,119 @@ export const LedConfigPanel: React.FC<LedConfigPanelProps> = ({ simMode, setSimM
         }
     };
 
+    // Auto-calculate Total LEDs based on Physical Specs
+    useEffect(() => {
+        const { stripLengthMeters, ledDensity } = firmwareConfig.physicalSpecs || { stripLengthMeters: 1, ledDensity: 60 };
+        const calculated = Math.round(stripLengthMeters * ledDensity);
+        // Only update if significantly different to avoid loop, and logic is implicit
+        // We actually want the user to click "Auto-Calc" or toggle a mode, 
+        // but for now let's just show the calculated value as a hint or optional Apply.
+    }, [firmwareConfig.physicalSpecs]);
+
+    const applyPhysicalCalculation = () => {
+        const { stripLengthMeters, ledDensity } = firmwareConfig.physicalSpecs;
+        const total = Math.round(stripLengthMeters * ledDensity);
+        updateFirmwareConfig({ ledCount: total });
+        // Also update matrix dimensions if sensible
+        if (firmwareConfig.ledLayoutType === 'MATRIX') {
+            // Assume square-ish or keep width fixed?
+            // Let's just update count, user fixes width.
+        }
+    };
+
+    const estimatePower = () => {
+        const maxAmpsPerLed = 0.06; // 60mA white full brightness
+        const totalMax = firmwareConfig.ledCount * maxAmpsPerLed;
+        const typical = totalMax * 0.3; // 30% duty cycle typical
+        return { max: totalMax.toFixed(1), typical: typical.toFixed(1) };
+    };
+
+    const powerStats = estimatePower();
+
     return (
         <div className="space-y-6 animate-in fade-in pb-10">
+             {/* PHYSICAL SPECS & POWER */}
+             <div className="bg-slate-900 p-4 rounded border border-slate-700 space-y-4 relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-2 opacity-10">
+                    <Ruler size={64} />
+                </div>
+                <h3 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2 relative z-10">
+                    <Ruler size={14}/> Física & Energia (Adaptativo)
+                </h3>
+                
+                <div className="grid grid-cols-2 gap-4 relative z-10">
+                    <div>
+                        <label className="text-[9px] block text-slate-500 font-bold uppercase mb-1">Comprimento (m)</label>
+                        <input 
+                            type="number" 
+                            step="0.1"
+                            value={firmwareConfig.physicalSpecs.stripLengthMeters} 
+                            onChange={e=>updateFirmwareConfig({ physicalSpecs: {...firmwareConfig.physicalSpecs, stripLengthMeters: parseFloat(e.target.value)} })} 
+                            className="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white text-xs focus:border-cyan-500 outline-none"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-[9px] block text-slate-500 font-bold uppercase mb-1">Densidade (LEDs/m)</label>
+                        <select 
+                            value={firmwareConfig.physicalSpecs.ledDensity} 
+                            onChange={e=>updateFirmwareConfig({ physicalSpecs: {...firmwareConfig.physicalSpecs, ledDensity: parseInt(e.target.value) as any} })}
+                            className="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white text-xs focus:border-cyan-500 outline-none"
+                        >
+                            <option value={30}>30 LEDs/m</option>
+                            <option value={60}>60 LEDs/m</option>
+                            <option value={96}>96 LEDs/m</option>
+                            <option value={144}>144 LEDs/m</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div className="flex items-center justify-between bg-slate-800/50 p-2 rounded border border-slate-700/50 relative z-10">
+                    <div className="flex flex-col">
+                        <span className="text-[9px] text-slate-500 uppercase">Total Calculado</span>
+                        <span className="text-sm font-mono text-cyan-400 font-bold">{Math.round(firmwareConfig.physicalSpecs.stripLengthMeters * firmwareConfig.physicalSpecs.ledDensity)} LEDs</span>
+                    </div>
+                    <button 
+                        onClick={applyPhysicalCalculation}
+                        className="text-[10px] bg-cyan-900/30 hover:bg-cyan-900/50 text-cyan-300 border border-cyan-800/50 px-3 py-1.5 rounded transition"
+                    >
+                        Aplicar ao Firmware
+                    </button>
+                </div>
+
+                <div className="pt-2 border-t border-slate-800 relative z-10">
+                     <div className="flex items-center gap-2 mb-2">
+                        <BatteryCharging size={14} className="text-yellow-500"/>
+                        <span className="text-[10px] text-slate-400 font-bold uppercase">Orçamento de Energia (5V)</span>
+                     </div>
+                     <div className="flex gap-4">
+                         <div>
+                             <span className="block text-[10px] text-slate-500">Máximo Teórico</span>
+                             <span className="text-xs font-mono text-red-400">{powerStats.max} A</span>
+                         </div>
+                         <div>
+                             <span className="block text-[10px] text-slate-500">Uso Típico</span>
+                             <span className="text-xs font-mono text-green-400">{powerStats.typical} A</span>
+                         </div>
+                         <div className="flex-1">
+                             <label className="text-[9px] block text-slate-500 mb-1">Limite Software (A)</label>
+                             <input 
+                                type="number" 
+                                step="0.5"
+                                value={firmwareConfig.physicalSpecs.maxPowerAmps} 
+                                onChange={e=>updateFirmwareConfig({ physicalSpecs: {...firmwareConfig.physicalSpecs, maxPowerAmps: parseFloat(e.target.value)} })} 
+                                className="w-20 bg-slate-800 border border-slate-600 rounded p-1 text-xs text-yellow-500 text-center"
+                            />
+                         </div>
+                     </div>
+                     <p className="text-[9px] text-slate-600 mt-2 italic">
+                         * O firmware limitará o brilho automaticamente se exceder o limite de {firmwareConfig.physicalSpecs.maxPowerAmps}A.
+                     </p>
+                </div>
+             </div>
+
              {/* LAYOUT SECTION */}
              <div>
-                <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2"><LayoutTemplate size={14}/> Layout Físico</h3>
+                <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2"><LayoutTemplate size={14}/> Layout Lógico</h3>
                 <div className="grid grid-cols-3 gap-2 mb-4">
                         {[
                             {id:'STRIP', l:'Fita', i:<AlignVerticalJustifyCenter className="rotate-90" size={14}/>}, 
@@ -71,7 +181,7 @@ export const LedConfigPanel: React.FC<LedConfigPanelProps> = ({ simMode, setSimM
                 <div className="bg-slate-900 p-4 rounded border border-slate-700 space-y-4">
                     <div>
                         <div className="flex justify-between text-[10px] text-slate-400 mb-1 font-bold uppercase">
-                            <span>Total LEDs</span>
+                            <span>Total LEDs (Configurado)</span>
                             <span className="text-white">{firmwareConfig.ledCount}</span>
                         </div>
                         <input type="range" min="1" max="1024" value={firmwareConfig.ledCount} onChange={e=>updateFirmwareConfig({ledCount: parseInt(e.target.value)})} className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"/>

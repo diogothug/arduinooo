@@ -1,6 +1,8 @@
 
 
 
+
+
 import { create } from 'zustand';
 import { Keyframe, Device, ViewState, EffectType, FirmwareConfig, DisplayConfig, DisplayWidget, WidgetType, DisplayDriver, ConnectionType, DisplayTheme, RenderMode, DataSourceConfig, TideSourceType, MockWaveType, WeatherData, Notification, DisplayType, SavedMock } from './types';
 
@@ -101,6 +103,7 @@ export const useAppStore = create<AppState>((set) => ({
     lowPowerMode: { enabled: true, idleFps: 5, dimBacklight: true, batteryThreshold: 20 },
     weatherApi: { enabled: true, apiKey: 'KEY', location: '-13.613295,-38.908930', intervalMinutes: 60 },
     autonomous: { enabled: true, linkSpeedToTide: true, linkBrightnessToTide: false, linkPaletteToTime: false, linkWeatherToLeds: true },
+    physicalSpecs: { stripLengthMeters: 1.0, ledDensity: 60, maxPowerAmps: 2.0 },
     animationMode: 'oceanCaustics',
     animationSpeed: 1.0,
     animationIntensity: 0.5,
