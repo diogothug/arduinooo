@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
 import { 
@@ -66,9 +65,9 @@ export const FirmwareBuilder: React.FC = () => {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full overflow-y-auto lg:overflow-hidden pr-2 custom-scrollbar">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-auto">
         {/* Configuration Panel */}
-        <div className="lg:col-span-1 bg-slate-800 rounded-lg border border-slate-700 p-6 h-auto lg:h-fit lg:overflow-y-auto lg:max-h-full shrink-0">
+        <div className="lg:col-span-1 bg-slate-800 rounded-lg border border-slate-700 p-6 h-auto shrink-0">
             <h2 className="text-xl font-bold text-white flex items-center gap-2 mb-6">
                 <Cpu className="text-cyan-400" /> Configuração do Firmware
             </h2>
@@ -196,7 +195,7 @@ export const FirmwareBuilder: React.FC = () => {
         </div>
 
         {/* Code Preview */}
-        <div className="lg:col-span-2 bg-slate-900 rounded-lg border border-slate-700 flex flex-col overflow-hidden min-h-[500px] lg:min-h-0 lg:h-full">
+        <div className="lg:col-span-2 bg-slate-900 rounded-lg border border-slate-700 flex flex-col overflow-hidden min-h-[500px]">
             <div className="flex border-b border-slate-700 bg-slate-800 overflow-x-auto custom-scrollbar shrink-0">
                 {Object.keys(files).filter(f => !f.includes("modules/")).map(fileName => (
                      <button 

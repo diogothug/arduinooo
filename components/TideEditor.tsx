@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
 import { ConnectionType } from '../types';
@@ -56,9 +55,9 @@ export const TideEditor: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-full gap-4">
+    <div className="flex flex-col gap-6">
       {/* 1. TOP TOOLBAR */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-800 p-3 rounded-lg border border-slate-700 gap-4 shadow-sm shrink-0">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-800 p-3 rounded-lg border border-slate-700 gap-4 shadow-sm">
         <div className="flex items-center gap-4">
            <button 
              onClick={() => setIsPlaying(!isPlaying)}
@@ -107,28 +106,26 @@ export const TideEditor: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. CHART VISUALIZATION */}
-      <TideChart 
-          useSevenDayMode={useSevenDayMode} 
-          isExpanded={isChartExpanded} 
-          setIsExpanded={setIsChartExpanded} 
-      />
+      {/* 2. CHART */}
+      <div className="w-full">
+         <TideChart 
+             useSevenDayMode={useSevenDayMode} 
+             isExpanded={isChartExpanded} 
+             setIsExpanded={setIsChartExpanded} 
+         />
+      </div>
 
-      {/* 3. MAIN EDITOR GRID (Scrollable Container) */}
-      <div className="flex-1 min-h-0 overflow-y-auto xl:overflow-hidden pr-2 custom-scrollbar">
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 xl:h-full">
-              {/* LEFT: SOURCE CONFIGURATION */}
-              <div className="xl:col-span-2">
-                  <TideSourceConfig 
-                      useSevenDayMode={useSevenDayMode}
-                      setSimulatedTime={setSimulatedTime}
-                  />
-              </div>
+      {/* 3. GRID LAYOUT FOR CONFIG & COMPILER */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
+              <TideSourceConfig 
+                  useSevenDayMode={useSevenDayMode}
+                  setSimulatedTime={setSimulatedTime}
+              />
+          </div>
 
-              {/* RIGHT: COMPILER & ENVIRONMENT */}
-              <div className="xl:col-span-1">
-                  <FirmwareCompiler />
-              </div>
+          <div className="lg:col-span-1">
+              <FirmwareCompiler />
           </div>
       </div>
     </div>

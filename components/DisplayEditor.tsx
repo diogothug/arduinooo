@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { DisplaySidebar } from './display/DisplaySidebar';
 import { DisplayCanvas } from './display/DisplayCanvas';
@@ -8,19 +7,19 @@ export const DisplayEditor: React.FC = () => {
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full overflow-y-auto lg:overflow-hidden pr-2 custom-scrollbar">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-auto">
         {/* Left Column: Config */}
-        <div className="h-auto lg:h-full lg:overflow-hidden">
+        <div className="h-auto">
             <DisplaySidebar />
         </div>
 
         {/* Center: Simulator */}
-        <div className="min-h-[400px] lg:h-full">
+        <div className="min-h-[400px]">
             <DisplayCanvas selectedWidgetId={selectedWidgetId} setSelectedWidgetId={setSelectedWidgetId} />
         </div>
 
         {/* Right Column: Properties & List */}
-        <div className="h-auto lg:h-full lg:overflow-hidden">
+        <div className="h-auto">
              <WidgetPanel selectedWidgetId={selectedWidgetId} setSelectedWidgetId={setSelectedWidgetId} />
         </div>
     </div>

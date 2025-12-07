@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useAppStore } from '../../store';
 import { TideSourceType, MockWaveType } from '../../types';
@@ -82,7 +81,7 @@ export const TideSourceConfig: React.FC<TideSourceConfigProps> = ({ useSevenDayM
   };
 
   return (
-      <div className="bg-slate-800 rounded-lg border border-slate-700 flex flex-col min-h-[500px] xl:min-h-0 xl:h-full">
+      <div className="bg-slate-800 rounded-lg border border-slate-700 flex flex-col h-auto">
           <div className="p-4 border-b border-slate-700 shrink-0">
                <h3 className="text-xs font-bold text-white flex items-center gap-2 mb-3">
                     <Database size={14} className="text-purple-400"/> Configuração da Fonte
@@ -105,7 +104,7 @@ export const TideSourceConfig: React.FC<TideSourceConfigProps> = ({ useSevenDayM
                </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto custom-scrollbar p-4 bg-slate-900/50">
+          <div className="p-4 bg-slate-900/50">
               
               {dataSourceConfig.activeSource === TideSourceType.TABUA_MARE && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in">

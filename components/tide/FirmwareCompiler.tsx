@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useAppStore } from '../../store';
 import { Cpu, Activity, Package, CheckCircle, Sliders, Thermometer, Droplets, Wind, Sun, Moon, Terminal } from 'lucide-react';
@@ -32,7 +31,7 @@ export const FirmwareCompiler: React.FC = () => {
   };
 
   return (
-      <div className="flex flex-col gap-4 min-h-[400px] xl:min-h-0 xl:h-full">
+      <div className="flex flex-col gap-4 h-auto">
           {/* Firmware Compiler Block */}
           <div className="bg-slate-800 rounded-lg border border-slate-700 flex flex-col shrink-0">
                <div className="p-4 border-b border-slate-700 shrink-0">
@@ -85,14 +84,14 @@ export const FirmwareCompiler: React.FC = () => {
           </div>
 
           {/* Environment Sliders */}
-          <div className="bg-slate-800 rounded-lg border border-slate-700 flex flex-col flex-1 min-h-[300px] xl:min-h-0">
+          <div className="bg-slate-800 rounded-lg border border-slate-700 flex flex-col flex-1 h-auto">
              <div className="p-4 border-b border-slate-700 shrink-0">
                   <h3 className="text-xs font-bold text-white flex items-center gap-2">
                       <Sliders size={14} className="text-orange-400"/> Ajustes Visuais (Preview)
                   </h3>
              </div>
             
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
+            <div className="p-4 space-y-6">
                   <div className="bg-slate-900/50 p-3 rounded border border-slate-700/50">
                       <div className="flex justify-between mb-2">
                            <label className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1"><Thermometer size={12} className="text-orange-400"/> Temperatura</label>

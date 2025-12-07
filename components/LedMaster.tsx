@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { BrainCircuit, LayoutTemplate, Grid } from 'lucide-react';
 import { LedConfigPanel } from './led/LedConfigPanel';
@@ -25,9 +24,9 @@ export const LedMaster: React.FC = () => {
     });
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full overflow-y-auto lg:overflow-hidden pr-2 custom-scrollbar">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-auto">
             {/* LEFT SIDEBAR: CONFIG */}
-            <div className="lg:col-span-3 flex flex-col gap-4 h-auto lg:h-full lg:overflow-y-auto lg:pr-2 custom-scrollbar">
+            <div className="lg:col-span-3 flex flex-col gap-4 h-auto">
                  <div className="bg-slate-800 rounded-lg border border-slate-700 p-2 grid grid-cols-3 gap-2 shrink-0">
                      <button onClick={()=>setActiveTab('AUTONOMOUS')} className={`p-2 rounded text-xs font-bold flex flex-col items-center gap-1 transition-all ${activeTab==='AUTONOMOUS'?'bg-cyan-600 text-white shadow-lg shadow-cyan-900/50':'bg-slate-900 text-slate-400 hover:bg-slate-800'}`}>
                          <BrainCircuit size={16}/> Lógica
@@ -40,7 +39,7 @@ export const LedMaster: React.FC = () => {
                      </button>
                  </div>
 
-                 <div className="bg-slate-800 rounded-lg border border-slate-700 p-5 flex-1 lg:overflow-y-auto custom-scrollbar">
+                 <div className="bg-slate-800 rounded-lg border border-slate-700 p-5 flex-1">
                     {(activeTab === 'DESIGN' || activeTab === 'AUTONOMOUS') && (
                         <LedConfigPanel simMode={simMode} setSimMode={setSimMode} simParams={simParams} setSimParams={setSimParams} />
                     )}
@@ -49,7 +48,7 @@ export const LedMaster: React.FC = () => {
             </div>
 
             {/* CENTER: CANVAS VISUALIZER */}
-            <div className="lg:col-span-9 h-[500px] lg:h-full">
+            <div className="lg:col-span-9 min-h-[500px]">
                 <LedVisualizer simMode={simMode} simParams={simParams} stripDirection='HORIZONTAL' />
             </div>
         </div>

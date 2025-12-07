@@ -56,7 +56,7 @@ const App: React.FC = () => {
       <NotificationToast />
 
       {/* Sidebar Navigation */}
-      <nav className="w-20 lg:w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between overflow-y-auto shrink-0">
+      <nav className="w-20 lg:w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between overflow-y-auto shrink-0 z-20">
          <div>
             <div className="p-6 flex items-center gap-3">
                 <div className="w-8 h-8 bg-cyan-500 rounded-lg flex items-center justify-center shadow-lg shadow-cyan-500/30">
@@ -155,7 +155,7 @@ const App: React.FC = () => {
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden min-w-0">
          {/* Top Header - Mobile friendly */}
-         <header className="h-16 bg-slate-900/50 backdrop-blur-sm border-b border-slate-800 flex items-center justify-between px-6 lg:px-8 shrink-0">
+         <header className="h-16 bg-slate-900/50 backdrop-blur-sm border-b border-slate-800 flex items-center justify-between px-6 lg:px-8 shrink-0 z-10">
             <h2 className="text-lg font-semibold text-white truncate">
                 {currentView === ViewState.DASHBOARD && 'Visão Geral'}
                 {currentView === ViewState.EDITOR && 'Editor de Dados & Fontes'}
@@ -188,85 +188,77 @@ const App: React.FC = () => {
             </div>
          </header>
 
-         {/* Scrollable View Content */}
-         <div className="flex-1 overflow-hidden p-4 lg:p-6 bg-slate-950 relative">
+         {/* Scrollable View Content - Changed to allow vertical scrolling (overflow-y-auto) */}
+         <div className="flex-1 overflow-y-auto p-4 lg:p-6 bg-slate-950 relative custom-scrollbar">
              
              {currentView === ViewState.DASHBOARD && (
-                 <div className="h-full overflow-y-auto pr-2">
-                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
-                        {/* Device Cards */}
-                        {devices.map(device => (
-                            <div key={device.id} className="bg-slate-800 border border-slate-700 rounded-xl p-6 relative overflow-hidden group hover:border-cyan-500/50 transition-all shadow-lg hover:shadow-cyan-900/20">
-                                <div className={`absolute top-0 right-0 p-4`}>
-                                    <div className={`w-3 h-3 rounded-full ${device.status === 'online' ? 'bg-green-500 shadow-lg shadow-green-500/50' : 'bg-red-500'}`}></div>
-                                </div>
-                                <h3 className="text-lg font-bold text-white mb-1">{device.name}</h3>
-                                <p className="text-sm text-slate-400 font-mono mb-6 flex items-center gap-2">
-                                    <span className="w-1.5 h-1.5 bg-slate-500 rounded-full"></span>
-                                    {device.ip}
-                                </p>
-                                
-                                <div className="flex gap-2">
-                                    <button className="flex-1 bg-slate-700 hover:bg-slate-600 text-white text-sm py-2 rounded transition font-medium">
-                                        Ping
-                                    </button>
-                                    <button 
-                                      onClick={() => handleEditDevice(device.id)}
-                                      className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white text-sm py-2 rounded transition font-medium"
-                                    >
-                                        Editar
-                                    </button>
-                                </div>
+                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
+                    {/* Device Cards */}
+                    {devices.map(device => (
+                        <div key={device.id} className="bg-slate-800 border border-slate-700 rounded-xl p-6 relative overflow-hidden group hover:border-cyan-500/50 transition-all shadow-lg hover:shadow-cyan-900/20">
+                            <div className={`absolute top-0 right-0 p-4`}>
+                                <div className={`w-3 h-3 rounded-full ${device.status === 'online' ? 'bg-green-500 shadow-lg shadow-green-500/50' : 'bg-red-500'}`}></div>
                             </div>
-                        ))}
-                        
-                        {/* Quick Stats or Add Device */}
-                        <div 
-                            onClick={() => setShowConnectionManager(true)}
-                            className="border-2 border-dashed border-slate-700 rounded-xl p-6 flex flex-col items-center justify-center text-slate-500 hover:border-slate-500 hover:text-slate-300 transition cursor-pointer hover:bg-slate-800/50"
-                        >
-                            <div className="p-3 bg-slate-800 rounded-full mb-3">
-                                 <Waves size={24} />
+                            <h3 className="text-lg font-bold text-white mb-1">{device.name}</h3>
+                            <p className="text-sm text-slate-400 font-mono mb-6 flex items-center gap-2">
+                                <span className="w-1.5 h-1.5 bg-slate-500 rounded-full"></span>
+                                {device.ip}
+                            </p>
+                            
+                            <div className="flex gap-2">
+                                <button className="flex-1 bg-slate-700 hover:bg-slate-600 text-white text-sm py-2 rounded transition font-medium">
+                                    Ping
+                                </button>
+                                <button 
+                                  onClick={() => handleEditDevice(device.id)}
+                                  className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white text-sm py-2 rounded transition font-medium"
+                                >
+                                    Editar
+                                </button>
                             </div>
-                            <span className="text-sm font-medium">Conectar Novo Controlador</span>
                         </div>
-                     </div>
+                    ))}
+                    
+                    {/* Quick Stats or Add Device */}
+                    <div 
+                        onClick={() => setShowConnectionManager(true)}
+                        className="border-2 border-dashed border-slate-700 rounded-xl p-6 flex flex-col items-center justify-center text-slate-500 hover:border-slate-500 hover:text-slate-300 transition cursor-pointer hover:bg-slate-800/50 min-h-[180px]"
+                    >
+                        <div className="p-3 bg-slate-800 rounded-full mb-3">
+                             <Waves size={24} />
+                        </div>
+                        <span className="text-sm font-medium">Conectar Novo Controlador</span>
+                    </div>
                  </div>
              )}
 
              {currentView === ViewState.EDITOR && (
-                 <div className="flex flex-col lg:flex-row gap-6 h-full overflow-hidden">
-                     <div className="lg:flex-[2] h-full overflow-hidden min-h-0">
+                 <div className="flex flex-col xl:flex-row gap-6">
+                     <div className="flex-1 min-w-0">
                          <TideEditor />
                      </div>
-                     <div className="lg:flex-1 h-full min-h-[300px] shrink-0 overflow-hidden">
-                         <LedSimulator />
+                     <div className="xl:w-[350px] shrink-0">
+                         <div className="xl:sticky xl:top-0">
+                             <LedSimulator />
+                         </div>
                      </div>
                  </div>
              )}
 
              {currentView === ViewState.DISPLAY && (
-                 <div className="h-full overflow-hidden">
-                     <DisplayEditor />
-                 </div>
+                 <DisplayEditor />
              )}
 
              {currentView === ViewState.LED_MASTER && (
-                 <div className="h-full overflow-hidden">
-                     <LedMaster />
-                 </div>
+                 <LedMaster />
              )}
 
              {currentView === ViewState.FIRMWARE && (
-                 <div className="h-full overflow-hidden">
-                     <FirmwareBuilder />
-                 </div>
+                 <FirmwareBuilder />
              )}
 
              {currentView === ViewState.ESP32 && (
-                 <div className="h-full overflow-hidden">
-                     <Esp32Tools />
-                 </div>
+                 <Esp32Tools />
              )}
 
          </div>
