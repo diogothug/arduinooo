@@ -130,6 +130,9 @@ export const generateSystemHealthH = () => `
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
+// This module is kept for backward compatibility. 
+// Advanced features should use TelemetryManager.
+
 class SystemHealth {
 public:
     static void begin();
@@ -152,17 +155,14 @@ export const generateSystemHealthCpp = () => `
 int SystemHealth::_failCount = 0;
 
 void SystemHealth::begin() {
-    // Setup ADC for voltage monitoring if applicable
     analogReadResolution(12);
 }
 
 void SystemHealth::check() {
-    // Routine check every N seconds
     if (WiFi.status() != WL_CONNECTED) _failCount++;
 }
 
 float SystemHealth::readVoltage() {
-    // Simulated reading (would be analogRead(PIN) * calibration)
     return 4.95; 
 }
 
@@ -200,17 +200,227 @@ const char* INDEX_HTML_GZ =
 "body{background:#0f172a;color:#fff;font-family:sans-serif;padding:20px;}"
 ".card{background:#1e293b;border-radius:8px;padding:15px;margin-bottom:10px;}"
 "h1{color:#22d3ee;font-size:1.2rem;} button{background:#0284c7;color:white;border:none;padding:10px;border-radius:5px;width:100%;margin-top:5px;}"
+".stat{display:flex;justify-content:space-between;border-bottom:1px solid #334155;padding:5px 0;font-size:0.9rem;}"
 "</style></head><body>"
-"<h1>TideFlux Web</h1>"
-"<div class='card'>Status: <strong id='st'>Loading...</strong></div>"
+"<h1>TideFlux Telemetry</h1>"
+"<div class='card' id='dash'>Loading telemetry...</div>"
 "<div class='card'>"
 "<button onclick='cmd(\"reboot\")'>Reboot System</button>"
 "<button onclick='cmd(\"test_leds\")'>Test LEDs</button>"
 "</div>"
 "<script>"
 "function cmd(c){fetch('/api/'+c, {method:'POST'});}"
-"setInterval(()=>{fetch('/api/health').then(r=>r.json()).then(j=>{document.getElementById('st').innerText=j.status})}, 2000);"
+"setInterval(()=>{fetch('/api/telemetry').then(r=>r.json()).then(j=>{"
+"let h='';"
+"for(const [k,v] of Object.entries(j)){h+=\`<div class=\\"stat\\"><span>\${k}</span><strong>\${v}</strong></div>\`;}"
+"document.getElementById('dash').innerHTML=h;"
+"})}, 2000);"
 "</script></body></html>";
 
 #endif
+`;
+
+// --- NEW TELEMETRY & PERFORMANCE MODULES ---
+
+export const generateTelemetryManagerH = () => `
+#ifndef TELEMETRY_MANAGER_H
+#define TELEMETRY_MANAGER_H
+
+#include <Arduino.h>
+#include <ArduinoJson.h>
+#include <vector>
+
+struct SystemMetrics {
+    int fps;
+    float temp; // Internal or Simulated
+    int wifiRssi;
+    int cpuLoad; // Approximation 0-100
+    int apiFails;
+    int fallbackCount;
+    float ledPowerW;
+    uint32_t freeHeap;
+    unsigned long uptime;
+    String criticalEvents; 
+};
+
+class TelemetryManager {
+public:
+    static SystemMetrics metrics;
+    static void begin();
+    
+    // Setters called by other tasks
+    static void updateFPS(int fps);
+    static void registerFallback();
+    static void registerApiFail();
+    static void updateCPULoad(int load);
+    static void addCriticalEvent(String evt);
+    
+    // Core logic
+    static void collect(); 
+    static String getJson();
+    
+private:
+    static unsigned long _lastCollect;
+};
+
+#endif
+`;
+
+export const generateTelemetryManagerCpp = () => `
+#include "TelemetryManager.h"
+#include <WiFi.h>
+
+#ifdef __cplusplus
+extern "C" {
+uint8_t temprature_sens_read();
+}
+#endif
+
+SystemMetrics TelemetryManager::metrics;
+unsigned long TelemetryManager::_lastCollect = 0;
+
+void TelemetryManager::begin() {
+    metrics.fps = 0;
+    metrics.temp = 0.0;
+    metrics.wifiRssi = 0;
+    metrics.cpuLoad = 0;
+    metrics.apiFails = 0;
+    metrics.fallbackCount = 0;
+    metrics.ledPowerW = 0.0;
+    metrics.freeHeap = 0;
+    metrics.uptime = 0;
+    metrics.criticalEvents = "";
+}
+
+void TelemetryManager::updateFPS(int fps) {
+    metrics.fps = fps;
+}
+
+void TelemetryManager::registerFallback() {
+    metrics.fallbackCount++;
+}
+
+void TelemetryManager::registerApiFail() {
+    metrics.apiFails++;
+}
+
+void TelemetryManager::updateCPULoad(int load) {
+    metrics.cpuLoad = load;
+}
+
+void TelemetryManager::addCriticalEvent(String evt) {
+    if (metrics.criticalEvents.length() > 0) metrics.criticalEvents += "|";
+    metrics.criticalEvents += evt;
+}
+
+void TelemetryManager::collect() {
+    metrics.uptime = millis() / 1000;
+    metrics.freeHeap = ESP.getFreeHeap();
+    
+    if (WiFi.status() == WL_CONNECTED) {
+        metrics.wifiRssi = WiFi.RSSI();
+    } else {
+        metrics.wifiRssi = -127;
+    }
+    
+    // ESP32 Internal Temp (Approximate / Hardware Dependent)
+    // Some newer ESP32 variants disable this sensor by default
+    uint8_t temp_farenheit = temprature_sens_read();
+    metrics.temp = (temp_farenheit - 32) / 1.8;
+}
+
+String TelemetryManager::getJson() {
+    StaticJsonDocument<512> doc;
+    doc["fps"] = metrics.fps;
+    doc["temp"] = metrics.temp;
+    doc["rssi"] = metrics.wifiRssi;
+    doc["cpu"] = metrics.cpuLoad;
+    doc["api_fail"] = metrics.apiFails;
+    doc["fallback"] = metrics.fallbackCount;
+    doc["heap"] = metrics.freeHeap;
+    doc["uptime"] = metrics.uptime;
+    if (metrics.criticalEvents.length() > 0) doc["crit"] = metrics.criticalEvents;
+    
+    String out;
+    serializeJson(doc, out);
+    return out;
+}
+`;
+
+export const generatePerformanceManagerH = () => `
+#ifndef PERFORMANCE_MANAGER_H
+#define PERFORMANCE_MANAGER_H
+
+#include <Arduino.h>
+
+class PerformanceManager {
+public:
+    static void begin();
+    static void evaluate(); // Auto-tuning logic loop
+    static bool isThrottled();
+    
+private:
+    static bool _throttled;
+    static int _originalBrightness;
+};
+
+#endif
+`;
+
+export const generatePerformanceManagerCpp = () => `
+#include "PerformanceManager.h"
+#include "TelemetryManager.h"
+#include "modules/led_ws2812b/ws2812b_config.h"
+#include "LogManager.h"
+#include <FastLED.h>
+
+bool PerformanceManager::_throttled = false;
+int PerformanceManager::_originalBrightness = -1;
+
+void PerformanceManager::begin() {
+    // Initial setup
+}
+
+void PerformanceManager::evaluate() {
+    SystemMetrics& m = TelemetryManager::metrics;
+    WS2812BConfig& cfg = WS2812BConfigManager::config;
+
+    // Capture original brightness once
+    if (_originalBrightness == -1) _originalBrightness = cfg.brightness;
+
+    // RULE 1: Thermal Throttling
+    if (m.temp > 75.0) {
+         TIDE_LOGW("PerfManager: High Temp (%.1fC). Throttling Brightness.", m.temp);
+         if (cfg.brightness > 50) {
+             cfg.brightness = 40; // Hard clamp
+             FastLED.setBrightness(cfg.brightness);
+             _throttled = true;
+         }
+    } else if (_throttled && m.temp < 60.0) {
+         // Recovery
+         if (cfg.brightness < _originalBrightness) {
+             cfg.brightness = _originalBrightness;
+             FastLED.setBrightness(cfg.brightness);
+             TIDE_LOGI("PerfManager: Temp recovered. Restoring Brightness.");
+             _throttled = false;
+         }
+    }
+
+    // RULE 2: WiFi Instability
+    // If signal is weak, we don't want heavy CPU load processing complex animations
+    // that might cause WiFi to drop.
+    if (m.wifiRssi < -85 && m.wifiRssi > -127) {
+        // Signal Weak
+    }
+
+    // RULE 3: FPS Drop / Lag
+    if (m.fps < 15 && m.fps > 0) {
+        // System struggling?
+        // Could reduce animation complexity here if engine supported LOD
+    }
+}
+
+bool PerformanceManager::isThrottled() {
+    return _throttled;
+}
 `;

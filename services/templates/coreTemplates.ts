@@ -1,4 +1,5 @@
 
+
 import { FirmwareConfig, DisplayConfig, Keyframe } from '../../types';
 
 export const generatePlatformIO = (config: FirmwareConfig, display: DisplayConfig) => `
@@ -224,6 +225,8 @@ export const generateMainCpp = (displayConfig: DisplayConfig) => `
 #include "RestServer.h"
 #include "DisplayManager.h"
 #include "SystemHealth.h"
+#include "TelemetryManager.h"
+#include "PerformanceManager.h"
 #include "ShaderEngine.h"
 #include "modules/led_ws2812b/ws2812b_controller.h"
 #include "modules/led_ws2812b/ws2812b_animations.h"
@@ -240,12 +243,32 @@ DisplayManager display;
 // --- TASK HANDLES ---
 TaskHandle_t TaskHandle_Net;
 TaskHandle_t TaskHandle_Anim;
+TaskHandle_t TaskHandle_Telemetry;
 
 // --- SHARED DATA ---
 volatile float shared_TideNorm = 0.5;
 volatile float shared_Wind = 0;
 volatile int shared_Humidity = 60;
 bool safeMode = false;
+
+// --- TASK: TELEMETRY (Core 0) ---
+// Collects stats every 2s without blocking animation
+void TaskTelemetry(void *pvParameters) {
+    TIDE_LOGI("Task Telemetry started on Core %d", xPortGetCoreID());
+    TelemetryManager::begin();
+    PerformanceManager::begin();
+    
+    // WDT
+    esp_task_wdt_add(NULL);
+    
+    while(1) {
+        TelemetryManager::collect();
+        PerformanceManager::evaluate();
+        
+        esp_task_wdt_reset();
+        vTaskDelay(2000 / portTICK_PERIOD_MS); // 2s Interval
+    }
+}
 
 // --- TASK: NETWORK & SYSTEM (Core 0) ---
 void TaskNetwork(void *pvParameters) {
@@ -258,15 +281,14 @@ void TaskNetwork(void *pvParameters) {
     // Connect
     if (!wifiManager.connect()) {
         TIDE_LOGE("Wifi Failed. System in Offline Mode.");
+        TelemetryManager::addCriticalEvent("WIFI_FAIL");
     }
     otaManager.begin();
     server.begin();
-    SystemHealth::begin();
 
     while(1) {
         otaManager.handle();
         server.handle();
-        SystemHealth::check();
         
         esp_task_wdt_reset();
         vTaskDelay(10 / portTICK_PERIOD_MS);
@@ -289,11 +311,17 @@ void TaskAnimation(void *pvParameters) {
     esp_task_wdt_add(NULL);
 
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = 30; // ~33 FPS
+    const TickType_t xFrequency = 30; // Target ~33 FPS
+    
+    // FPS Counting
+    int frameCounter = 0;
+    unsigned long lastFpsTime = millis();
 
     while(1) {
         if (!safeMode) {
             engine.update();
+            if(engine.isFallbackMode()) TelemetryManager::registerFallback();
+
             shared_TideNorm = engine.getNormalizedTide();
             display.update(engine.getCurrentHeightPercent());
 
@@ -302,8 +330,6 @@ void TaskAnimation(void *pvParameters) {
             #if ENABLE_SHADER
             // If shader enabled, override standard animation
             if (WS2812BConfigManager::config.paletteId == 99) {
-                 // 99 is flag for Shader Mode
-                 // Pass formula from NVS later
                  ShaderEngine::run("sin(time+i*0.1)*255", &ledController, millis()/1000.0, shared_TideNorm);
             } else {
                  WS2812BAnimations::run(mode, shared_TideNorm, shared_Wind, shared_Humidity);
@@ -311,6 +337,15 @@ void TaskAnimation(void *pvParameters) {
             #else
             WS2812BAnimations::run(mode, shared_TideNorm, shared_Wind, shared_Humidity);
             #endif
+            
+            // FPS Reporting
+            frameCounter++;
+            if (millis() - lastFpsTime >= 1000) {
+                TelemetryManager::updateFPS(frameCounter);
+                frameCounter = 0;
+                lastFpsTime = millis();
+            }
+
         } else {
              // Safe Mode Blink
              ledController.clear();
@@ -342,8 +377,10 @@ void setup() {
     }
     NVSManager::setInt("crash_count", crashCount + 1);
 
-    xTaskCreatePinnedToCore(TaskNetwork, "NetTask", 8192, NULL, 1, &TaskHandle_Net, 0);
-    xTaskCreatePinnedToCore(TaskAnimation, "AnimTask", 8192, NULL, 1, &TaskHandle_Anim, 1);
+    // Launch Tasks
+    xTaskCreatePinnedToCore(TaskNetwork, "NetTask", 6144, NULL, 1, &TaskHandle_Net, 0);
+    xTaskCreatePinnedToCore(TaskTelemetry, "TelemTask", 4096, NULL, 1, &TaskHandle_Telemetry, 0);
+    xTaskCreatePinnedToCore(TaskAnimation, "AnimTask", 8192, NULL, 2, &TaskHandle_Anim, 1); // Higher Prio
 
     delay(10000); 
     NVSManager::setInt("crash_count", 0);
@@ -360,6 +397,7 @@ export const generateRestServerCpp = () => `
 #include "config.h"
 #include "LogManager.h"
 #include "SystemHealth.h"
+#include "TelemetryManager.h"
 #include "WebDashboard.h"
 
 RestServer::RestServer(MareEngine* engine) : _server(80), _engine(engine) {}
@@ -369,6 +407,7 @@ void RestServer::begin() {
     _server.on("/api/config", HTTP_POST, std::bind(&RestServer::handleConfig, this));
     _server.on("/api/logs", HTTP_GET, std::bind(&RestServer::handleLogs, this));
     _server.on("/api/health", HTTP_GET, std::bind(&RestServer::handleHealth, this));
+    _server.on("/api/telemetry", HTTP_GET, std::bind(&RestServer::handleTelemetry, this));
     _server.on("/api/reboot", HTTP_POST, std::bind(&RestServer::handleReboot, this));
     
     _server.enableCORS(true);
@@ -381,12 +420,16 @@ void RestServer::handle() {
 }
 
 void RestServer::handleRoot() {
-    // Serve Embedded Dashboard
     _server.send(200, "text/html", INDEX_HTML_GZ);
 }
 
 void RestServer::handleHealth() {
     String json = SystemHealth::getReportJson();
+    _server.send(200, "application/json", json);
+}
+
+void RestServer::handleTelemetry() {
+    String json = TelemetryManager::getJson();
     _server.send(200, "application/json", json);
 }
 
@@ -436,6 +479,7 @@ private:
     void handleConfig();
     void handleLogs();
     void handleHealth();
+    void handleTelemetry();
     void handleReboot();
 };
 #endif

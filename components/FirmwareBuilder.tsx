@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
 import { 
@@ -14,7 +15,9 @@ import {
     generateNVSManagerH, generateNVSManagerCpp,
     generateShaderEngineH, generateShaderEngineCpp,
     generateSystemHealthH, generateSystemHealthCpp,
-    generateWebDashboardH
+    generateWebDashboardH,
+    generateTelemetryManagerH, generateTelemetryManagerCpp,
+    generatePerformanceManagerH, generatePerformanceManagerCpp
 } from '../services/firmwareTemplates';
 import { Download, Cpu, Code, Wifi, Package, FileCode, Bluetooth, Usb, Sun, Moon, CloudSun, FolderTree, Database, Check, BrainCircuit, Activity, Zap, Wind, Lock, Terminal, Radio } from 'lucide-react';
 import JSZip from 'jszip';
@@ -47,6 +50,10 @@ export const FirmwareBuilder: React.FC = () => {
       // Advanced Modules
       'src/SystemHealth.h': generateSystemHealthH(),
       'src/SystemHealth.cpp': generateSystemHealthCpp(),
+      'src/TelemetryManager.h': generateTelemetryManagerH(),
+      'src/TelemetryManager.cpp': generateTelemetryManagerCpp(),
+      'src/PerformanceManager.h': generatePerformanceManagerH(),
+      'src/PerformanceManager.cpp': generatePerformanceManagerCpp(),
       'src/WebDashboard.h': generateWebDashboardH(),
       'src/ShaderEngine.h': generateShaderEngineH(),
       'src/ShaderEngine.cpp': generateShaderEngineCpp(),
