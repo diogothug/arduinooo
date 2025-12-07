@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
 import { 
@@ -10,7 +11,10 @@ import {
     generateWs2812bControllerH, generateWs2812bControllerCpp,
     generateWs2812bAnimationsH, generateWs2812bAnimationsCpp,
     generateLogManagerH, generateLogManagerCpp,
-    generateNVSManagerH, generateNVSManagerCpp
+    generateNVSManagerH, generateNVSManagerCpp,
+    generateShaderEngineH, generateShaderEngineCpp,
+    generateSystemHealthH, generateSystemHealthCpp,
+    generateWebDashboardH
 } from '../services/firmwareTemplates';
 import { Download, Cpu, Code, Wifi, Package, FileCode, Bluetooth, Usb, Sun, Moon, CloudSun, FolderTree, Database, Check, BrainCircuit, Activity, Zap, Wind, Lock, Terminal, Radio } from 'lucide-react';
 import JSZip from 'jszip';
@@ -40,6 +44,13 @@ export const FirmwareBuilder: React.FC = () => {
       'src/DisplayManager.cpp': generateDisplayManagerCpp(displayWidgets, displayConfig),
       'src/SerialManager.h': generateSerialManagerH(),
       'src/SerialManager.cpp': generateSerialManagerCpp(),
+      // Advanced Modules
+      'src/SystemHealth.h': generateSystemHealthH(),
+      'src/SystemHealth.cpp': generateSystemHealthCpp(),
+      'src/WebDashboard.h': generateWebDashboardH(),
+      'src/ShaderEngine.h': generateShaderEngineH(),
+      'src/ShaderEngine.cpp': generateShaderEngineCpp(),
+      // LED Modules
       'src/modules/led_ws2812b/ws2812b_config.h': generateWs2812bConfigH(),
       'src/modules/led_ws2812b/ws2812b_config.cpp': generateWs2812bConfigCpp(firmwareConfig),
       'src/modules/led_ws2812b/ws2812b_controller.h': generateWs2812bControllerH(),
@@ -127,6 +138,18 @@ export const FirmwareBuilder: React.FC = () => {
                                 type="checkbox" 
                                 checked={firmwareConfig.enableBLE}
                                 onChange={e => updateFirmwareConfig({ enableBLE: e.target.checked })}
+                                className="w-4 h-4 cursor-pointer"
+                             />
+                        </div>
+                        <div className="flex items-center justify-between bg-slate-900 p-3 rounded border border-slate-700">
+                             <div className="flex items-center gap-2">
+                                 <Activity size={16} className={firmwareConfig.enableSystemHealth ? "text-green-400" : "text-slate-500"} />
+                                 <span className="text-xs font-bold text-slate-300">Self-Diagnóstico</span>
+                             </div>
+                             <input 
+                                type="checkbox" 
+                                checked={firmwareConfig.enableSystemHealth}
+                                onChange={e => updateFirmwareConfig({ enableSystemHealth: e.target.checked })}
                                 className="w-4 h-4 cursor-pointer"
                              />
                         </div>

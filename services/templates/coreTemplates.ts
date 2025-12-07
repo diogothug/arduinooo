@@ -1,3 +1,4 @@
+
 import { FirmwareConfig, DisplayConfig, Keyframe } from '../../types';
 
 export const generatePlatformIO = (config: FirmwareConfig, display: DisplayConfig) => `
@@ -35,8 +36,6 @@ build_flags =
 export const generateConfigH = (config: FirmwareConfig, keyframes: Keyframe[] = []) => {
   const sourceFrames = config.compiledData?.frames || keyframes;
   const useFixedWeather = config.compiledData?.useFixedWeather || false;
-  const defTemp = config.compiledData?.defaultTemp || 25;
-  const defWind = config.compiledData?.defaultWind || 0;
 
   const fallbackData = sourceFrames.map(k => 
       `    {${k.timeOffset.toFixed(2)}f, ${k.height}, 0x${k.color.replace('#', '')}, ${k.intensity}, ${(k.effect === 'STATIC' ? 0 : k.effect === 'WAVE' ? 1 : k.effect === 'PULSE' ? 2 : 3)}}`
@@ -65,6 +64,7 @@ export const generateConfigH = (config: FirmwareConfig, keyframes: Keyframe[] = 
 #define ENABLE_BLE ${config.enableBLE ? '1' : '0'}
 #define ENABLE_WEATHER ${config.weatherApi?.enabled ? '1' : '0'}
 #define ENABLE_OTA ${config.ota?.enabled ? '1' : '0'}
+#define ENABLE_SHADER ${config.shader?.enabled ? '1' : '0'}
 
 // --- FALLBACK DATA ---
 struct TideKeyframeConfig {
@@ -223,6 +223,8 @@ export const generateMainCpp = (displayConfig: DisplayConfig) => `
 #include "MareEngine.h"
 #include "RestServer.h"
 #include "DisplayManager.h"
+#include "SystemHealth.h"
+#include "ShaderEngine.h"
 #include "modules/led_ws2812b/ws2812b_controller.h"
 #include "modules/led_ws2812b/ws2812b_animations.h"
 #include "modules/led_ws2812b/ws2812b_config.h"
@@ -239,7 +241,7 @@ DisplayManager display;
 TaskHandle_t TaskHandle_Net;
 TaskHandle_t TaskHandle_Anim;
 
-// --- SHARED DATA (Protected via atomic or critical section in prod) ---
+// --- SHARED DATA ---
 volatile float shared_TideNorm = 0.5;
 volatile float shared_Wind = 0;
 volatile int shared_Humidity = 60;
@@ -259,16 +261,14 @@ void TaskNetwork(void *pvParameters) {
     }
     otaManager.begin();
     server.begin();
+    SystemHealth::begin();
 
     while(1) {
-        // Critical System Loop
         otaManager.handle();
         server.handle();
+        SystemHealth::check();
         
-        // Feed Dog
         esp_task_wdt_reset();
-        
-        // Yield to let IDLE task run (needed for ESP functionality)
         vTaskDelay(10 / portTICK_PERIOD_MS);
     }
 }
@@ -278,7 +278,7 @@ void TaskAnimation(void *pvParameters) {
     TIDE_LOGI("Task Animation started on Core %d", xPortGetCoreID());
     
     // Init Hardware
-    WS2812BConfigManager::load(); // Load NVS Config
+    WS2812BConfigManager::load();
     ledController.begin();
     WS2812BAnimations::attachController(&ledController);
     
@@ -286,7 +286,6 @@ void TaskAnimation(void *pvParameters) {
     display.setBrightness(${displayConfig.brightness});
     display.showSplashScreen();
 
-    // WDT for this task
     esp_task_wdt_add(NULL);
 
     TickType_t xLastWakeTime = xTaskGetTickCount();
@@ -294,16 +293,24 @@ void TaskAnimation(void *pvParameters) {
 
     while(1) {
         if (!safeMode) {
-            // 1. Logic Update
             engine.update();
             shared_TideNorm = engine.getNormalizedTide();
-            
-            // 2. Display Update
             display.update(engine.getCurrentHeightPercent());
 
-            // 3. LED Update
             String mode = WS2812BConfigManager::config.mode;
+            
+            #if ENABLE_SHADER
+            // If shader enabled, override standard animation
+            if (WS2812BConfigManager::config.paletteId == 99) {
+                 // 99 is flag for Shader Mode
+                 // Pass formula from NVS later
+                 ShaderEngine::run("sin(time+i*0.1)*255", &ledController, millis()/1000.0, shared_TideNorm);
+            } else {
+                 WS2812BAnimations::run(mode, shared_TideNorm, shared_Wind, shared_Humidity);
+            }
+            #else
             WS2812BAnimations::run(mode, shared_TideNorm, shared_Wind, shared_Humidity);
+            #endif
         } else {
              // Safe Mode Blink
              ledController.clear();
@@ -321,11 +328,9 @@ void TaskAnimation(void *pvParameters) {
 }
 
 void setup() {
-    // 1. Early Init
     LogManager::begin(LOG_DEBUG);
     TIDE_LOGI("BOOT: TideFlux System v2.1");
 
-    // 2. NVS & Recovery Check
     if (!NVSManager::begin()) {
         TIDE_LOGE("NVS Mount Failed!");
     }
@@ -335,28 +340,103 @@ void setup() {
         TIDE_LOGE("Too many crashes (%d). Entering SAFE MODE.", crashCount);
         safeMode = true;
     }
-    // Increment crash count (cleared after successful boot duration)
     NVSManager::setInt("crash_count", crashCount + 1);
 
-    // 3. Create Tasks
-    // Network on Core 0
-    xTaskCreatePinnedToCore(
-        TaskNetwork, "NetTask", 8192, NULL, 1, &TaskHandle_Net, 0
-    );
+    xTaskCreatePinnedToCore(TaskNetwork, "NetTask", 8192, NULL, 1, &TaskHandle_Net, 0);
+    xTaskCreatePinnedToCore(TaskAnimation, "AnimTask", 8192, NULL, 1, &TaskHandle_Anim, 1);
 
-    // Animation on Core 1 (FastLED prefers this)
-    xTaskCreatePinnedToCore(
-        TaskAnimation, "AnimTask", 8192, NULL, 1, &TaskHandle_Anim, 1
-    );
-
-    // 4. Mark Boot Successful after 10s
     delay(10000); 
     NVSManager::setInt("crash_count", 0);
     TIDE_LOGI("Boot Verified Stable.");
 }
 
 void loop() {
-    // Main loop is empty in FreeRTOS paradigm
     vTaskDelete(NULL);
 }
+`;
+
+export const generateRestServerCpp = () => `
+#include "RestServer.h"
+#include "config.h"
+#include "LogManager.h"
+#include "SystemHealth.h"
+#include "WebDashboard.h"
+
+RestServer::RestServer(MareEngine* engine) : _server(80), _engine(engine) {}
+
+void RestServer::begin() {
+    _server.on("/", HTTP_GET, std::bind(&RestServer::handleRoot, this));
+    _server.on("/api/config", HTTP_POST, std::bind(&RestServer::handleConfig, this));
+    _server.on("/api/logs", HTTP_GET, std::bind(&RestServer::handleLogs, this));
+    _server.on("/api/health", HTTP_GET, std::bind(&RestServer::handleHealth, this));
+    _server.on("/api/reboot", HTTP_POST, std::bind(&RestServer::handleReboot, this));
+    
+    _server.enableCORS(true);
+    _server.begin();
+    TIDE_LOGI("REST Server started on port 80");
+}
+
+void RestServer::handle() {
+    _server.handleClient();
+}
+
+void RestServer::handleRoot() {
+    // Serve Embedded Dashboard
+    _server.send(200, "text/html", INDEX_HTML_GZ);
+}
+
+void RestServer::handleHealth() {
+    String json = SystemHealth::getReportJson();
+    _server.send(200, "application/json", json);
+}
+
+void RestServer::handleLogs() {
+    String json = LogManager::getBufferJson();
+    _server.send(200, "application/json", json);
+}
+
+void RestServer::handleReboot() {
+    _server.send(200, "application/json", "{\\"status\\":\\"rebooting\\"}");
+    delay(500);
+    ESP.restart();
+}
+
+void RestServer::handleConfig() {
+    if (!_server.hasArg("plain")) {
+        _server.send(400, "text/plain", "Body missing");
+        return;
+    }
+    _server.send(200, "application/json", "{\\"status\\":\\"ok\\"}");
+}
+`;
+
+export const generateRestServerH = () => `
+#ifndef REST_SERVER_H
+#define REST_SERVER_H
+
+#include <WebServer.h>
+#include <ArduinoJson.h>
+#include "MareEngine.h"
+
+class WeatherManager;
+
+class RestServer {
+public:
+    RestServer(MareEngine* engine);
+    void begin();
+    void handle();
+    void setWeatherManager(WeatherManager* wm) { _weather = wm; }
+
+private:
+    WebServer _server;
+    MareEngine* _engine;
+    WeatherManager* _weather = nullptr;
+    
+    void handleRoot();
+    void handleConfig();
+    void handleLogs();
+    void handleHealth();
+    void handleReboot();
+};
+#endif
 `;

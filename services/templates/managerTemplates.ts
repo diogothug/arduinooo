@@ -1,3 +1,4 @@
+
 import { DataSourceConfig, FirmwareConfig } from '../../types';
 
 export const generateWifiManagerH = () => `
@@ -196,83 +197,6 @@ void SerialManager::handle() {
 void SerialManager::processCommand(String cmd) {
     TIDE_LOGI("Serial CMD: %s", cmd.c_str());
     // ... command logic
-}
-`;
-
-export const generateRestServerH = () => `
-#ifndef REST_SERVER_H
-#define REST_SERVER_H
-
-#include <WebServer.h>
-#include <ArduinoJson.h>
-#include "MareEngine.h"
-
-class WeatherManager;
-
-class RestServer {
-public:
-    RestServer(MareEngine* engine);
-    void begin();
-    void handle();
-    void setWeatherManager(WeatherManager* wm) { _weather = wm; }
-
-private:
-    WebServer _server;
-    MareEngine* _engine;
-    WeatherManager* _weather = nullptr;
-    
-    void handleRoot();
-    void handleConfig();
-    void handleLogs();
-    void handleReboot();
-};
-#endif
-`;
-
-export const generateRestServerCpp = () => `
-#include "RestServer.h"
-#include "config.h"
-#include "LogManager.h"
-
-RestServer::RestServer(MareEngine* engine) : _server(80), _engine(engine) {}
-
-void RestServer::begin() {
-    _server.on("/", HTTP_GET, std::bind(&RestServer::handleRoot, this));
-    _server.on("/api/config", HTTP_POST, std::bind(&RestServer::handleConfig, this));
-    _server.on("/api/logs", HTTP_GET, std::bind(&RestServer::handleLogs, this));
-    _server.on("/api/reboot", HTTP_POST, std::bind(&RestServer::handleReboot, this));
-    
-    _server.enableCORS(true);
-    _server.begin();
-    TIDE_LOGI("REST Server started on port 80");
-}
-
-void RestServer::handle() {
-    _server.handleClient();
-}
-
-void RestServer::handleRoot() {
-    _server.send(200, "text/plain", "TideFlux OS v2.1 - Active");
-}
-
-void RestServer::handleLogs() {
-    String json = LogManager::getBufferJson();
-    _server.send(200, "application/json", json);
-}
-
-void RestServer::handleReboot() {
-    _server.send(200, "application/json", "{\\"status\\":\\"rebooting\\"}");
-    delay(500);
-    ESP.restart();
-}
-
-void RestServer::handleConfig() {
-    if (!_server.hasArg("plain")) {
-        _server.send(400, "text/plain", "Body missing");
-        return;
-    }
-    // Implement config parsing to NVS
-    _server.send(200, "application/json", "{\\"status\\":\\"ok\\"}");
 }
 `;
 

@@ -1,11 +1,4 @@
 
-
-
-
-
-
-
-
 import { create } from 'zustand';
 import { Keyframe, Device, ViewState, EffectType, FirmwareConfig, DisplayConfig, DisplayWidget, WidgetType, DisplayDriver, ConnectionType, DisplayTheme, RenderMode, DataSourceConfig, TideSourceType, MockWaveType, WeatherData, Notification, DisplayType, SavedMock } from './types';
 
@@ -112,7 +105,14 @@ export const useAppStore = create<AppState>((set) => ({
     animationSpeed: 1.0,
     animationIntensity: 0.5,
     animationPalette: 0,
-    compiledData: undefined
+    compiledData: undefined,
+    shader: {
+        enabled: false,
+        code: 'sin(t + i * 0.2)', // Basic default
+        uniforms: { speed: 1.0, scale: 1.0, color1: '#0000FF', color2: '#00FFFF' }
+    },
+    enableWebDashboard: true,
+    enableSystemHealth: true
   },
   dataSourceConfig: {
     activeSource: TideSourceType.TABUA_MARE,
@@ -170,6 +170,14 @@ export const useAppStore = create<AppState>((set) => ({
     const newConfig = { ...state.firmwareConfig, ...config };
     if (config.ota && state.firmwareConfig.ota) {
         newConfig.ota = { ...state.firmwareConfig.ota, ...config.ota };
+    }
+    // Merge Shader
+    if (config.shader && state.firmwareConfig.shader) {
+        newConfig.shader = { ...state.firmwareConfig.shader, ...config.shader };
+    }
+    // Merge Physical
+    if (config.physicalSpecs && state.firmwareConfig.physicalSpecs) {
+        newConfig.physicalSpecs = { ...state.firmwareConfig.physicalSpecs, ...config.physicalSpecs };
     }
     return { firmwareConfig: newConfig };
   }),

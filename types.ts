@@ -1,9 +1,4 @@
 
-
-
-
-
-
 export enum EffectType {
   STATIC = 'STATIC',
   WAVE = 'WAVE',
@@ -261,6 +256,17 @@ export interface PhysicalSpecs {
     maxPowerAmps: number; // For brightness limiting
 }
 
+export interface ShaderConfig {
+    enabled: boolean;
+    code: string; // The math formula
+    uniforms: {
+        speed: number;
+        scale: number;
+        color1: string;
+        color2: string;
+    }
+}
+
 export interface FirmwareConfig {
   ssid: string;
   password: string;
@@ -288,7 +294,10 @@ export interface FirmwareConfig {
   animationSpeed: number;
   animationIntensity: number;
   animationPalette: number;
-  compiledData?: CompiledData; 
+  compiledData?: CompiledData;
+  shader: ShaderConfig; // New Shader Engine
+  enableWebDashboard: boolean;
+  enableSystemHealth: boolean;
 }
 
 export interface DailyForecast {
