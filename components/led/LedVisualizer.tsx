@@ -1,4 +1,5 @@
 
+
 import React, { useRef, useEffect, useMemo } from 'react';
 import { useAppStore } from '../../store';
 import { FirmwareConfig } from '../../types';
@@ -52,9 +53,6 @@ export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams
         if (!ctx) return;
 
         let animId: number;
-        
-        // Simulation State for Particles
-        const particles: any[] = [];
         let lastTime = Date.now();
 
         const render = () => {
@@ -92,7 +90,6 @@ export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams
                     let dur = e.timeOffset - s.timeOffset; 
                     if (dur < 0) dur += cycle;
                     const prog = dur === 0 ? 0 : (t - s.timeOffset) / dur;
-                    // Linear interpolation for tide height
                     tide = s.height + (e.height - s.height) * (prog < 0 ? prog + 1 : prog);
                 }
                 wind = data.weatherData.windSpeed; 
@@ -104,8 +101,7 @@ export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams
                 }
             }
 
-            // 2. Generate LED Coordinates (Recalc if layout changed)
-            // Ideally we memoize this, but for < 1000 LEDs it's fast enough to do per frame or check changed
+            // 2. Generate LED Coordinates
             const layout = cfg.ledLayoutType;
             const count = cfg.ledCount;
             const leds = [];
@@ -149,10 +145,8 @@ export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams
                     leds.push({x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r, i});
                 }
             } else {
-                 // Mountain / Custom fallback
                  const margin = 40; const sp = (w - margin * 2) / (count - 1 || 1);
                  for(let i=0; i<count; i++) {
-                     // Simple sine wave for mountain
                      const x = margin + i * sp;
                      const y = cy + Math.sin(i * 0.5) * 50;
                      leds.push({x, y, i});
@@ -163,7 +157,7 @@ export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams
             ctx.fillStyle = '#0f172a'; // Slate-900
             ctx.fillRect(0, 0, w, h);
 
-            // 4. Render Logic (Based on Preset)
+            // 4. Render Logic
             const mode = cfg.animationMode;
             const speed = cfg.animationSpeed; 
             const intensity = cfg.animationIntensity;
@@ -172,63 +166,46 @@ export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams
             leds.forEach((led) => {
                 let r=0, g=0, b=0;
                 
-                // --- PRESET LOGIC ---
-                
                 if (mode === 'tideFill2' || mode === 'coralReef') {
-                    // Vertical fill logic
-                    let normalizedY = 0; // 0.0 (bottom) to 1.0 (top)
-                    
+                    let normalizedY = 0;
                     if (layout === 'MATRIX') {
-                        // Matrix uses Row/Col
                          normalizedY = 1.0 - (led.r / (led.maxR || 1));
-                    } else if (layout === 'STRIP' && stripDirection === 'VERTICAL') {
-                         normalizedY = led.i / count;
                     } else {
-                         // Default strip linear map
                          normalizedY = led.i / count;
                     }
 
+                    // Map tide % (which can be negative) to 0-1 scale visually
+                    // -20 to 120 -> We clamp visually between 0 and 1 for colors, but handle negative logic
                     const tideLevel = tide / 100.0;
                     
-                    // Water Logic
-                    if (normalizedY <= tideLevel) {
+                    if (normalizedY <= tideLevel && tideLevel > 0) {
                          // Underwater
                          if (mode === 'coralReef') {
-                             // Coral Logic
-                             if (normalizedY < 0.2) { r=139; g=90; b=43; } // Rock/Sand bottom
+                             if (normalizedY < 0.2) { r=139; g=90; b=43; } 
                              else {
-                                 // Water Gradient
-                                 const depth = (tideLevel - normalizedY) / tideLevel; // 0 surface, 1 bottom
-                                 if (depth < 0.2) { r=90; g=200; b=250; } // Surface Light Blue
-                                 else { r=0; g=119; b=190; } // Deep Blue
+                                 const depth = (tideLevel - normalizedY) / tideLevel;
+                                 if (depth < 0.2) { r=90; g=200; b=250; } else { r=0; g=119; b=190; }
                              }
-                             // Random Coral
                              if (normalizedY < 0.3 && (led.i * 13) % 7 === 0) { r=255; g=107; b=107; }
                          } else {
-                             // TideFill2 Logic (Simple Gradient)
-                             const idx = normalizedY / tideLevel; 
-                             // Map to first 2 colors of palette usually
+                             const idx = normalizedY / (tideLevel || 1); // Avoid div 0 
                              const c1 = hexToRgb(colors[0]);
                              const c2 = hexToRgb(colors[1] || colors[0]);
                              r = c1.r + (c2.r - c1.r) * idx;
                              g = c1.g + (c2.g - c1.g) * idx;
                              b = c1.b + (c2.b - c1.b) * idx;
-                             
-                             // Ripple at top
-                             if (tideLevel - normalizedY < 0.05) {
-                                 const wave = Math.sin(led.x * 0.1 + now * 0.005 * speed);
-                                 if (wave > 0.5) { r+=40; g+=40; b+=40; }
-                             }
                          }
                     } else {
-                        // Air (Off or Dim)
-                        r=0; g=0; b=0;
+                        // Air OR Negative Tide Exposed Rock
+                        if (tideLevel < 0 && normalizedY < 0.2) {
+                             // Negative tide logic: Bottom LEDs turn "Dry/Dead" color
+                             r=80; g=60; b=40; // Dried mud/rock
+                        } else {
+                             r=0; g=0; b=0;
+                        }
                     }
-
                 } else if (mode === 'neon') {
-                    // Rainbow Cycle
                     const hue = (now * 0.1 * speed + led.i * 5) % 360;
-                    // Simple HSV to RGB
                     const s = 1, v = 1 * intensity;
                     const c = v * s;
                     const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
@@ -241,106 +218,53 @@ export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams
                     else if (hue < 300) { r1=x; g1=0; b1=c; }
                     else { r1=c; g1=0; b1=x; }
                     r = (r1 + m) * 255; g = (g1 + m) * 255; b = (b1 + m) * 255;
-
                 } else if (mode === 'storm') {
-                    // Dark base + Flashes
-                    r=10; g=10; b=20; // Dark grey/blue base
-                    // Noise for clouds
+                    r=10; g=10; b=20; 
                     const noise = Math.sin(led.x * 0.05 + now * 0.002 * speed) + Math.sin(led.y * 0.05 + now * 0.003);
                     if (noise > 1) { r+=20; g+=20; b+=30; }
-
-                    // Lightning
-                    if (Math.random() < 0.005 * intensity * speed) {
-                         // Global flash (simple sim)
-                         // In real visualizer we'd persist flash state, but random flickering works for preview
-                         r=255; g=255; b=255;
-                    }
-
+                    if (Math.random() < 0.005 * intensity * speed) { r=255; g=255; b=255; }
                 } else if (mode === 'aurora') {
-                    // Sine wave interference
-                    const x = led.x * 0.1;
-                    const y = led.y * 0.1;
-                    const t = now * 0.001 * speed;
-                    
-                    const v1 = Math.sin(x * 0.5 + t);
-                    const v2 = Math.sin(y * 0.3 - t * 0.5);
-                    const v3 = Math.sin((x + y) * 0.2 + t);
-                    
-                    const val = (v1 + v2 + v3) / 3; // -1 to 1
-                    
-                    // Map -1..1 to Green/Purple colors
-                    // Green: #00ff00, Purple: #aa00ff
-                    const f = (val + 1) / 2; // 0 to 1
-                    r = 10 + f * 100;
-                    g = 20 + (1 - f) * 200;
-                    b = 20 + f * 200;
-                    
+                    const x = led.x * 0.1; const y = led.y * 0.1; const t = now * 0.001 * speed;
+                    const v1 = Math.sin(x * 0.5 + t); const v2 = Math.sin(y * 0.3 - t * 0.5); const v3 = Math.sin((x + y) * 0.2 + t);
+                    const val = (v1 + v2 + v3) / 3; 
+                    const f = (val + 1) / 2; 
+                    r = 10 + f * 100; g = 20 + (1 - f) * 200; b = 20 + f * 200;
                 } else if (mode === 'deepSea') {
-                    // Dim Blue background
                     r=0; g=10; b=40;
-                    
-                    // Particles (Simulated roughly by noise here for stateless preview)
-                    // Real particles need state, but noise works for "glimmer"
                     const glimmer = Math.sin(led.x * 0.3 + led.y * 0.3 + now * 0.002);
-                    if (glimmer > 0.95) {
-                        r=50; g=100; b=150;
-                    }
-
+                    if (glimmer > 0.95) { r=50; g=100; b=150; }
                 } else {
-                    // DEFAULT: Ocean Caustics / Gradient Fallback
-                    // Interpolate based on index/tide
                     const stops = colors.length - 1;
-                    // Use Tide to shift gradient or scale it
                     const phase = (led.i / count) + (now * 0.0001 * speed);
                     const cyclePhase = phase % 1;
-                    
-                    // Map cyclePhase 0..1 to colors
                     const pos = cyclePhase * stops;
                     const idx = Math.floor(pos);
                     const f = pos - idx;
-                    
                     const c1 = colors[idx % colors.length];
                     const c2 = colors[(idx + 1) % colors.length];
-                    
                     const rgb = interpolateColor(c1, c2, f);
                     const parsed = rgb.match(/\d+/g)?.map(Number) || [0,0,0];
                     r=parsed[0]; g=parsed[1]; b=parsed[2];
-                    
-                    // Add Caustic Noise
                     const noise = Math.sin(led.x * 0.1 + now * 0.005) * Math.cos(led.y * 0.1 - now * 0.002);
-                    if (noise > 0.5) {
-                        r += 30; g += 30; b += 30;
-                    }
+                    if (noise > 0.5) { r += 30; g += 30; b += 30; }
                 }
 
-                // Apply Intensity & Night Mode
                 let globalBright = intensity;
                 if (night) globalBright *= 0.5;
+                r *= globalBright; g *= globalBright; b *= globalBright;
+                r = Math.min(255, Math.max(0, r)); g = Math.min(255, Math.max(0, g)); b = Math.min(255, Math.max(0, b));
 
-                r *= globalBright;
-                g *= globalBright;
-                b *= globalBright;
-                
-                // Clamp
-                r = Math.min(255, Math.max(0, r));
-                g = Math.min(255, Math.max(0, g));
-                b = Math.min(255, Math.max(0, b));
-
-                // Draw LED
                 ctx.beginPath();
                 const radius = layout === 'MATRIX' ? Math.min(w, h) / (cfg.ledMatrixWidth||10) / 2.5 : 6;
                 ctx.arc(led.x, led.y, radius, 0, Math.PI * 2);
                 ctx.fillStyle = `rgb(${r},${g},${b})`;
                 ctx.fill();
 
-                // Glow Effect
                 const grad = ctx.createRadialGradient(led.x, led.y, radius, led.x, led.y, radius * 3);
                 grad.addColorStop(0, `rgba(${r},${g},${b},0.3)`);
                 grad.addColorStop(1, 'rgba(0,0,0,0)');
                 ctx.fillStyle = grad;
-                ctx.beginPath();
-                ctx.arc(led.x, led.y, radius * 3, 0, Math.PI * 2);
-                ctx.fill();
+                ctx.beginPath(); ctx.arc(led.x, led.y, radius * 3, 0, Math.PI * 2); ctx.fill();
             });
 
             animId = requestAnimationFrame(render);
@@ -348,7 +272,7 @@ export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams
 
         render();
         return () => cancelAnimationFrame(animId);
-    }, [stripDirection]); // Only re-bind if props change, refs handle store updates
+    }, [stripDirection]); 
 
     return (
         <div className="bg-slate-950 border border-slate-800 rounded-lg flex flex-col overflow-hidden relative h-full shadow-inner">
@@ -366,7 +290,6 @@ export const LedVisualizer: React.FC<LedVisualizerProps> = ({ simMode, simParams
                  </div>
             </div>
             
-            {/* Grid Background for Matrix */}
             {firmwareConfig.ledLayoutType === 'MATRIX' && (
                 <div className="absolute inset-0 z-0 opacity-10" 
                      style={{backgroundImage: 'radial-gradient(circle, #334155 1px, transparent 1px)', backgroundSize: '20px 20px'}}>

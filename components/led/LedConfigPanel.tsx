@@ -1,7 +1,8 @@
 
+
 import React from 'react';
 import { useAppStore } from '../../store';
-import { LayoutTemplate, AlignVerticalJustifyCenter, Grid, Circle, RotateCw, Mountain, Spline, Palette, Cpu, Waves, Sun, Anchor, Zap, Wind, Moon, Activity, Plus, Trash2 } from 'lucide-react';
+import { LayoutTemplate, AlignVerticalJustifyCenter, Grid, Circle, RotateCw, Mountain, Spline, Palette, Cpu, Waves, Sun, Anchor, Zap, Wind, Moon, Activity, Plus, Trash2, ArrowUp, ArrowDown, BarChart3, AlertOctagon } from 'lucide-react';
 
 const PRESETS = [
     { id: 'tideFill2', label: 'Maré Alta Viva', icon: <Waves size={16} className="text-cyan-400"/>, desc: 'Gradiente vertical baseado na maré.' },
@@ -147,25 +148,69 @@ export const LedConfigPanel: React.FC<LedConfigPanelProps> = ({ simMode, setSimM
                 </div>
                 
                 <div className={`space-y-4 p-3 rounded border transition-all ${simMode ? 'bg-slate-900 border-green-900/30' : 'bg-slate-900/30 border-slate-800 opacity-50 grayscale'}`}>
+                    
+                    {/* Direction Toggle */}
+                    <div className="grid grid-cols-2 gap-2">
+                        <button disabled={!simMode} onClick={()=>setSimParams({...simParams, tideDirection: 'RISING'})} className={`p-2 rounded border text-[10px] font-bold flex items-center justify-center gap-1 ${simParams.tideDirection === 'RISING' ? 'bg-blue-600 text-white border-blue-500' : 'bg-slate-800 border-slate-700 text-slate-500'}`}>
+                            <ArrowUp size={12}/> ENCHENTE
+                        </button>
+                        <button disabled={!simMode} onClick={()=>setSimParams({...simParams, tideDirection: 'FALLING'})} className={`p-2 rounded border text-[10px] font-bold flex items-center justify-center gap-1 ${simParams.tideDirection === 'FALLING' ? 'bg-amber-600 text-white border-amber-500' : 'bg-slate-800 border-slate-700 text-slate-500'}`}>
+                            <ArrowDown size={12}/> VAZANTE
+                        </button>
+                    </div>
+
+                    {/* Daily Envelope */}
+                    <div className="bg-black/30 p-2 rounded border border-slate-800">
+                        <div className="text-[9px] font-bold text-slate-500 uppercase flex items-center gap-1 mb-2"><BarChart3 size={10}/> Limites do Dia</div>
+                        <div className="flex gap-2">
+                             <div className="flex-1">
+                                 <label className="text-[9px] text-slate-500 block">Min ({simParams.dayMin}%)</label>
+                                 <input type="range" disabled={!simMode} min="0" max="100" value={simParams.dayMin} onChange={e=>setSimParams({...simParams, dayMin: parseInt(e.target.value)})} className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-400"/>
+                             </div>
+                             <div className="flex-1">
+                                 <label className="text-[9px] text-slate-500 block">Max ({simParams.dayMax}%)</label>
+                                 <input type="range" disabled={!simMode} min="0" max="100" value={simParams.dayMax} onChange={e=>setSimParams({...simParams, dayMax: parseInt(e.target.value)})} className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-400"/>
+                             </div>
+                        </div>
+                    </div>
+
+                    {/* Main Tide Slider */}
                     <div>
                         <div className="flex justify-between text-[10px] text-slate-400 mb-1">
                             <span className="font-bold flex items-center gap-1"><Waves size={10}/> Nível Maré</span>
-                            <span className="text-white font-mono">{simParams.tide}%</span>
+                            <span className={`font-mono ${simParams.tide < 0 ? 'text-amber-500' : 'text-white'}`}>{simParams.tide}%</span>
                         </div>
-                        <input type="range" disabled={!simMode} value={simParams.tide} onChange={e=>setSimParams({...simParams, tide: parseInt(e.target.value)})} className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"/>
+                        <input 
+                            type="range" 
+                            disabled={!simMode} 
+                            min={simParams.allowNegative ? "-20" : "0"} 
+                            max="120" 
+                            value={simParams.tide} 
+                            onChange={e=>setSimParams({...simParams, tide: parseInt(e.target.value)})} 
+                            className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                        />
+                        {simParams.allowNegative && <div className="text-[9px] text-amber-500/70 mt-1 flex items-center gap-1"><AlertOctagon size={8}/> Maré Negativa Habilitada</div>}
                     </div>
-                    <div>
-                        <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-                            <span className="font-bold flex items-center gap-1"><Wind size={10}/> Vento</span>
-                            <span className="text-white font-mono">{simParams.wind}km/h</span>
+
+                    {/* Environment Controls */}
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                                <span className="font-bold flex items-center gap-1"><Wind size={10}/> Vento</span>
+                                <span className="text-white font-mono">{simParams.wind}km/h</span>
+                            </div>
+                            <input type="range" disabled={!simMode} value={simParams.wind} onChange={e=>setSimParams({...simParams, wind: parseInt(e.target.value)})} className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-slate-400"/>
                         </div>
-                        <input type="range" disabled={!simMode} value={simParams.wind} onChange={e=>setSimParams({...simParams, wind: parseInt(e.target.value)})} className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-slate-400"/>
-                    </div>
-                    <div>
-                         <div className="flex items-center justify-between">
-                            <span className="text-[10px] text-slate-400 font-bold flex items-center gap-1"><Moon size={10}/> Forçar Noite</span>
-                            <input type="checkbox" disabled={!simMode} checked={simParams.isNight} onChange={e=>setSimParams({...simParams, isNight: e.target.checked})} className="cursor-pointer accent-purple-500"/>
-                         </div>
+                        <div>
+                            <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                                <span className="font-bold flex items-center gap-1"><Moon size={10}/> Noite</span>
+                                <input type="checkbox" disabled={!simMode} checked={simParams.isNight} onChange={e=>setSimParams({...simParams, isNight: e.target.checked})} className="cursor-pointer accent-purple-500"/>
+                            </div>
+                            <div className="flex justify-between text-[10px] text-slate-400 mt-2">
+                                <span className="font-bold flex items-center gap-1 text-amber-600">Negativo</span>
+                                <input type="checkbox" disabled={!simMode} checked={simParams.allowNegative} onChange={e=>setSimParams({...simParams, allowNegative: e.target.checked})} className="cursor-pointer accent-amber-600"/>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

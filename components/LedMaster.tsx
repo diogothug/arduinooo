@@ -10,9 +10,20 @@ type TabMode = 'DESIGN' | 'AUTONOMOUS' | 'PIXEL_ART';
 
 export const LedMaster: React.FC = () => {
     const [activeTab, setActiveTab] = useState<TabMode>('AUTONOMOUS');
+    
     // Lifted state for simulation to ensure synchronization between panel and visualizer
     const [simMode, setSimMode] = useState(false);
-    const [simParams, setSimParams] = useState({ wind: 15, humidity: 60, tide: 50, isNight: false });
+    const [simParams, setSimParams] = useState({ 
+        wind: 15, 
+        humidity: 60, 
+        tide: 50, 
+        isNight: false,
+        // New Parameters
+        tideDirection: 'RISING', // RISING or FALLING
+        dayMax: 100,
+        dayMin: 0,
+        allowNegative: false
+    });
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full overflow-hidden">

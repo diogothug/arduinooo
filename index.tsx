@@ -1,4 +1,4 @@
-import React, { Component, ReactNode, ErrorInfo } from 'react';
+import React, { ReactNode, ErrorInfo } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 
@@ -14,13 +14,16 @@ interface ErrorBoundaryState {
   info: ErrorInfo | null;
 }
 
-// Fix: Explicitly extend Component and define state property to resolve type errors
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  public state: ErrorBoundaryState = { 
-    hasError: false, 
-    error: null, 
-    info: null 
-  };
+// Fix: Explicitly extend React.Component to ensure setState and props are typed correctly
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { 
+      hasError: false, 
+      error: null, 
+      info: null 
+    };
+  }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error, info: null };

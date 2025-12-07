@@ -1,8 +1,10 @@
+
+
 import React, { useState, useMemo } from 'react';
 import { useAppStore } from '../store';
 import { ConnectionType, TideSourceType, MockWaveType, EffectType, Keyframe } from '../types';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot } from 'recharts';
-import { Play, Pause, RefreshCw, UploadCloud, Usb, Bluetooth, Wifi, CalendarClock, Server, Activity, Database, MapPin, Search, AlertCircle, CheckCircle, Terminal, Clipboard, CloudSun, Thermometer, Wind, Droplets, Battery, Moon, Sliders, Sun, Globe, Calculator, Save, Trash2, FolderOpen, FunctionSquare, ArrowRight, Maximize2, Info } from 'lucide-react';
+import { Play, Pause, RefreshCw, UploadCloud, Usb, Bluetooth, Wifi, CalendarClock, Server, Activity, Database, MapPin, Search, AlertCircle, CheckCircle, Terminal, Clipboard, CloudSun, Thermometer, Wind, Droplets, Battery, Moon, Sliders, Sun, Globe, Calculator, Save, Trash2, FolderOpen, FunctionSquare, ArrowRight, Maximize2, Info, Package, Cpu } from 'lucide-react';
 import { hardwareBridge } from '../services/hardwareBridge';
 import { generateSevenDayForecast } from '../utils/tideLogic';
 import { tideSourceService } from '../services/tideSourceService';
@@ -15,7 +17,7 @@ export const TideEditor: React.FC = () => {
     simulatedTime, setSimulatedTime, activeDeviceId, devices, connectionType,
     updateFirmwareConfig, dataSourceConfig, updateDataSourceConfig,
     setNotification, apiDebugLog, setWeatherData, setApiStatus, weatherData,
-    savedMocks, saveMock, deleteMock
+    savedMocks, saveMock, deleteMock, firmwareConfig
   } = useAppStore();
   
   const [isPlaying, setIsPlaying] = useState(false);
@@ -25,6 +27,11 @@ export const TideEditor: React.FC = () => {
   const [isCheckingPort, setIsCheckingPort] = useState(false);
   const [newMockName, setNewMockName] = useState('');
   const [isChartExpanded, setIsChartExpanded] = useState(false);
+  
+  // Data Compiler State
+  const [compilerTemp, setCompilerTemp] = useState(25);
+  const [compilerWind, setCompilerWind] = useState(10);
+  const [useFixedWeather, setUseFixedWeather] = useState(false);
 
   const activeDevice = devices.find(d => d.id === activeDeviceId);
   const cycleLimit = useSevenDayMode ? 168 : 24;
@@ -159,6 +166,20 @@ export const TideEditor: React.FC = () => {
       saveMock(name, keyframes);
       setNewMockName('');
       setNotification('success', 'Mock salvo com sucesso!');
+  };
+
+  const handleCompileFirmwareData = () => {
+      const compiled = {
+          timestamp: Date.now(),
+          frames: chartData, // Use the chart data (could be API, Mock, Calc)
+          defaultTemp: compilerTemp,
+          defaultWind: compilerWind,
+          defaultHumidity: 60,
+          useFixedWeather: useFixedWeather
+      };
+      
+      updateFirmwareConfig({ compiledData: compiled });
+      setNotification('success', 'Dados compilados para o Firmware!');
   };
 
   const copyLogToClipboard = () => {
@@ -500,10 +521,63 @@ export const TideEditor: React.FC = () => {
           </div>
 
           {/* RIGHT: ENVIRONMENT CONTROLS (1 col on large) */}
-          <div className="xl:col-span-1 bg-slate-800 rounded-lg border border-slate-700 flex flex-col min-h-0">
+          <div className="xl:col-span-1 flex flex-col gap-4 min-h-0">
+            {/* Firmware Compiler Block */}
+            <div className="bg-slate-800 rounded-lg border border-slate-700 flex flex-col shrink-0">
+                 <div className="p-4 border-b border-slate-700 shrink-0">
+                    <h3 className="text-xs font-bold text-white flex items-center gap-2">
+                        <Cpu size={14} className="text-emerald-400"/> Compilador de Dados (Firmware)
+                    </h3>
+                 </div>
+                 <div className="p-4 space-y-4">
+                     <div className="bg-slate-900/50 p-3 rounded border border-slate-700/50">
+                         <div className="flex justify-between items-center mb-2">
+                             <span className="text-[10px] font-bold text-slate-400">FONTE DE CLIMA</span>
+                             <button onClick={()=>setUseFixedWeather(!useFixedWeather)} className={`text-[9px] px-2 py-0.5 rounded ${useFixedWeather ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-400'}`}>
+                                 {useFixedWeather ? 'FIXO / MOCK' : 'ZERO / API'}
+                             </button>
+                         </div>
+                         
+                         <div className={`space-y-2 transition-opacity ${useFixedWeather ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                             <div>
+                                 <label className="text-[9px] text-slate-500 block mb-1">Temp Padrão (°C)</label>
+                                 <input type="number" value={compilerTemp} onChange={e=>setCompilerTemp(parseInt(e.target.value))} className="w-full bg-slate-800 border border-slate-600 rounded p-1 text-xs text-white"/>
+                             </div>
+                             <div>
+                                 <label className="text-[9px] text-slate-500 block mb-1">Vento Padrão (km/h)</label>
+                                 <input type="number" value={compilerWind} onChange={e=>setCompilerWind(parseInt(e.target.value))} className="w-full bg-slate-800 border border-slate-600 rounded p-1 text-xs text-white"/>
+                             </div>
+                         </div>
+                     </div>
+                     
+                     <div className="bg-slate-900/50 p-3 rounded border border-slate-700/50 flex items-center gap-2">
+                         <Activity size={12} className="text-cyan-400"/>
+                         <div className="flex-1">
+                             <div className="text-[10px] font-bold text-white">Curva de Maré</div>
+                             <div className="text-[9px] text-slate-500">Usará o gráfico atual ({chartData.length} pts)</div>
+                         </div>
+                     </div>
+
+                     <button 
+                         onClick={handleCompileFirmwareData}
+                         className="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 rounded text-xs flex items-center justify-center gap-2 transition"
+                     >
+                         <Package size={14}/> Compilar Dados Estáticos
+                     </button>
+                     
+                     {firmwareConfig.compiledData && (
+                         <div className="text-[9px] text-emerald-400 text-center flex items-center justify-center gap-1">
+                             <CheckCircle size={10}/> Dados prontos para Firmware Builder
+                         </div>
+                     )}
+                 </div>
+            </div>
+
+            {/* Existing Environment Sliders */}
+            <div className="bg-slate-800 rounded-lg border border-slate-700 flex flex-col flex-1 min-h-0">
                <div className="p-4 border-b border-slate-700 shrink-0">
                     <h3 className="text-xs font-bold text-white flex items-center gap-2">
-                        <Sliders size={14} className="text-orange-400"/> Sensores & Ambiente
+                        <Sliders size={14} className="text-orange-400"/> Ajustes Visuais (Preview)
                     </h3>
                </div>
               

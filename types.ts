@@ -237,6 +237,15 @@ export interface AutonomousConfig {
     linkWeatherToLeds: boolean;
 }
 
+export interface CompiledFirmwareData {
+    timestamp: number;
+    frames: Keyframe[];
+    defaultTemp: number;
+    defaultWind: number;
+    defaultHumidity: number;
+    useFixedWeather: boolean;
+}
+
 export interface FirmwareConfig {
   ssid: string;
   password: string;
@@ -262,6 +271,7 @@ export interface FirmwareConfig {
   animationSpeed: number;
   animationIntensity: number;
   animationPalette: number;
+  compiledData?: CompiledFirmwareData; // New field for compiled data
 }
 
 export interface DailyForecast {

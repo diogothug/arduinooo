@@ -1,4 +1,5 @@
 
+
 import { FirmwareConfig, DisplayConfig, Keyframe } from '../../types';
 
 export const generatePlatformIO = (config: FirmwareConfig, display: DisplayConfig) => `
@@ -34,8 +35,14 @@ build_flags =
 `;
 
 export const generateConfigH = (config: FirmwareConfig, keyframes: Keyframe[] = []) => {
+  // Logic: If user compiled custom data, use that. Otherwise use the passed keyframes (usually current chart).
+  const sourceFrames = config.compiledData?.frames || keyframes;
+  const useFixedWeather = config.compiledData?.useFixedWeather || false;
+  const defTemp = config.compiledData?.defaultTemp || 25;
+  const defWind = config.compiledData?.defaultWind || 0;
+
   // Serialize keyframes for fallback C++ array
-  const fallbackData = keyframes.map(k => 
+  const fallbackData = sourceFrames.map(k => 
       `    {${k.timeOffset.toFixed(2)}f, ${k.height}, 0x${k.color.replace('#', '')}, ${k.intensity}, ${(k.effect === 'STATIC' ? 0 : k.effect === 'WAVE' ? 1 : k.effect === 'PULSE' ? 2 : 3)}}`
   ).join(',\n');
 
@@ -76,7 +83,12 @@ export const generateConfigH = (config: FirmwareConfig, keyframes: Keyframe[] = 
 #define WEATHER_API_KEY "${config.weatherApi?.apiKey || ''}"
 #define WEATHER_LOCATION "${config.weatherApi?.location || ''}"
 #define WEATHER_INTERVAL ${config.weatherApi?.intervalMinutes || 15}
-#define TABUA_MARE_HARBOR_ID_DEFAULT ${config.weatherApi?.enabled ? 0 : 8} // Placeholder logic
+#define TABUA_MARE_HARBOR_ID_DEFAULT ${config.weatherApi?.enabled ? 0 : 8} 
+
+// Static Weather Defaults (User Compiled)
+#define FIXED_WEATHER_ENABLED ${useFixedWeather ? 'true' : 'false'}
+#define FIXED_TEMP ${defTemp}
+#define FIXED_WIND ${defWind}
 
 #define API_PORT 80
 #define DEFAULT_CYCLE_DURATION ${config.cycleDuration}.0f
@@ -96,7 +108,7 @@ struct TideKeyframeConfig {
     uint8_t effect;
 };
 
-const int FALLBACK_FRAME_COUNT = ${keyframes.length};
+const int FALLBACK_FRAME_COUNT = ${sourceFrames.length};
 const TideKeyframeConfig FALLBACK_FRAMES[] = {
 ${fallbackData}
 };
@@ -206,6 +218,13 @@ void loop() {
   display.setWeatherData(w.temp, w.humidity, w.windSpeed, w.windDir);
   currentWindSpeed = w.windSpeed;
   currentHumidity = w.humidity;
+  #else
+    // Check if fixed weather compiled in
+    #if FIXED_WEATHER_ENABLED
+       currentWindSpeed = FIXED_WIND;
+       // Humidity not currently compiled in template but could be added
+       display.setWeatherData(FIXED_TEMP, 60, FIXED_WIND, 0);
+    #endif
   #endif
 
   // --- HIERARCHY INTEGRATION ---

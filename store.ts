@@ -100,7 +100,8 @@ export const useAppStore = create<AppState>((set) => ({
     animationMode: 'oceanCaustics',
     animationSpeed: 1.0,
     animationIntensity: 0.5,
-    animationPalette: 0
+    animationPalette: 0,
+    compiledData: undefined
   },
   dataSourceConfig: {
     activeSource: TideSourceType.TABUA_MARE,
