@@ -22,7 +22,7 @@ export const FirmwareBuilder: React.FC = () => {
   const files: Record<string, string> = {
       'platformio.ini': generatePlatformIO(firmwareConfig, displayConfig),
       'src/main.cpp': generateMainCpp(displayConfig),
-      'src/config.h': generateConfigH(firmwareConfig),
+      'src/config.h': generateConfigH(firmwareConfig, keyframes), // Pass keyframes here
       'src/WifiManager.h': generateWifiManagerH(),
       'src/WifiManager.cpp': generateWifiManagerCpp(),
       'src/MareEngine.h': generateMareEngineH(),

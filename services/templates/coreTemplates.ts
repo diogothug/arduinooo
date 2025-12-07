@@ -1,6 +1,5 @@
 
-
-import { FirmwareConfig, DisplayConfig } from '../../types';
+import { FirmwareConfig, DisplayConfig, Keyframe } from '../../types';
 
 export const generatePlatformIO = (config: FirmwareConfig, display: DisplayConfig) => `
 [env:esp32dev]
@@ -34,9 +33,17 @@ build_flags =
     -D SPI_TOUCH_FREQUENCY=2500000
 `;
 
-export const generateConfigH = (config: FirmwareConfig) => `
+export const generateConfigH = (config: FirmwareConfig, keyframes: Keyframe[] = []) => {
+  // Serialize keyframes for fallback C++ array
+  const fallbackData = keyframes.map(k => 
+      `    {${k.timeOffset.toFixed(2)}f, ${k.height}, 0x${k.color.replace('#', '')}, ${k.intensity}, ${(k.effect === 'STATIC' ? 0 : k.effect === 'WAVE' ? 1 : k.effect === 'PULSE' ? 2 : 3)}}`
+  ).join(',\n');
+
+  return `
 #ifndef CONFIG_H
 #define CONFIG_H
+
+#include <Arduino.h>
 
 #define WIFI_SSID "${config.ssid}"
 #define WIFI_PASSWORD "${config.password}"
@@ -78,8 +85,25 @@ export const generateConfigH = (config: FirmwareConfig) => `
 #define SERVICE_UUID        "12345678-1234-1234-1234-1234567890ab"
 #define CHARACTERISTIC_UUID "87654321-4321-4321-4321-ba0987654321"
 
+// --- DATA ROBUSTNESS LAYER ---
+// Hardcoded Fallback Data (Generated from App State)
+// Used if API fails or device is offline
+struct TideKeyframeConfig {
+    float timeOffset;
+    uint8_t height;
+    uint32_t color;
+    uint8_t intensity;
+    uint8_t effect;
+};
+
+const int FALLBACK_FRAME_COUNT = ${keyframes.length};
+const TideKeyframeConfig FALLBACK_FRAMES[] = {
+${fallbackData}
+};
+
 #endif
 `;
+};
 
 export const generateMainCpp = (displayConfig: DisplayConfig) => `
 #include <Arduino.h>
