@@ -1,5 +1,4 @@
 
-
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
 import { 
@@ -26,10 +25,17 @@ export const FirmwareBuilder: React.FC = () => {
   const { firmwareConfig, updateFirmwareConfig, keyframes, displayConfig, displayWidgets, dataSourceConfig } = useAppStore();
   const [activeTab, setActiveTab] = useState<string>('main.cpp');
 
+  // Helper to remove directory paths from includes for Arduino IDE Flat Structure
+  const flattenIncludes = (content: string) => {
+      return content.replace(/modules\/led_ws2812b\//g, "");
+  };
+
+  const mainCppContent = generateMainCpp(displayConfig);
+
   // Build Virtual File System
   const files: Record<string, string> = {
       'platformio.ini': generatePlatformIO(firmwareConfig, displayConfig),
-      'src/main.cpp': generateMainCpp(displayConfig),
+      'src/main.cpp': mainCppContent,
       'src/config.h': generateConfigH(firmwareConfig, keyframes),
       'src/LogManager.h': generateLogManagerH(),
       'src/LogManager.cpp': generateLogManagerCpp(),
@@ -66,6 +72,10 @@ export const FirmwareBuilder: React.FC = () => {
       'src/modules/led_ws2812b/ws2812b_animations.cpp': generateWs2812bAnimationsCpp(),
   };
 
+  // Add Arduino Sketch Files (Content is Main.cpp with flattened includes)
+  files['TideFlux.ino'] = flattenIncludes(mainCppContent);
+  files['TideFlux.pde'] = flattenIncludes(mainCppContent);
+
   if (firmwareConfig.enableBLE) {
       files['src/BleManager.h'] = generateBleManagerH();
       files['src/BleManager.cpp'] = generateBleManagerCpp();
@@ -78,13 +88,44 @@ export const FirmwareBuilder: React.FC = () => {
 
   const handleDownloadZip = async () => {
       const zip = new JSZip();
+
+      // 1. PlatformIO Structure (Standard Clean Structure)
+      const pio = zip.folder("TideFlux_PlatformIO");
       Object.entries(files).forEach(([path, content]) => {
-         zip.file(path, content);
+         if (path.endsWith('.ino') || path.endsWith('.pde')) return; // Skip sketch files in PIO
+         pio?.file(path, content);
       });
+
+      // 2. Arduino IDE Structure (Flattened Structure)
+      const arduino = zip.folder("TideFlux_Arduino")?.folder("TideFlux");
+      
+      // Add Sketch Files
+      arduino?.file("TideFlux.ino", files['TideFlux.ino']);
+      arduino?.file("TideFlux.pde", files['TideFlux.pde']);
+
+      // Flatten and Add Sources
+      Object.entries(files).forEach(([path, content]) => {
+         // Skip files not needed for Arduino Sketch
+         if (path === 'platformio.ini') return;
+         if (path === 'src/main.cpp') return; // Replaced by .ino
+         if (path.endsWith('.ino') || path.endsWith('.pde')) return;
+
+         if (path.startsWith('src/')) {
+             // Extract filename from path (e.g., src/modules/led_ws2812b/config.h -> config.h)
+             const parts = path.split('/');
+             const filename = parts[parts.length - 1];
+             
+             // Flatten the content includes
+             const flatContent = flattenIncludes(content);
+             
+             arduino?.file(filename, flatContent);
+         }
+      });
+
       const blob = await zip.generateAsync({type: "blob"});
       const element = document.createElement("a");
       element.href = URL.createObjectURL(blob);
-      element.download = "TideFlux_Firmware_Modular.zip";
+      element.download = "TideFlux_Firmware_Pack.zip";
       document.body.appendChild(element);
       element.click();
       document.body.removeChild(element);
@@ -208,7 +249,7 @@ export const FirmwareBuilder: React.FC = () => {
                     onClick={handleDownloadZip}
                     className="w-full mt-6 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2 transition shadow-lg shadow-cyan-900/50"
                 >
-                    <Package size={20} /> Baixar Firmware Modular
+                    <Package size={20} /> Baixar Pack (PIO + Arduino)
                 </button>
             </div>
         </div>
@@ -216,13 +257,14 @@ export const FirmwareBuilder: React.FC = () => {
         {/* Code Preview */}
         <div className="lg:col-span-2 bg-slate-900 rounded-lg border border-slate-700 flex flex-col overflow-hidden min-h-[500px]">
             <div className="flex border-b border-slate-700 bg-slate-800 overflow-x-auto custom-scrollbar shrink-0">
-                {Object.keys(files).filter(f => !f.includes("modules/")).map(fileName => (
+                {/* Always show main types of files first, filter modules to reduce clutter */}
+                {Object.keys(files).filter(f => !f.includes("modules/") && !f.includes("platformio")).map(fileName => (
                      <button 
                         key={fileName}
                         onClick={() => setActiveTab(fileName)}
                         className={`px-4 py-3 text-sm font-medium flex items-center gap-2 whitespace-nowrap ${activeTab === fileName ? 'text-cyan-400 bg-slate-900 border-t-2 border-cyan-400' : 'text-slate-400 hover:text-slate-200'}`}
                     >
-                        <FileCode size={14} /> {fileName.replace('src/', '')}
+                        {fileName.endsWith('.ino') ? <Code size={14}/> : <FileCode size={14} />} {fileName.replace('src/', '')}
                     </button>
                 ))}
             </div>
