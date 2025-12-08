@@ -17,10 +17,30 @@ export const TideChart: React.FC<TideChartProps> = ({ useSevenDayMode, isExpande
   const cycleLimit = useSevenDayMode ? 168 : 24;
 
   const chartData = useMemo(() => {
-      let data = useSevenDayMode ? generateSevenDayForecast(keyframes) : keyframes;
+      // 1. Detect if we already have multi-day data (e.g. from API)
+      const maxTime = Math.max(...keyframes.map(k => k.timeOffset), 0);
+      const hasLongData = maxTime > 30; // Threshold > 24h indicates pre-fetched long data
+
+      let data = [];
+
+      if (useSevenDayMode) {
+          if (hasLongData) {
+              // Use real data if available
+              data = [...keyframes];
+          } else {
+              // Generate synthetic forecast if we only have 24h data
+              data = generateSevenDayForecast(keyframes);
+          }
+      } else {
+          // 24h Mode: Just use what we have (filtering will handle the view window)
+          data = keyframes;
+      }
+
       // Filter based on view mode
       data = data.filter(k => k.timeOffset <= cycleLimit);
-      return data;
+      
+      // Ensure strictly sorted to prevent render artifacts
+      return data.sort((a, b) => a.timeOffset - b.timeOffset);
   }, [keyframes, useSevenDayMode, cycleLimit]);
 
   return (

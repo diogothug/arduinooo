@@ -1,5 +1,6 @@
 
 
+
 import { DataSourceConfig, Keyframe, TideSourceType, MockWaveType, EffectType, WeatherData } from "../types";
 import { useAppStore } from '../store';
 
@@ -139,10 +140,13 @@ export const tideSourceService = {
         // 2. Tábua Maré (Brasil)
         if (config.activeSource === TideSourceType.TABUA_MARE) {
              try {
-                 // Note: We ignore cycleDuration here and enforce 30 days within the fetcher
-                 resultFrames = await fetchTabuaMareData(config, cycleDuration);
-                 // Note: Tábua Maré API currently only provides tide data, not weather.
-                 // We return frames, weather remains undefined (controlled manually)
+                 // Fetch duration is passed from TideSourceConfig logic (e.g. 7 days or 3 days)
+                 // Note: cycleDuration here is interpreted as "Days to fetch" if < 30, else use as hours logic?
+                 // In TideSourceConfig, we pass explicit 7 or 3.
+                 const daysToFetch = cycleDuration > 30 ? 3 : cycleDuration; // Sanity check if accidentally passed hours (168)
+                 
+                 resultFrames = await fetchTabuaMareData(config, daysToFetch);
+                 
                  if (resultFrames.length > 0) {
                      return { frames: resultFrames, sourceUsed: TideSourceType.TABUA_MARE, weather: undefined };
                  }
@@ -349,15 +353,16 @@ export const tideSourceService = {
 };
 
 // --- UPDATED FETCH LOGIC ---
-async function fetchTabuaMareData(config: DataSourceConfig, cycleDuration: number): Promise<Keyframe[]> {
-    // START WITH 3 DAYS AS REQUESTED FOR STABILITY
-    const INITIAL_FETCH_DAYS = 3;
+async function fetchTabuaMareData(config: DataSourceConfig, daysToFetch: number): Promise<Keyframe[]> {
+    // If daysToFetch is weirdly large (passed as hours, e.g. 168), clamp it or interpret it.
+    // Assuming UI passes 3 or 7.
+    const safeDays = (daysToFetch > 30) ? 3 : (daysToFetch < 1 ? 1 : daysToFetch);
 
     try {
-        safeLog(`[API] Tentando buscar ${INITIAL_FETCH_DAYS} dias...`);
-        return await fetchTabuaMareDataDuration(config, INITIAL_FETCH_DAYS);
+        safeLog(`[API] Tentando buscar ${safeDays} dias...`);
+        return await fetchTabuaMareDataDuration(config, safeDays);
     } catch (e: any) {
-        console.warn(`[TideSource] Falha em ${INITIAL_FETCH_DAYS} dias: ${e.message}`);
+        console.warn(`[TideSource] Falha em ${safeDays} dias: ${e.message}`);
         safeLog(`[API] ERRO: Falha na busca (${e.message}).`);
         throw new Error(`Falha na API Maré: ${e.message}`);
     }
