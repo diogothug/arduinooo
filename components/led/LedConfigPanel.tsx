@@ -1,19 +1,25 @@
+
 import React, { useState } from 'react';
 import { useAppStore } from '../../store';
 import { 
     Cpu, Waves, Sun, Zap, Activity, Flame, Sparkles, 
     Settings, Grid, Circle, AlignJustify, ChevronDown, ChevronRight,
-    Play, Beaker, ArrowUp, ArrowDown, Wind, Box, Palette
+    Play, Beaker, ArrowUp, ArrowDown, Wind, Box, Palette, Moon, CloudRain, BarChart3,
+    ArrowUpFromLine, Columns, LayoutTemplate
 } from 'lucide-react';
 
 const PRESETS = [
-    { id: 'fluidPhysics', label: 'Simulação Física 1D (Premium)', icon: <Waves size={16} className="text-cyan-400"/>, desc: 'Solver real de ondas e inércia.' },
-    { id: 'bio', label: 'Bioluminescência', icon: <Sparkles size={16} className="text-emerald-400"/>, desc: 'Plâncton reativo ao impacto.' },
-    { id: 'thermal', label: 'Thermal Drift', icon: <Flame size={16} className="text-orange-400"/>, desc: 'Visualização de calor.' },
-    { id: 'tideWaveVertical', label: 'Onda Vertical', icon: <ArrowUp size={16} className="text-blue-400"/>, desc: 'Animação linear simples.' },
-    { id: 'oceanCaustics', label: 'Moreré Lagoon', icon: <Sun size={16} className="text-yellow-400"/>, desc: 'Refração de luz na água.' },
-    { id: 'storm', label: 'Tempestade', icon: <Zap size={16} className="text-slate-400"/>, desc: 'Nuvens e raios.' }, 
-    { id: 'neon', label: 'Neon Cyber', icon: <Activity size={16} className="text-purple-400"/>, desc: 'Ciclo RGB intenso.' },
+    { id: 'tideStripBasic', label: 'Tira LED: Fluxo Vertical', icon: <ArrowUpFromLine size={16} className="text-emerald-400"/>, desc: 'Ondas sobem na enchente e descem na vazante.' },
+    { id: 'matrixBeach', label: 'Matriz: Praia Lateral', icon: <LayoutTemplate size={16} className="text-yellow-400"/>, desc: 'Areia e mar com ondas horizontais (Vista lateral).' },
+    { id: 'matrixFluid', label: 'Matriz: Barra Premium', icon: <Columns size={16} className="text-cyan-400"/>, desc: 'Barra vertical com física de fluido e superfície.' },
+    { id: 'moonPhase', label: 'Anel: Fase Lunar', icon: <Moon size={16} className="text-indigo-200"/>, desc: 'Anel mostra a iluminação atual da lua.' },
+    { id: 'fluidPhysics', label: 'Tide Gauge Classic', icon: <BarChart3 size={16} className="text-slate-400"/>, desc: 'Simulação física original de nível.' },
+    { id: 'oceanCaustics', label: 'Sunlight Refraction', icon: <Sun size={16} className="text-yellow-400"/>, desc: 'Simula luz solar no fundo do mar.' },
+    { id: 'deepBreath', label: 'Tide Breathing', icon: <Waves size={16} className="text-indigo-300"/>, desc: 'Pulso suave. Rápido na cheia, lento na vazante.' },
+    { id: 'aurora', label: 'Aurora Horizon', icon: <Activity size={16} className="text-emerald-400"/>, desc: 'Ondas magnéticas no horizonte da maré.' },
+    { id: 'bio', label: 'Bioluminescência', icon: <Sparkles size={16} className="text-purple-400"/>, desc: 'Água escura que brilha na superfície.' },
+    { id: 'storm', label: 'Alert Storm Mode', icon: <Zap size={16} className="text-amber-400"/>, desc: 'Alerta visual para marés extremas.' }, 
+    { id: 'thermal', label: 'Thermal Depth', icon: <Flame size={16} className="text-orange-400"/>, desc: 'Gradiente de temperatura por profundidade.' },
 ];
 
 interface LedConfigPanelProps {
@@ -26,7 +32,7 @@ interface LedConfigPanelProps {
 export const LedConfigPanel: React.FC<LedConfigPanelProps> = ({ simMode, setSimMode, simParams, setSimParams }) => {
     const { firmwareConfig, updateFirmwareConfig } = useAppStore();
     const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-        'HARDWARE': true,
+        'HARDWARE': false,
         'ANIMATION': true,
         'PHYSICS': false
     });
@@ -41,6 +47,10 @@ export const LedConfigPanel: React.FC<LedConfigPanelProps> = ({ simMode, setSimM
 
     const updateFluid = (key: string, val: any) => {
         updateFirmwareConfig({ fluidParams: { ...firmwareConfig.fluidParams, [key]: val } });
+    };
+
+    const updateAuto = (key: string, val: boolean) => {
+        updateFirmwareConfig({ autonomous: { ...firmwareConfig.autonomous, [key]: val } });
     };
 
     return (
@@ -168,7 +178,7 @@ export const LedConfigPanel: React.FC<LedConfigPanelProps> = ({ simMode, setSimM
                 
                 {expandedSections['ANIMATION'] && (
                     <div className="p-4 bg-slate-900/50 border-t border-slate-700 space-y-4">
-                        <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1 custom-scrollbar">
+                        <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
                             {PRESETS.map(p => (
                                 <button 
                                     key={p.id} 
@@ -186,9 +196,40 @@ export const LedConfigPanel: React.FC<LedConfigPanelProps> = ({ simMode, setSimM
                             ))}
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-700/50">
+                        {/* Dynamics / Autonomy */}
+                        <div className="bg-slate-900 p-3 rounded border border-slate-700 space-y-3">
+                             <h4 className="text-[10px] text-slate-500 font-bold uppercase mb-2">Dinâmica Ambiental</h4>
+                             
+                             <div className="flex items-center justify-between">
+                                 <div className="flex items-center gap-2">
+                                     <CloudRain size={14} className="text-blue-400"/>
+                                     <span className="text-xs text-slate-300">Vincular Clima (Vento)</span>
+                                 </div>
+                                 <input 
+                                     type="checkbox" 
+                                     checked={firmwareConfig.autonomous.linkWeatherToLeds}
+                                     onChange={e => updateAuto('linkWeatherToLeds', e.target.checked)}
+                                     className="accent-blue-500"
+                                 />
+                             </div>
+
+                             <div className="flex items-center justify-between">
+                                 <div className="flex items-center gap-2">
+                                     <Moon size={14} className="text-indigo-400"/>
+                                     <span className="text-xs text-slate-300">Vincular Astronomia (Lua)</span>
+                                 </div>
+                                 <input 
+                                     type="checkbox" 
+                                     checked={firmwareConfig.autonomous.linkPaletteToTime}
+                                     onChange={e => updateAuto('linkPaletteToTime', e.target.checked)}
+                                     className="accent-indigo-500"
+                                 />
+                             </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 pt-2">
                             <div>
-                                <label className="text-[9px] text-slate-500 font-bold uppercase block mb-2">Velocidade</label>
+                                <label className="text-[9px] text-slate-500 font-bold uppercase block mb-2">Velocidade Base</label>
                                 <input 
                                     type="range" min="0.1" max="5.0" step="0.1"
                                     value={firmwareConfig.animationSpeed}
@@ -197,7 +238,7 @@ export const LedConfigPanel: React.FC<LedConfigPanelProps> = ({ simMode, setSimM
                                 />
                             </div>
                             <div>
-                                <label className="text-[9px] text-slate-500 font-bold uppercase block mb-2">Intensidade</label>
+                                <label className="text-[9px] text-slate-500 font-bold uppercase block mb-2">Intensidade Base</label>
                                 <input 
                                     type="range" min="0" max="1" step="0.1"
                                     value={firmwareConfig.animationIntensity}
@@ -235,12 +276,12 @@ export const LedConfigPanel: React.FC<LedConfigPanelProps> = ({ simMode, setSimM
                 {expandedSections['PHYSICS'] && (
                     <div className="p-4 bg-slate-900/50 border-t border-slate-700 space-y-4">
                          <div className="bg-purple-900/10 p-3 rounded border border-purple-500/20 text-[10px] text-purple-200 mb-2 leading-relaxed">
-                             Estes parâmetros controlam a simulação líquida do motor "FluidPhysics".
+                             Ajustes finos para o comportamento da "água" nos LEDs.
                          </div>
                          
                          <div>
                              <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-                                 <span>Tensão (Rigidez)</span>
+                                 <span>Tensão (Rigidez da Superfície)</span>
                                  <span className="font-mono text-white">{firmwareConfig.fluidParams?.tension}</span>
                              </div>
                              <input type="range" min="0.001" max="0.1" step="0.001" value={firmwareConfig.fluidParams?.tension} onChange={e=>updateFluid('tension', parseFloat(e.target.value))} className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"/>
@@ -252,14 +293,6 @@ export const LedConfigPanel: React.FC<LedConfigPanelProps> = ({ simMode, setSimM
                                  <span className="font-mono text-white">{firmwareConfig.fluidParams?.damping}</span>
                              </div>
                              <input type="range" min="0.001" max="0.1" step="0.001" value={firmwareConfig.fluidParams?.damping} onChange={e=>updateFluid('damping', parseFloat(e.target.value))} className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"/>
-                         </div>
-
-                         <div>
-                             <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-                                 <span>Propagação (Spread)</span>
-                                 <span className="font-mono text-white">{firmwareConfig.fluidParams?.spread}</span>
-                             </div>
-                             <input type="range" min="0.0" max="0.5" step="0.01" value={firmwareConfig.fluidParams?.spread} onChange={e=>updateFluid('spread', parseFloat(e.target.value))} className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"/>
                          </div>
                     </div>
                 )}

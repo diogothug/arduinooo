@@ -102,55 +102,37 @@ export enum DisplayType {
 }
 
 export enum WidgetType {
-  TIDE_GAUGE = 'TIDE_GAUGE', 
-  CLOCK_DIGITAL = 'CLOCK_DIGITAL',
-  CLOCK_ANALOG = 'CLOCK_ANALOG',
-  TEXT_LABEL = 'TEXT_LABEL',
-  ICON_WEATHER = 'ICON_WEATHER',
-  MINI_CHART = 'MINI_CHART',
-  TIDE_RADAR = 'TIDE_RADAR',
-  MOON_PHASE = 'MOON_PHASE',
-  TIDE_RING = 'TIDE_RING',
-  TIDE_FILL = 'TIDE_FILL',
-  WIND_VECTOR = 'WIND_VECTOR',
-  TEMP_GAUGE = 'TEMP_GAUGE',
-  HUMIDITY_DOTS = 'HUMIDITY_DOTS',
-  RAIN_METER = 'RAIN_METER',
-  SOUND_PULSE = 'SOUND_PULSE',
-  HORIZON_BAR = 'HORIZON_BAR',
-  STATUS_WIFI_ICON = 'STATUS_WIFI_ICON',
-  STATUS_WIFI_TEXT = 'STATUS_WIFI_TEXT',
-  STATUS_BLE_ICON = 'STATUS_BLE_ICON',
-  STATUS_BLE_TEXT = 'STATUS_BLE_TEXT',
-  AI_IMAGE = 'AI_IMAGE',
-  WEATHER_TEMP_TEXT = 'WEATHER_TEMP_TEXT',
-  WEATHER_HUMIDITY_TEXT = 'WEATHER_HUMIDITY_TEXT',
-  WEATHER_WIND_TEXT = 'WEATHER_WIND_TEXT',
-  WEATHER_CONDITION_TEXT = 'WEATHER_CONDITION_TEXT',
+  // Core Widgets
+  ARC_GAUGE = 'ARC_GAUGE',          // Barra curva (TFT_eSPI drawArc)
+  RADIAL_COMPASS = 'RADIAL_COMPASS', // Seta giratória
+  GRAPH_LINE = 'GRAPH_LINE',        // Histórico simplificado
+  DIGITAL_CLOCK = 'DIGITAL_CLOCK',  // Fonte mono/7-seg
+  ANALOG_CLOCK = 'ANALOG_CLOCK',    // Ponteiros vetoriais
   
-  OLED_MODERN_RING = 'OLED_MODERN_RING',
-  OLED_STATUS_BAR = 'OLED_STATUS_BAR',
-  OLED_MINI_GRAPH = 'OLED_MINI_GRAPH'
+  // Text Data
+  TEXT_VALUE = 'TEXT_VALUE',        // Valor grande + Label pequeno
+  TEXT_SIMPLE = 'TEXT_SIMPLE',      // Texto livre
+  
+  // Status Icons (Vector Shapes)
+  ICON_WIFI = 'ICON_WIFI',
+  ICON_BLE = 'ICON_BLE',
+  ICON_WEATHER = 'ICON_WEATHER',
+  
+  // Decor
+  RING_OUTER = 'RING_OUTER',        // Anel decorativo externo
+  GRID_BACKGROUND = 'GRID_BACKGROUND', // Grid estilo radar
+  
+  // Legacy / Advanced
+  AI_IMAGE = 'AI_IMAGE'
 }
 
 export enum DisplayTheme {
-  DEFAULT = 'DEFAULT',
-  AZUL_OCEANO = 'AZUL_OCEANO',
-  SOL_MORERE = 'SOL_MORERE',
-  NOITE_TROPICAL = 'NOITE_TROPICAL',
-  OCEAN_TURQUOISE = 'OCEAN_TURQUOISE',
-  SUNSET_BAHIA = 'SUNSET_BAHIA',
-  STARRY_NIGHT = 'STARRY_NIGHT',
-  TROPICAL_STORM = 'TROPICAL_STORM',
-  MORERE_MINIMAL = 'MORERE_MINIMAL',
-  CYBER_GRID = 'CYBER_GRID',
-  VORTEX = 'VORTEX',
-  JELLYFISH_JAM = 'JELLYFISH_JAM',
-  DIGITAL_RAIN = 'DIGITAL_RAIN',
-  NEON_RIPPLES = 'NEON_RIPPLES',
-  RETRO_SUNSET = 'RETRO_SUNSET',
-  CORAL_REEF = 'CORAL_REEF',
-  OLED_MODERN = 'OLED_MODERN'
+  DEFAULT = 'DEFAULT', // Preto básico
+  CHRONO = 'CHRONO',   // Estilo relógio esportivo (Ticks, Alto contraste)
+  TERMINAL = 'TERMINAL', // Retro verde/ambar fosforo
+  MARINE = 'MARINE',   // Azul marinho, branco, laranja (náutico)
+  NEON = 'NEON',       // Cyberpunk, linhas finas brilhantes
+  PAPER = 'PAPER',     // Fundo claro, tinta preta (E-Ink style)
 }
 
 export enum RenderMode {
@@ -181,16 +163,18 @@ export interface DisplayWidget {
   type: WidgetType;
   x: number;
   y: number;
+  w?: number; // Largura (para graficos)
+  h?: number; // Altura
   scale: number;
   color: string;
-  color2?: string;
+  color2?: string; // Cor secundária/fundo
   label?: string;
+  valueSource?: 'TIDE' | 'TEMP' | 'HUM' | 'WIND' | 'TIME' | 'NONE'; 
   imageUrl?: string;
   visible: boolean;
   zIndex: number;
   rotation?: number;
-  opacity?: number;
-  thickness?: number;
+  thickness?: number; // Para arcos e linhas
   fontFamily?: string;
 }
 
@@ -274,20 +258,79 @@ export interface FluidParams {
   spread: number;  // 0.0 - 0.5 (Neighbor transfer)
 }
 
+export enum WifiMode {
+    AP = 'AP',
+    STA = 'STA',
+    AP_STA = 'AP_STA'
+}
+
+export enum SleepMode {
+    NONE = 'NONE',
+    LIGHT = 'LIGHT',
+    DEEP = 'DEEP'
+}
+
+export enum LogLevel {
+    NONE = 'NONE',
+    ERROR = 'ERROR',
+    WARN = 'WARN',
+    INFO = 'INFO',
+    DEBUG = 'DEBUG',
+    VERBOSE = 'VERBOSE'
+}
+
+export enum MeshRole {
+    AUTO = 'AUTO',
+    ROOT = 'ROOT',
+    NODE = 'NODE'
+}
+
+export interface MeshConfig {
+    enabled: boolean;
+    meshId: string;
+    password: string;
+    channel: number;
+    role: MeshRole;
+    maxLayers: number;
+}
+
+// --- NATIVE PERIPHERALS CONFIG ---
+export enum TouchAction {
+    NONE = 'NONE',
+    NEXT_MODE = 'NEXT_MODE',
+    PREV_MODE = 'PREV_MODE',
+    BRIGHTNESS_UP = 'BRIGHTNESS_UP',
+    BRIGHTNESS_DOWN = 'BRIGHTNESS_DOWN',
+    TOGGLE_POWER = 'TOGGLE_POWER',
+    REBOOT = 'REBOOT'
+}
+
+export interface TouchPinConfig {
+    gpio: number;
+    threshold: number; // Sensitivity (Lower = less sensitive)
+    action: TouchAction;
+}
+
+export interface TouchConfig {
+    enabled: boolean;
+    pins: TouchPinConfig[];
+    calibrationSamples: number;
+}
+
 export interface FirmwareConfig {
   ssid: string;
   password: string;
   deviceName: string;
   enableBLE: boolean;
   enableSerial: boolean;
-  ota: OtaConfig; // New OTA config
+  ota: OtaConfig; 
   cycleDuration: number;
   nightMode: LedNightMode;
   lowPowerMode: LowPowerConfig;
   weatherApi: WeatherApiConfig;
   autonomous: AutonomousConfig;
   physicalSpecs: PhysicalSpecs; 
-  fluidParams: FluidParams; // New Physics Config
+  fluidParams: FluidParams; 
   ledCount: number;
   ledPin: number;
   ledBrightness: number;
@@ -303,9 +346,19 @@ export interface FirmwareConfig {
   animationIntensity: number;
   animationPalette: number;
   compiledData?: CompiledData;
-  shader: ShaderConfig; // New Shader Engine
+  shader: ShaderConfig; 
+  mesh: MeshConfig; 
+  touch: TouchConfig; 
   enableWebDashboard: boolean;
   enableSystemHealth: boolean;
+  wifiMode: WifiMode;
+  minRssi: number;
+  wifiWatchdog: boolean;
+  sleepMode: SleepMode;
+  wakeupInterval: number;
+  logLevel: LogLevel;
+  remoteLog: boolean;
+  logCircularBuffer: boolean;
 }
 
 export interface DailyForecast {

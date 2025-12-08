@@ -1,6 +1,8 @@
 
 
-import { FirmwareConfig, DisplayConfig, Keyframe } from '../../types';
+
+
+import { FirmwareConfig, DisplayConfig, Keyframe, TouchAction } from '../../types';
 
 export const generatePlatformIO = (config: FirmwareConfig, display: DisplayConfig) => `
 [env:esp32dev]
@@ -11,10 +13,10 @@ monitor_speed = 115200
 board_build.partitions = min_spiffs.csv
 
 lib_deps =
-    fastled/FastLED @ ^3.6.0
+    fastled/FastLED
     bblanchon/ArduinoJson @ ^6.21.3
-    bodmer/TFT_eSPI @ ^2.5.31
-    ${config.enableBLE ? 'h2zero/NimBLE-Arduino @ ^1.4.1' : ''}
+    bodmer/TFT_eSPI
+    ${config.enableBLE ? 'h2zero/NimBLE-Arduino' : ''}
 
 build_flags = 
     -D USER_SETUP_LOADED=1
@@ -52,10 +54,31 @@ export const generateConfigH = (config: FirmwareConfig, keyframes: Keyframe[] = 
 #define LED_PIN ${config.ledPin}
 #define NUM_LEDS_DEFAULT ${config.ledCount}
 
-// --- NETWORK DEFAULTS ---
+// --- NETWORK CONFIG ---
 #define WIFI_SSID_DEFAULT "${config.ssid}"
 #define WIFI_PASSWORD_DEFAULT "${config.password}"
 #define DEVICE_NAME_DEFAULT "${config.deviceName}"
+#define WIFI_MODE "${config.wifiMode}" 
+#define WIFI_MIN_RSSI ${config.minRssi}
+#define WIFI_WATCHDOG_ENABLED ${config.wifiWatchdog ? '1' : '0'}
+
+// --- MESH NETWORK CONFIG ---
+#define MESH_ENABLED ${config.mesh?.enabled ? '1' : '0'}
+#define MESH_ID "${config.mesh?.meshId || 'TideMesh'}"
+#define MESH_PASSWORD "${config.mesh?.password || 'mesh_pass'}"
+#define MESH_CHANNEL ${config.mesh?.channel || 6}
+#define MESH_MAX_LAYERS ${config.mesh?.maxLayers || 6}
+
+// --- POWER CONFIG ---
+#define SLEEP_MODE "${config.sleepMode}"
+#define WAKEUP_INTERVAL_SEC ${config.wakeupInterval}
+#define LOW_POWER_FPS ${config.lowPowerMode.idleFps}
+#define BATTERY_THRESH ${config.lowPowerMode.batteryThreshold}
+
+// --- LOGGING CONFIG ---
+#define LOG_LEVEL_DEFAULT "${config.logLevel}"
+#define REMOTE_LOG_ENABLED ${config.remoteLog ? '1' : '0'}
+#define CIRCULAR_BUFFER_ENABLED ${config.logCircularBuffer ? '1' : '0'}
 
 // --- SYSTEM ---
 #define WDT_TIMEOUT_SECONDS 10
@@ -66,6 +89,7 @@ export const generateConfigH = (config: FirmwareConfig, keyframes: Keyframe[] = 
 #define ENABLE_WEATHER ${config.weatherApi?.enabled ? '1' : '0'}
 #define ENABLE_OTA ${config.ota?.enabled ? '1' : '0'}
 #define ENABLE_SHADER ${config.shader?.enabled ? '1' : '0'}
+#define ENABLE_TOUCH ${config.touch?.enabled ? '1' : '0'}
 
 // --- FALLBACK DATA ---
 struct TideKeyframeConfig {
@@ -213,7 +237,27 @@ void LogManager::clear() {
 }
 `;
 
-export const generateMainCpp = (displayConfig: DisplayConfig) => `
+export const generateMainCpp = (displayConfig: DisplayConfig, firmwareConfig: FirmwareConfig) => {
+    
+    // Construct Touch Logic
+    const touchInitLogic = firmwareConfig.touch?.enabled ? `
+    TouchManager::begin();
+    TouchManager::setGlobalThreshold(40);
+    
+    ${firmwareConfig.touch.pins.map(p => `
+    TouchManager::registerButton(${p.gpio}, ${p.threshold}, [](TouchEvent e) {
+        if (e == TOUCH_TAP) {
+            TIDE_LOGI("Action: ${p.action}");
+            // Action Dispatcher
+            ${p.action === TouchAction.NEXT_MODE ? 'WS2812BConfigManager::nextMode();' : ''}
+            ${p.action === TouchAction.TOGGLE_POWER ? 'display.toggle();' : ''}
+            ${p.action === TouchAction.BRIGHTNESS_UP ? 'display.incBrightness();' : ''}
+        }
+    });
+    `).join('')}
+    ` : '';
+
+    return `
 #include <Arduino.h>
 #include <esp_task_wdt.h>
 #include "config.h"
@@ -228,6 +272,8 @@ export const generateMainCpp = (displayConfig: DisplayConfig) => `
 #include "TelemetryManager.h"
 #include "PerformanceManager.h"
 #include "ShaderEngine.h"
+#include "MeshManager.h" 
+#include "TouchManager.h"
 #include "modules/led_ws2812b/ws2812b_controller.h"
 #include "modules/led_ws2812b/ws2812b_animations.h"
 #include "modules/led_ws2812b/ws2812b_config.h"
@@ -245,20 +291,22 @@ TaskHandle_t TaskHandle_Net;
 TaskHandle_t TaskHandle_Anim;
 TaskHandle_t TaskHandle_Telemetry;
 
-// --- SHARED DATA ---
+// --- SHARED DATA & MUTEX ---
+portMUX_TYPE sharedMux = portMUX_INITIALIZER_UNLOCKED;
 volatile float shared_TideNorm = 0.5;
+volatile int shared_Trend = 0;
 volatile float shared_Wind = 0;
 volatile int shared_Humidity = 60;
 bool safeMode = false;
 
-// --- TASK: TELEMETRY (Core 0) ---
-// Collects stats every 2s without blocking animation
+// --- TASK: TELEMETRY (Core 0, Priority 1) ---
+// Collects stats every 2s
 void TaskTelemetry(void *pvParameters) {
     TIDE_LOGI("Task Telemetry started on Core %d", xPortGetCoreID());
     TelemetryManager::begin();
     PerformanceManager::begin();
     
-    // WDT
+    // WDT Add only (Init done in setup)
     esp_task_wdt_add(NULL);
     
     while(1) {
@@ -266,40 +314,47 @@ void TaskTelemetry(void *pvParameters) {
         PerformanceManager::evaluate();
         
         esp_task_wdt_reset();
-        vTaskDelay(2000 / portTICK_PERIOD_MS); // 2s Interval
+        vTaskDelay(pdMS_TO_TICKS(2000));
     }
 }
 
-// --- TASK: NETWORK & SYSTEM (Core 0) ---
+// --- TASK: NETWORK & SYSTEM (Core 0, Priority 2) ---
 void TaskNetwork(void *pvParameters) {
     TIDE_LOGI("Task Network started on Core %d", xPortGetCoreID());
     
-    // WDT for this task
-    esp_task_wdt_init(WDT_TIMEOUT_SECONDS, true);
+    // WDT Add only
     esp_task_wdt_add(NULL);
 
-    // Connect
+    #if MESH_ENABLED
+    MeshManager::begin();
+    #else
     if (!wifiManager.connect()) {
         TIDE_LOGE("Wifi Failed. System in Offline Mode.");
         TelemetryManager::addCriticalEvent("WIFI_FAIL");
     }
+    
     otaManager.begin();
+    otaManager.verify();
     server.begin();
+    #endif
 
     while(1) {
+        #if !MESH_ENABLED
         otaManager.handle();
         server.handle();
+        #else
+        MeshManager::update();
+        #endif
         
         esp_task_wdt_reset();
-        vTaskDelay(10 / portTICK_PERIOD_MS);
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
-// --- TASK: ANIMATION & LOGIC (Core 1) ---
+// --- TASK: ANIMATION & LOGIC (Core 1, Priority 3) ---
 void TaskAnimation(void *pvParameters) {
     TIDE_LOGI("Task Animation started on Core %d", xPortGetCoreID());
     
-    // Init Hardware
     WS2812BConfigManager::load();
     ledController.begin();
     WS2812BAnimations::attachController(&ledController);
@@ -307,13 +362,17 @@ void TaskAnimation(void *pvParameters) {
     display.begin();
     display.setBrightness(${displayConfig.brightness});
     display.showSplashScreen();
+    
+    // Setup Touch
+    #if ENABLE_TOUCH
+    ${touchInitLogic}
+    #endif
 
     esp_task_wdt_add(NULL);
 
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = 30; // Target ~33 FPS
+    const TickType_t xFrequency = pdMS_TO_TICKS(33); // Target ~30 FPS
     
-    // FPS Counting
     int frameCounter = 0;
     unsigned long lastFpsTime = millis();
 
@@ -322,20 +381,30 @@ void TaskAnimation(void *pvParameters) {
             engine.update();
             if(engine.isFallbackMode()) TelemetryManager::registerFallback();
 
+            // Native Touch Polling (Very fast)
+            #if ENABLE_TOUCH
+            TouchManager::update();
+            #endif
+
+            // Critical Section Update
+            portENTER_CRITICAL(&sharedMux);
             shared_TideNorm = engine.getNormalizedTide();
+            shared_Trend = engine.getTideTrend();
+            portEXIT_CRITICAL(&sharedMux);
+            
             display.update(engine.getCurrentHeightPercent());
 
-            String mode = WS2812BConfigManager::config.mode;
+            // Avoid allocation in loop
+            const char* mode = WS2812BConfigManager::config.mode.c_str();
             
             #if ENABLE_SHADER
-            // If shader enabled, override standard animation
             if (WS2812BConfigManager::config.paletteId == 99) {
                  ShaderEngine::run("sin(time+i*0.1)*255", &ledController, millis()/1000.0, shared_TideNorm);
             } else {
-                 WS2812BAnimations::run(mode, shared_TideNorm, shared_Wind, shared_Humidity);
+                 WS2812BAnimations::run(mode, shared_TideNorm, shared_Trend, shared_Wind, shared_Humidity);
             }
             #else
-            WS2812BAnimations::run(mode, shared_TideNorm, shared_Wind, shared_Humidity);
+            WS2812BAnimations::run(mode, shared_TideNorm, shared_Trend, shared_Wind, shared_Humidity);
             #endif
             
             // FPS Reporting
@@ -347,14 +416,14 @@ void TaskAnimation(void *pvParameters) {
             }
 
         } else {
-             // Safe Mode Blink
-             ledController.clear();
-             ledController.setPixel(0, CRGB::Red);
+             // Safe Mode Blink Pattern (Yielding)
+             ledController.fill(CRGB::Red);
              ledController.show();
-             vTaskDelay(500 / portTICK_PERIOD_MS);
+             vTaskDelay(pdMS_TO_TICKS(250));
              ledController.clear();
              ledController.show();
-             vTaskDelay(500 / portTICK_PERIOD_MS);
+             vTaskDelay(pdMS_TO_TICKS(250));
+             taskYIELD();
         }
         
         esp_task_wdt_reset();
@@ -366,31 +435,51 @@ void setup() {
     LogManager::begin(LOG_DEBUG);
     TIDE_LOGI("BOOT: TideFlux System v2.1");
 
+    // Initialize WDT Globally here
+    esp_task_wdt_init(WDT_TIMEOUT_SECONDS, true);
+    esp_task_wdt_add(NULL); // For setup/loop task
+
     if (!NVSManager::begin()) {
         TIDE_LOGE("NVS Mount Failed!");
     }
     
     int crashCount = NVSManager::getInt("crash_count", 0);
-    if (crashCount > 3) {
-        TIDE_LOGE("Too many crashes (%d). Entering SAFE MODE.", crashCount);
+    // CRASH LOOP PROTECTION
+    if (crashCount > 5) {
+        TIDE_LOGE("CRITICAL: Crash Loop (%d). Rolling back firmware...", crashCount);
+        // Attempt rollback to previous partition
+        otaManager.rollback();
+        // If rollback fails or returns, we enter safe mode
         safeMode = true;
+    }
+    
+    if (crashCount > 3 && !safeMode) {
+        TIDE_LOGW("Warning: System unstable (%d crashes).", crashCount);
     }
     NVSManager::setInt("crash_count", crashCount + 1);
 
-    // Launch Tasks
-    xTaskCreatePinnedToCore(TaskNetwork, "NetTask", 6144, NULL, 1, &TaskHandle_Net, 0);
+    // Launch Tasks with Adjusted Priorities
+    // Animation (Prio 3) > Network (Prio 2) > Telemetry (Prio 1)
+    xTaskCreatePinnedToCore(TaskNetwork, "NetTask", 6144, NULL, 2, &TaskHandle_Net, 0);
     xTaskCreatePinnedToCore(TaskTelemetry, "TelemTask", 4096, NULL, 1, &TaskHandle_Telemetry, 0);
-    xTaskCreatePinnedToCore(TaskAnimation, "AnimTask", 8192, NULL, 2, &TaskHandle_Anim, 1); // Higher Prio
+    xTaskCreatePinnedToCore(TaskAnimation, "AnimTask", 8192, NULL, 3, &TaskHandle_Anim, 1); 
 
-    delay(10000); 
+    // Stabilization Delay
+    vTaskDelay(pdMS_TO_TICKS(10000));
     NVSManager::setInt("crash_count", 0);
     TIDE_LOGI("Boot Verified Stable.");
 }
 
 void loop() {
+    // Loop task is handled by WDT in setup(), but we just kill it to save memory/cycles
+    // or keep it alive feeding wdt. Deleting it is cleaner if setup is done.
+    // However, we added it to WDT in setup. We should remove it or keep feeding.
+    // Simple approach: delete task.
+    esp_task_wdt_delete(NULL); 
     vTaskDelete(NULL);
 }
 `;
+};
 
 export const generateRestServerCpp = () => `
 #include "RestServer.h"
@@ -399,6 +488,10 @@ export const generateRestServerCpp = () => `
 #include "SystemHealth.h"
 #include "TelemetryManager.h"
 #include "WebDashboard.h"
+#include "OTAManager.h"
+
+// Reference global
+extern OTAManager otaManager;
 
 RestServer::RestServer(MareEngine* engine) : _server(80), _engine(engine) {}
 
@@ -409,6 +502,7 @@ void RestServer::begin() {
     _server.on("/api/health", HTTP_GET, std::bind(&RestServer::handleHealth, this));
     _server.on("/api/telemetry", HTTP_GET, std::bind(&RestServer::handleTelemetry, this));
     _server.on("/api/reboot", HTTP_POST, std::bind(&RestServer::handleReboot, this));
+    _server.on("/api/ota", HTTP_POST, std::bind(&RestServer::handleOTA, this));
     
     _server.enableCORS(true);
     _server.begin();
@@ -442,6 +536,18 @@ void RestServer::handleReboot() {
     _server.send(200, "application/json", "{\\"status\\":\\"rebooting\\"}");
     delay(500);
     ESP.restart();
+}
+
+void RestServer::handleOTA() {
+    if (!_server.hasArg("url")) {
+        _server.send(400, "application/json", "{\"error\":\"Missing 'url' parameter\"}");
+        return;
+    }
+    String url = _server.arg("url");
+    _server.send(200, "application/json", "{\"status\":\"updating\", \"target\":\"" + url + "\"}");
+    
+    delay(500); 
+    otaManager.updateFromUrl(url);
 }
 
 void RestServer::handleConfig() {
@@ -481,6 +587,7 @@ private:
     void handleHealth();
     void handleTelemetry();
     void handleReboot();
+    void handleOTA();
 };
 #endif
 `;

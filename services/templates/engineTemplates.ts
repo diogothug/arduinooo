@@ -1,4 +1,5 @@
 
+
 import { Keyframe } from '../../types';
 
 export const generateMareEngineH = () => `
@@ -29,6 +30,7 @@ public:
     void setCycleDuration(float hours);
     float getCurrentHeightPercent(); // 0.0 - 100.0
     float getNormalizedTide();       // 0.0 - 1.0
+    int getTideTrend();              // 1 (Rising), -1 (Falling), 0 (Steady)
     bool isFallbackMode();
 
 private:
@@ -37,6 +39,8 @@ private:
     float _cycleDuration;
     unsigned long _lastMillis;
     float _currentHeight;
+    float _prevHeight; 
+    int _trend;
     bool _usingSyntheticMode; // If true, using math fallback
     
     // Day Min/Max tracking
@@ -53,37 +57,124 @@ private:
 `;
 
 export const generateMareEngineCpp = (keyframes: Keyframe[]) => {
-    // Note: We use the keyframes passed merely to init the JS logic if needed, 
-    // but the actual Hardcoded fallback is now in config.h
     return `
 #include "MareEngine.h"
+#include <algorithm> // Required for std::sort
+#include <math.h>    // Required for fmod
+
+#define SIM_SPEED 1.0f             // 1s = 1h simulada
+#define TREND_EPS 0.02f            // hysteresis para reduzir flicker
+#define SMOOTHING 0.05f            // suavização da altura (5%)
 
 MareEngine::MareEngine() 
     : _simulatedHours(0.0f), 
       _cycleDuration(DEFAULT_CYCLE_DURATION),
       _lastMillis(0), 
       _currentHeight(50.0f),
-      _dayMaxHeight(0), _dayMinHeight(100),
+      _prevHeight(50.0f),
+      _trend(0),
+      _dayMaxHeight(0), 
+      _dayMinHeight(100),
       _usingSyntheticMode(false)
 {
-    // Try to load fallback from config.h immediately on boot
     loadHardcodedFallback();
 }
 
 void MareEngine::loadHardcodedFallback() {
-    // Load from CONFIG.H FALLBACK_FRAMES
     if (FALLBACK_FRAME_COUNT > 0) {
         _keyframes.clear();
         for(int i=0; i<FALLBACK_FRAME_COUNT; i++) {
             TideKeyframeConfig k = FALLBACK_FRAMES[i];
             _keyframes.push_back({k.timeOffset, k.height, k.color, k.intensity, k.effect});
         }
+        
+        // Ordena keyframes por tempo
+        std::sort(_keyframes.begin(), _keyframes.end(), 
+            [](auto &a, auto &b){ return a.timeOffset < b.timeOffset; });
+            
         recalculateMaxMin();
-        Serial.printf("[MareEngine] Loaded %d hardcoded fallback frames.\\n", FALLBACK_FRAME_COUNT);
+        
+        Serial.printf("[MareEngine] Loaded %d fallback frames.\\n", FALLBACK_FRAME_COUNT);
     } else {
-        Serial.println("[MareEngine] No hardcoded frames found. Switch to Synthetic.");
+        Serial.println("[MareEngine] No fallback. Using synthetic.");
         _usingSyntheticMode = true;
     }
+}
+
+void MareEngine::update() {
+    unsigned long now = millis();
+    
+    if (_lastMillis == 0) _lastMillis = now;
+    
+    // Tempo real suavizado
+    // (now - _lastMillis) is ms. *0.001 is seconds.
+    // If SIM_SPEED is 1.0, then 1 real second = 1 simulated hour.
+    float deltaHours = (now - _lastMillis) * 0.001f * SIM_SPEED;
+    _simulatedHours += deltaHours;
+    _lastMillis = now;
+    
+    // Wrap Cycle (Circular)
+    if (_simulatedHours >= _cycleDuration) 
+        _simulatedHours = fmod(_simulatedHours, _cycleDuration);
+
+    _prevHeight = _currentHeight;
+
+    float rawHeight;
+
+    if (_usingSyntheticMode || _keyframes.size() < 2) {
+        rawHeight = calculateSyntheticTide(_simulatedHours);
+    } 
+    else {
+        // Encontra segmento atual
+        TideKeyframe start, end;
+        bool found = false;
+
+        for (size_t i = 0; i < _keyframes.size(); i++) {
+            size_t j = (i + 1) % _keyframes.size();
+            float t0 = _keyframes[i].timeOffset;
+            float t1 = _keyframes[j].timeOffset;
+
+            // Check if current time is between two keyframes
+            // Note: This logic assumes sorted frames and handles non-wrapping segments
+            if (_simulatedHours >= t0 && _simulatedHours <= t1) {
+                start = _keyframes[i];
+                end = _keyframes[j];
+                found = true;
+                break;
+            }
+        }
+
+        // Fallback: Segmento de virada (último -> primeiro)
+        if (!found) {
+            start = _keyframes.back();
+            end   = _keyframes.front();
+        }
+
+        // Interpolação circular
+        float t0 = start.timeOffset;
+        float t1 = end.timeOffset;
+        
+        // Se t1 < t0, significa que virou o ciclo (ex: 23h -> 1h)
+        if (t1 < t0) t1 += _cycleDuration;
+
+        // Ajusta tempo atual para relativo ao inicio do segmento
+        float T = fmod(_simulatedHours - t0 + _cycleDuration, _cycleDuration);
+        float duration = t1 - t0;
+        
+        float progress = (duration > 0.0001f) ? (T / duration) : 0.0f;
+        if (progress > 1.0f) progress = 1.0f;
+        
+        rawHeight = start.height + (end.height - start.height) * progress;
+    }
+
+    // Smoothing Suave (Low Pass Filter)
+    _currentHeight = _currentHeight * (1.0f - SMOOTHING) + rawHeight * SMOOTHING;
+
+    // Trend com Hysteresis (Estabilidade)
+    float diff = _currentHeight - _prevHeight;
+    if (diff > TREND_EPS) _trend = 1;
+    else if (diff < -TREND_EPS) _trend = -1;
+    else _trend = 0;
 }
 
 void MareEngine::setCycleDuration(float hours) {
@@ -99,82 +190,9 @@ void MareEngine::recalculateMaxMin() {
     }
 }
 
-void MareEngine::update() {
-    // 1. Time Update
-    unsigned long currentMillis = millis();
-    if (currentMillis - _lastMillis > 100) { // 10 ticks per second simulation speed
-        // In simulation mode or simple daily cycle, we increment hours.
-        // In Realtime mode with NTP, this logic would differ (using struct tm).
-        // For this robust firmware, we assume 'uptime' driven cycle if no NTP.
-        
-        _simulatedHours += 0.01; 
-        
-        // Handle Cycle Wrap or Extension
-        if (_simulatedHours >= _cycleDuration) {
-             // If we are in "Daily Cycle" mode (e.g. 24h), we wrap.
-             // If we are in "Prediction" mode (e.g. 7 days), and we pass the end...
-             if (_cycleDuration <= 25.0f) {
-                 _simulatedHours = 0.0f; // Wrap 24h
-             } else {
-                 // We passed the end of our data!
-                 Serial.println("[MareEngine] Data expired! Switching to Algorithmic Fallback.");
-                 _usingSyntheticMode = true;
-             }
-        }
-        _lastMillis = currentMillis;
-    }
-
-    // LAYER 3: ALGORITHMIC FALLBACK
-    if (_usingSyntheticMode || _keyframes.size() < 2) {
-        _currentHeight = calculateSyntheticTide(_simulatedHours);
-        return;
-    }
-
-    // LAYER 2: INTERPOLATION (Hardcoded or API data)
-    TideKeyframe start = _keyframes.front();
-    TideKeyframe end = _keyframes.back();
-    bool found = false;
-
-    for (size_t i = 0; i < _keyframes.size() - 1; i++) {
-        if (_simulatedHours >= _keyframes[i].timeOffset && _simulatedHours <= _keyframes[i+1].timeOffset) {
-            start = _keyframes[i];
-            end = _keyframes[i+1];
-            found = true;
-            break;
-        }
-    }
-
-    if (!found && _keyframes.size() > 0) {
-        // If we didn't find a segment but we are wrapping (e.g. end to start)
-        start = _keyframes.back();
-        end = _keyframes.front();
-    }
-
-    float duration = end.timeOffset - start.timeOffset;
-    if (end.timeOffset < start.timeOffset) {
-        // Wrap around case
-        duration = (_cycleDuration - start.timeOffset) + end.timeOffset;
-    }
-
-    float currentOffset = _simulatedHours - start.timeOffset;
-    if (currentOffset < 0) currentOffset += _cycleDuration;
-    
-    float progress = (duration > 0.001f) ? (currentOffset / duration) : 0;
-    if (progress > 1.0f) progress = 1.0f;
-    
-    // Linear Interpolation
-    _currentHeight = start.height + (end.height - start.height) * progress;
-}
-
 // M2 Constituent Approximation (Lunar Semidiurnal)
-// Period ~12.42 hours.
-// This ensures that even if all data is lost, the tide map still "breathes" 
-// with the ocean's rhythm.
 float MareEngine::calculateSyntheticTide(float t) {
-    // 50% base level
-    // 45% amplitude (swings 5% to 95%)
-    // Period 12.42h
-    // 2 * PI * t / 12.42
+    // 12.42h period typically
     float val = 50.0f + 45.0f * cos(2.0f * PI * t / 12.42f);
     return val;
 }
@@ -183,6 +201,9 @@ void MareEngine::setKeyframes(std::vector<TideKeyframe> frames) {
     if (frames.size() > 0) {
         _keyframes = frames;
         _usingSyntheticMode = false;
+        // Ensure sorted for the interpolation logic
+        std::sort(_keyframes.begin(), _keyframes.end(), 
+            [](auto &a, auto &b){ return a.timeOffset < b.timeOffset; });
         recalculateMaxMin();
     }
 }
@@ -197,6 +218,10 @@ float MareEngine::getCurrentHeightPercent() {
 
 float MareEngine::getNormalizedTide() {
     return _currentHeight / 100.0f;
+}
+
+int MareEngine::getTideTrend() {
+    return _trend;
 }
 
 bool MareEngine::isFallbackMode() {

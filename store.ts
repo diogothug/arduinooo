@@ -1,7 +1,7 @@
 
 
 import { create } from 'zustand';
-import { Keyframe, Device, ViewState, EffectType, FirmwareConfig, DisplayConfig, DisplayWidget, WidgetType, DisplayDriver, ConnectionType, DisplayTheme, RenderMode, DataSourceConfig, TideSourceType, MockWaveType, WeatherData, Notification, DisplayType, SavedMock } from './types';
+import { Keyframe, Device, ViewState, EffectType, FirmwareConfig, DisplayConfig, DisplayWidget, WidgetType, DisplayDriver, ConnectionType, DisplayTheme, RenderMode, DataSourceConfig, TideSourceType, MockWaveType, WeatherData, Notification, DisplayType, SavedMock, WifiMode, SleepMode, LogLevel, MeshRole, TouchAction } from './types';
 
 console.log("🟦 [Store] Loading store.ts module...");
 
@@ -113,8 +113,33 @@ export const useAppStore = create<AppState>((set) => ({
         code: 'sin(t + i * 0.2)', // Basic default
         uniforms: { speed: 1.0, scale: 1.0, color1: '#0000FF', color2: '#00FFFF' }
     },
+    mesh: {
+        enabled: false,
+        meshId: 'TideMesh_01',
+        password: 'mesh_secure_pass',
+        channel: 6,
+        role: MeshRole.AUTO,
+        maxLayers: 6
+    },
+    touch: {
+        enabled: true,
+        calibrationSamples: 20,
+        pins: [
+            { gpio: 4, threshold: 40, action: TouchAction.NEXT_MODE },
+            { gpio: 15, threshold: 40, action: TouchAction.TOGGLE_POWER }
+        ]
+    },
     enableWebDashboard: true,
-    enableSystemHealth: true
+    enableSystemHealth: true,
+    
+    wifiMode: WifiMode.STA,
+    minRssi: -85,
+    wifiWatchdog: true,
+    sleepMode: SleepMode.NONE,
+    wakeupInterval: 60,
+    logLevel: LogLevel.INFO,
+    remoteLog: true,
+    logCircularBuffer: true
   },
   dataSourceConfig: {
     activeSource: TideSourceType.TABUA_MARE,
@@ -136,8 +161,8 @@ export const useAppStore = create<AppState>((set) => ({
     simulateSunlight: false, simulatePixelGrid: false, simulateRGB565: true
   },
   displayWidgets: [
-    { id: '1', type: WidgetType.TIDE_GAUGE, x: 120, y: 120, scale: 1, color: '#0ea5e9', visible: true, zIndex: 0 },
-    { id: '2', type: WidgetType.TEXT_LABEL, x: 120, y: 160, scale: 1, color: '#ffffff', label: 'NÍVEL MARÉ', visible: true, zIndex: 1 },
+    { id: '1', type: WidgetType.ARC_GAUGE, x: 120, y: 120, scale: 1, color: '#0ea5e9', visible: true, zIndex: 0, valueSource: 'TIDE' },
+    { id: '2', type: WidgetType.TEXT_SIMPLE, x: 120, y: 160, scale: 1, color: '#ffffff', label: 'NÍVEL MARÉ', visible: true, zIndex: 1 },
   ],
   weatherData: {
       temp: 28.5, humidity: 78, windSpeed: 22, windDir: 45, feelsLike: 31, uv: 8, pressure: 1012, cloud: 20, precip: 0,
@@ -168,23 +193,16 @@ export const useAppStore = create<AppState>((set) => ({
   setSimulatedTime: (time) => set({ simulatedTime: time }),
   setSystemTime: (time) => set({ systemTime: time }),
   updateFirmwareConfig: (config) => set((state) => {
-    // Merge OTA deeply if present
+    // Deep Merge Logic
     const newConfig = { ...state.firmwareConfig, ...config };
-    if (config.ota && state.firmwareConfig.ota) {
-        newConfig.ota = { ...state.firmwareConfig.ota, ...config.ota };
-    }
-    // Merge Shader
-    if (config.shader && state.firmwareConfig.shader) {
-        newConfig.shader = { ...state.firmwareConfig.shader, ...config.shader };
-    }
-    // Merge Physical
-    if (config.physicalSpecs && state.firmwareConfig.physicalSpecs) {
-        newConfig.physicalSpecs = { ...state.firmwareConfig.physicalSpecs, ...config.physicalSpecs };
-    }
-    // Merge Fluid
-    if (config.fluidParams && state.firmwareConfig.fluidParams) {
-        newConfig.fluidParams = { ...state.firmwareConfig.fluidParams, ...config.fluidParams };
-    }
+    if (config.ota) newConfig.ota = { ...state.firmwareConfig.ota, ...config.ota };
+    if (config.mesh) newConfig.mesh = { ...state.firmwareConfig.mesh, ...config.mesh };
+    if (config.shader) newConfig.shader = { ...state.firmwareConfig.shader, ...config.shader };
+    if (config.physicalSpecs) newConfig.physicalSpecs = { ...state.firmwareConfig.physicalSpecs, ...config.physicalSpecs };
+    if (config.fluidParams) newConfig.fluidParams = { ...state.firmwareConfig.fluidParams, ...config.fluidParams };
+    if (config.nightMode) newConfig.nightMode = { ...state.firmwareConfig.nightMode, ...config.nightMode };
+    if (config.lowPowerMode) newConfig.lowPowerMode = { ...state.firmwareConfig.lowPowerMode, ...config.lowPowerMode };
+    if (config.touch) newConfig.touch = { ...state.firmwareConfig.touch, ...config.touch };
     return { firmwareConfig: newConfig };
   }),
   updateDataSourceConfig: (config) => set((state) => ({ dataSourceConfig: { ...state.dataSourceConfig, ...config } })),

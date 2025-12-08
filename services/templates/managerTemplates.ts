@@ -1,4 +1,6 @@
 
+
+
 import { DataSourceConfig, FirmwareConfig } from '../../types';
 
 export const generateWifiManagerH = () => `
@@ -109,11 +111,15 @@ export const generateOTAManagerH = () => `
 #ifndef OTA_MANAGER_H
 #define OTA_MANAGER_H
 #include <ArduinoOTA.h>
+#include <HTTPUpdate.h>
 
 class OTAManager {
 public:
     void begin();
     void handle();
+    void updateFromUrl(String url);
+    void verify();
+    void rollback();
 };
 #endif
 `;
@@ -122,39 +128,83 @@ export const generateOTAManagerCpp = () => `
 #include "OTAManager.h"
 #include "config.h"
 #include "LogManager.h"
+#include <esp_ota_ops.h>
+#include <esp_partition.h>
 
 void OTAManager::begin() {
     #if ENABLE_OTA
+    // 1. Setup ArduinoOTA (Push)
     ArduinoOTA.setHostname(DEVICE_NAME_DEFAULT);
-
-    ArduinoOTA.onStart([]() {
-        String type;
-        if (ArduinoOTA.getCommand() == U_FLASH) type = "sketch";
-        else type = "filesystem";
-        TIDE_LOGW("OTA Start updating %s", type.c_str());
+    ArduinoOTA.onStart([]() { 
+        TIDE_LOGW("OTA: Start Push Update"); 
     });
-
-    ArduinoOTA.onEnd([]() {
-        TIDE_LOGI("OTA End");
+    ArduinoOTA.onEnd([]() { 
+        TIDE_LOGI("OTA: End"); 
     });
-
     ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-        // Log sparingly to avoid flooding
-        if (progress % 10 == 0) TIDE_LOGI("OTA Progress: %u%%", (progress / (total / 100)));
+        if (progress % 20 == 0) TIDE_LOGI("OTA: %u%%", (progress / (total / 100)));
     });
-
-    ArduinoOTA.onError([](ota_error_t error) {
-        TIDE_LOGE("OTA Error[%u]", error);
+    ArduinoOTA.onError([](ota_error_t error) { 
+        TIDE_LOGE("OTA Error[%u]", error); 
     });
-
     ArduinoOTA.begin();
-    TIDE_LOGI("OTA Service Ready");
+
+    // 2. Check Native Partition State (ESP-IDF)
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    esp_ota_img_states_t ota_state;
+    if (esp_ota_get_state_partition(running, &ota_state) == ESP_OK) {
+        if (ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
+            TIDE_LOGW("OTA: New image pending verification...");
+        } else {
+            TIDE_LOGI("OTA: Running partition state: %d", ota_state);
+        }
+    }
     #endif
 }
 
 void OTAManager::handle() {
     #if ENABLE_OTA
     ArduinoOTA.handle();
+    #endif
+}
+
+void OTAManager::updateFromUrl(String url) {
+    #if ENABLE_OTA
+    TIDE_LOGW("OTA: Starting HTTP Pull from %s", url.c_str());
+    
+    WiFiClient client;
+    
+    t_httpUpdate_return ret = httpUpdate.update(client, url);
+
+    switch (ret) {
+      case HTTP_UPDATE_FAILED:
+        TIDE_LOGE("OTA: Update Failed. Error (%d): %s", httpUpdate.getLastError(), httpUpdate.getLastErrorString().c_str());
+        break;
+      case HTTP_UPDATE_NO_UPDATES:
+        TIDE_LOGI("OTA: No Updates");
+        break;
+      case HTTP_UPDATE_OK:
+        TIDE_LOGI("OTA: Update OK. Rebooting...");
+        break;
+    }
+    #endif
+}
+
+void OTAManager::verify() {
+    #if ENABLE_OTA
+    // Mark current app as valid to prevent rollback on next boot
+    if (esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) {
+        TIDE_LOGI("OTA: Boot verified. App marked valid.");
+    } else {
+        TIDE_LOGW("OTA: Failed to mark app valid (or not pending).");
+    }
+    #endif
+}
+
+void OTAManager::rollback() {
+    #if ENABLE_OTA
+    TIDE_LOGE("OTA: Rolling back to previous firmware due to instability...");
+    esp_ota_mark_app_invalid_rollback_and_reboot();
     #endif
 }
 `;
@@ -200,7 +250,6 @@ void SerialManager::processCommand(String cmd) {
 }
 `;
 
-// BLE Manager remains mostly same but using LogManager
 export const generateBleManagerH = () => `
 #ifndef BLE_MANAGER_H
 #define BLE_MANAGER_H
@@ -333,5 +382,105 @@ void WeatherManager::fetchFromApi() {
 
 void WeatherManager::fetchFromTabuaMare() {
     // ...
+}
+`;
+
+// --- NEW TOUCH MANAGER FOR NATIVE ESP32 CAPACITIVE SENSORS ---
+
+export const generateTouchManagerH = () => `
+#ifndef TOUCH_MANAGER_H
+#define TOUCH_MANAGER_H
+
+#include <Arduino.h>
+#include <vector>
+#include <functional>
+
+enum TouchEvent {
+    TOUCH_TAP,
+    TOUCH_LONG_PRESS
+};
+
+typedef std::function<void(TouchEvent)> TouchCallback;
+
+struct TouchButton {
+    int pin;
+    int threshold;
+    unsigned long pressStartTime;
+    bool isPressed;
+    TouchCallback callback;
+};
+
+class TouchManager {
+public:
+    static void begin();
+    static void update();
+    static void registerButton(int pin, int threshold, TouchCallback cb);
+    static void setGlobalThreshold(int threshold);
+
+private:
+    static std::vector<TouchButton> _buttons;
+    static int _globalThreshold;
+    static const int DEBOUNCE_MS = 50;
+    static const int LONG_PRESS_MS = 800;
+};
+
+#endif
+`;
+
+export const generateTouchManagerCpp = () => `
+#include "TouchManager.h"
+#include "LogManager.h"
+
+std::vector<TouchButton> TouchManager::_buttons;
+int TouchManager::_globalThreshold = 40;
+
+void TouchManager::begin() {
+    TIDE_LOGI("TouchManager: Initializing Native Capacitive Sensors");
+}
+
+void TouchManager::setGlobalThreshold(int threshold) {
+    _globalThreshold = threshold;
+}
+
+void TouchManager::registerButton(int pin, int threshold, TouchCallback cb) {
+    TouchButton btn;
+    btn.pin = pin;
+    btn.threshold = threshold > 0 ? threshold : _globalThreshold;
+    btn.isPressed = false;
+    btn.pressStartTime = 0;
+    btn.callback = cb;
+    _buttons.push_back(btn);
+    TIDE_LOGI("Touch: Registered Pin %d (Thresh: %d)", pin, btn.threshold);
+}
+
+void TouchManager::update() {
+    for (auto &btn : _buttons) {
+        // Native ESP32 Capacitive Read
+        // Value decreases when touched. < Threshold = Pressed.
+        int val = touchRead(btn.pin);
+        
+        // Simple smoothing/debouncing logic
+        bool currentlyPressed = (val < btn.threshold);
+
+        if (currentlyPressed && !btn.isPressed) {
+            // Press Start
+            btn.isPressed = true;
+            btn.pressStartTime = millis();
+        } 
+        else if (!currentlyPressed && btn.isPressed) {
+            // Release
+            unsigned long duration = millis() - btn.pressStartTime;
+            if (duration > DEBOUNCE_MS) {
+                if (duration > LONG_PRESS_MS) {
+                    TIDE_LOGD("Touch: Long Press Detected on %d", btn.pin);
+                    if(btn.callback) btn.callback(TOUCH_LONG_PRESS);
+                } else {
+                    TIDE_LOGD("Touch: Tap Detected on %d", btn.pin);
+                    if(btn.callback) btn.callback(TOUCH_TAP);
+                }
+            }
+            btn.isPressed = false;
+        }
+    }
 }
 `;

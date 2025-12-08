@@ -1,12 +1,5 @@
 
 
-
-
-
-
-
-
-
 import { FirmwareConfig } from '../../types';
 
 export const generateWs2812bConfigH = () => `
@@ -16,33 +9,34 @@ export const generateWs2812bConfigH = () => `
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
-// --- LAYER 1: CONFIGURATION ---
-// Handles persistence and parameter state
-
 struct WS2812BConfig {
     int pin;
     int numLeds;
     uint8_t brightness;
-    int matrixWidth;  // 0 or 1 for strip
+    int matrixWidth;  
     int matrixHeight; 
-    String layout;    // "STRIP", "MATRIX", "RING"
-    String order;     // "GRB"
+    String layout;    
+    String order;     
     
-    // Physical Specs for Adaptive Animation
+    // Physical Specs
     float lengthMeters;
-    int ledDensity;   // LEDs/meter
+    int ledDensity;   
     float maxPowerAmps;
     
-    // Physics Engine Params
+    // Physics
     float tension;
     float damping;
     float spread;
     
-    // Animation Engine Params
+    // Animation & Autonomy
     String mode;      
-    float speed;      // 0.1 - 5.0
-    float intensity;  // 0.0 - 1.0
-    int paletteId;    // 0:Ocean, 1:Forest, 2:Lava, 3:Cloud, 4:Party
+    float speed;      
+    float intensity;  
+    int paletteId;    
+    
+    // Environment Toggles
+    bool linkWeather;
+    bool linkMoon;
 };
 
 class WS2812BConfigManager {
@@ -70,24 +64,26 @@ WS2812BConfig WS2812BConfigManager::config = {
     LED_PIN,
     NUM_LEDS,
     LED_BRIGHTNESS,
-    ${w}, // Width
-    ${h}, // Height
+    ${w}, 
+    ${h}, 
     "${config.ledLayoutType}",
     "GRB",
-    ${phys.stripLengthMeters.toFixed(2)}f, // Length in Meters
-    ${phys.ledDensity}, // Density (LEDs/m)
-    ${phys.maxPowerAmps.toFixed(1)}f, // Max Amps
+    ${phys.stripLengthMeters.toFixed(2)}f, 
+    ${phys.ledDensity}, 
+    ${phys.maxPowerAmps.toFixed(1)}f, 
     ${fluid.tension.toFixed(3)}f,
     ${fluid.damping.toFixed(3)}f,
     ${fluid.spread.toFixed(2)}f,
     "${config.animationMode || 'fluidPhysics'}", 
     ${config.animationSpeed.toFixed(1)}f, 
     ${config.animationIntensity.toFixed(1)}f, 
-    ${config.animationPalette}
+    ${config.animationPalette},
+    ${config.autonomous?.linkWeatherToLeds ? 'true' : 'false'},
+    ${config.autonomous?.linkPaletteToTime ? 'true' : 'false'}
 };
 
 void WS2812BConfigManager::load() {
-    // Future: Load from LittleFS 'led_config.json'
+    // Future: Load from LittleFS
 }
 
 void WS2812BConfigManager::updateFromJson(JsonObject json) {
@@ -95,11 +91,8 @@ void WS2812BConfigManager::updateFromJson(JsonObject json) {
     if (json.containsKey("mode")) config.mode = json["mode"].as<String>();
     if (json.containsKey("speed")) config.speed = json["speed"];
     if (json.containsKey("intensity")) config.intensity = json["intensity"];
-    if (json.containsKey("palette")) config.paletteId = json["palette"];
-    
     if (json.containsKey("tension")) config.tension = json["tension"];
     if (json.containsKey("damping")) config.damping = json["damping"];
-    if (json.containsKey("spread")) config.spread = json["spread"];
 }
 `;
 };
@@ -111,18 +104,15 @@ export const generateWs2812bControllerH = () => `
 #include <FastLED.h>
 #include "ws2812b_config.h"
 
-// --- LAYER 2: HARDWARE ABSTRACTION (CONTROLLER) ---
-// Handles physical LED mapping, buffers, and matrix logic
-
 class WS2812BController {
 public:
     WS2812BController();
     void begin();
     
-    // Core Drawing API
     void setPixel(int i, CRGB color);
-    void setPixelXY(int x, int y, CRGB color); // Handles Matrix Mapping
+    void setPixelXY(int x, int y, CRGB color);
     void fadeAll(uint8_t amount);
+    void fill(CRGB color);
     void clear();
     void show();
     
@@ -130,7 +120,6 @@ public:
     int getHeight();
     int getNumLeds();
     
-    // Internal Mapping
     uint16_t XY(uint8_t x, uint8_t y);
 
 private:
@@ -160,30 +149,29 @@ void WS2812BController::begin() {
     
     FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, _numLeds).setCorrection(TypicalLEDStrip);
     
-    // Power Limiting (Adaptive Brightness)
-    // 5V * MaxAmps * 1000 = mW
     float maxAmps = WS2812BConfigManager::config.maxPowerAmps;
     if (maxAmps > 0.1) {
         FastLED.setMaxPowerInVoltsAndMilliamps(5, maxAmps * 1000);
     }
 
     FastLED.setBrightness(WS2812BConfigManager::config.brightness);
-    
     clear();
     show();
 }
 
 uint16_t WS2812BController::XY(uint8_t x, uint8_t y) {
-    if (!_isMatrix) return x; // Strip mode: x is index
-    
+    if (!_isMatrix) return x; 
     if (x >= _width || y >= _height) return 0;
     
-    // Serpentine Layout Logic (ZigZag)
-    if (y & 1) {
-        return (y * _width) + (_width - 1 - x);
-    } else {
-        return (y * _width) + x;
+    // Matrix Toplogy Mapping
+    if (WS2812BConfigManager::config.layout == "MATRIX") {
+        if (y & 1) { // ZigZag (Serpentine)
+            return (y * _width) + (_width - 1 - x);
+        } else {
+            return (y * _width) + x;
+        }
     }
+    return x; // Fallback
 }
 
 void WS2812BController::setPixel(int i, CRGB color) {
@@ -197,6 +185,10 @@ void WS2812BController::setPixelXY(int x, int y, CRGB color) {
 
 void WS2812BController::fadeAll(uint8_t amount) {
     for(int i = 0; i < _numLeds; i++) leds[i].nscale8(amount);
+}
+
+void WS2812BController::fill(CRGB color) {
+    fill_solid(leds, _numLeds, color);
 }
 
 void WS2812BController::clear() {
@@ -217,46 +209,47 @@ export const generateWs2812bAnimationsH = () => `
 #define WS2812B_ANIMATIONS_H
 
 #include "ws2812b_controller.h"
-#include "../../FluidEngine.h" // Import 1D Wave Physics
-
-// --- LAYER 3: ANIMATION LOGIC ---
-// Includes Fluid Physics, PBR Shading, and Particle Systems
+#include "../../FluidEngine.h" 
 
 struct AnimationParams {
-    float speed;        // 0.1 to 5.0
-    float intensity;    // 0.0 to 1.0
+    float speed;
+    float intensity;
     CRGBPalette16 palette;
-    float tideLevel;    // 0.0 to 1.0 (Normalized)
-    
-    // Adaptive Physical Params
-    float meterPos(int pixelIndex) {
-        return (float)pixelIndex / (float)WS2812BConfigManager::config.ledDensity;
-    }
+    float tideLevel;    // 0.0 - 1.0
+    int trend;          // 1 (Rising), -1 (Falling), 0 (Steady)
+    float windSpeed;    // km/h
+    int moonPhase;      // 0-100 (illumination)
+    bool useWeather;
+    bool useMoon;
 };
 
 class WS2812BAnimations {
 public:
     static void attachController(WS2812BController* controller);
-    
-    // Main Dispatcher
-    static void run(String mode, float tideLevel, float windSpeed = 0, int humidity = 0);
-    
-    // --- PREMIUM ENGINES (Physics + PBR) ---
-    static void runFluidPhysics(AnimationParams p, uint32_t t, float wind);
-    static void runBioluminescence(AnimationParams p, uint32_t t);
-    static void runThermalDrift(AnimationParams p, uint32_t t, int temp);
-    
-    // --- LEGACY/STANDARD MODES ---
-    static void oceanCaustics(AnimationParams p, uint32_t t);
-    static void tideWaveVertical(AnimationParams p, uint32_t t);
-    
-    static CRGBPalette16 getPremiumPalette(float tideLevel, bool isNight, bool isStorm);
-    static float _previousTideLevel;
+    static void run(String mode, float tideLevel, int trend, float windSpeed = 0, int humidity = 0);
 
 private:
     static WS2812BController* _ctrl;
-    static FluidEngine _fluid; // Persistent physics state
+    static FluidEngine _fluid;
     static bool _fluidInit;
+    
+    // Premium Modes (V2.7)
+    static void runStripBasic(AnimationParams p, uint32_t t);
+    static void runMatrixBeach(AnimationParams p, uint32_t t);
+    static void runMatrixFluid(AnimationParams p, uint32_t t);
+    static void runMoonPhase(AnimationParams p, uint32_t t);
+
+    // Standard Modes
+    static void runTideGauge(AnimationParams p, uint32_t t);
+    static void runSunlightRefraction(AnimationParams p, uint32_t t);
+    static void runAuroraHorizon(AnimationParams p, uint32_t t);
+    static void runTideBreathing(AnimationParams p, uint32_t t);
+    static void runBioluminescence(AnimationParams p, uint32_t t);
+    static void runStormAlert(AnimationParams p, uint32_t t);
+    static void runThermalDepth(AnimationParams p, uint32_t t);
+
+    // Helpers
+    static CRGBPalette16 getTidePalette(float tide);
 };
 
 #endif
@@ -269,229 +262,342 @@ export const generateWs2812bAnimationsCpp = () => `
 WS2812BController* WS2812BAnimations::_ctrl = nullptr;
 FluidEngine WS2812BAnimations::_fluid;
 bool WS2812BAnimations::_fluidInit = false;
-float WS2812BAnimations::_previousTideLevel = 0.5f;
 
 void WS2812BAnimations::attachController(WS2812BController* controller) {
     _ctrl = controller;
 }
 
-// 🎨 DYNAMIC PALETTES "EMOTION-BASED"
-CRGBPalette16 WS2812BAnimations::getPremiumPalette(float tideLevel, bool isNight, bool isStorm) {
-    if (isStorm) {
-        // Storm: Greys, Electric Blues, Deep Purples
-        return CRGBPalette16(CRGB(10,10,20), CRGB(30,30,50), CRGB(100,100,120), CRGB(0,0,255));
+// 🎨 PALETTE GENERATOR (V2.5)
+CRGBPalette16 WS2812BAnimations::getTidePalette(float tide) {
+    if (tide < 0.25) {
+        // Low Tide: Sand, Teal, Light Blue
+        return CRGBPalette16(CRGB(194, 178, 128), CRGB(0, 128, 128), CRGB(100, 200, 200), CRGB(0, 50, 50));
+    } else if (tide > 0.75) {
+        // High Tide: Deep Blue, Navy, Cyan highlight
+        return CRGBPalette16(CRGB(0, 0, 50), CRGB(0, 0, 150), CRGB(0, 100, 200), CRGB(200, 255, 255));
+    } else {
+        // Mid Tide: Standard Ocean
+        return OceanColors_p;
     }
-    if (isNight) {
-        // Bioluminescent Night: Deep Blue to Neon Cyan
-        return CRGBPalette16(CRGB(0,0,30), CRGB(0,0,80), CRGB(0,40,100), CRGB(0,255,200));
-    }
-    if (tideLevel < 0.2) {
-        // Low Tide: Amber, Turquoise (Sand & Shallow Water)
-        return CRGBPalette16(CRGB(200,150,50), CRGB(0,180,180), CRGB(0,100,150), CRGB(0,50,100));
-    }
-    // Standard Ocean
-    return OceanColors_p; 
 }
 
-void WS2812BAnimations::run(String mode, float tideLevel, float windSpeed, int humidity) {
+void WS2812BAnimations::run(String mode, float tideLevel, int trend, float windSpeed, int humidity) {
     if (!_ctrl) return;
     
-    // Init Fluid Engine if needed
     if (!_fluidInit) {
-        _fluid.begin(
-            _ctrl->getNumLeds(), 
-            WS2812BConfigManager::config.tension, 
-            WS2812BConfigManager::config.damping, 
-            WS2812BConfigManager::config.spread
-        );
+        _fluid.begin(_ctrl->getNumLeds(), 0.025, 0.02, 0.1);
         _fluidInit = true;
     }
 
-    // Dynamic Palette Selection based on Env
-    bool isNight = false; // TODO: Pass real time
-    bool isStorm = (windSpeed > 30);
-    CRGBPalette16 pal = getPremiumPalette(tideLevel, isNight, isStorm);
+    WS2812BConfig& cfg = WS2812BConfigManager::config;
 
     AnimationParams p;
-    p.speed = WS2812BConfigManager::config.speed;
-    p.intensity = WS2812BConfigManager::config.intensity;
-    p.palette = pal;
+    p.speed = cfg.speed;
+    p.intensity = cfg.intensity;
     p.tideLevel = tideLevel;
-
-    // --- PHYSICS PARAMETERS ---
-    // User configuration is primary, wind speed adds "impulses" via disturb()
-    
-    _fluid.updateParams(WS2812BConfigManager::config.tension, WS2812BConfigManager::config.damping, WS2812BConfigManager::config.spread);
+    p.trend = trend;
+    p.windSpeed = cfg.linkWeather ? windSpeed : 10;
+    p.moonPhase = cfg.linkMoon ? humidity : 50; // Map humidity slot to moon if enabled
+    p.useWeather = cfg.linkWeather;
+    p.palette = getTidePalette(tideLevel);
 
     uint32_t t = millis();
 
-    // Mode Dispatch
-    if (mode == "fluidPhysics") runFluidPhysics(p, t, windSpeed);
+    // Mapping new modes
+    if (mode == "tideStripBasic") runStripBasic(p, t);
+    else if (mode == "matrixBeach") runMatrixBeach(p, t);
+    else if (mode == "matrixFluid") runMatrixFluid(p, t);
+    else if (mode == "moonPhase") runMoonPhase(p, t);
+    
+    else if (mode == "fluidPhysics") runTideGauge(p, t);
+    else if (mode == "oceanCaustics") runSunlightRefraction(p, t);
+    else if (mode == "aurora") runAuroraHorizon(p, t);
+    else if (mode == "deepBreath") runTideBreathing(p, t);
     else if (mode == "bio") runBioluminescence(p, t);
-    else if (mode == "thermal") runThermalDrift(p, t, 25); // Pass temp
-    else if (mode == "oceanCaustics") oceanCaustics(p, t);
-    else tideWaveVertical(p, t); // Fallback
+    else if (mode == "storm") runStormAlert(p, t);
+    else if (mode == "thermal") runThermalDepth(p, t);
+    else runStripBasic(p, t); 
 
-    _previousTideLevel = tideLevel;
     _ctrl->show();
 }
 
-// 🌊 PREMIUM: 1D FLUID SOLVER + PBR SHADING
-void WS2812BAnimations::runFluidPhysics(AnimationParams p, uint32_t t, float wind) {
-    int h = _ctrl->getHeight();
-    int w = _ctrl->getWidth();
-    int waterHeight = p.tideLevel * h;
-
-    // 1. Inject Energy (Wind/Turbulence)
-    if (random8() < (wind * 2)) { // More wind = more random disturbances
-        int rNode = random(h);
-        if (abs(rNode - waterHeight) < 5) { // Surface disturbance
-             _fluid.disturb(rNode, (random(100)-50)/50.0f);
+// 1. STRIP BASIC (Tira Vertical Clássica)
+void WS2812BAnimations::runStripBasic(AnimationParams p, uint32_t t) {
+    int count = _ctrl->getNumLeds();
+    int waterLevel = (int)(p.tideLevel * count);
+    
+    // Base speed factor
+    float t_sec = t / 600.0f;
+    
+    for (int i = 0; i < count; i++) {
+        if (i < waterLevel) {
+            // Ripple Formula: sin((i * 0.25) + t * (trend > 0 ? 1.0 : -1.0))
+            float wave = sin((i * 0.25f) + t_sec * (p.trend >= 0 ? 1.0f : -1.0f));
+            uint8_t brightness = 150 + (wave * 80.0f); // dynamic brightness
+            _ctrl->setPixel(i, CHSV(160, 255, brightness)); // Aqua
+        } else {
+            _ctrl->setPixel(i, CRGB::Black);
         }
     }
-    
-    // 2. Update Physics
-    _fluid.update();
+    // Surface Highlight
+    if (waterLevel > 0 && waterLevel < count) {
+        _ctrl->setPixel(waterLevel - 1, CHSV(180, 200, 255)); // Bright Cyan Line
+    }
+}
 
-    // 4. Render
+// 2. MATRIX BEACH (Praia Lateral)
+void WS2812BAnimations::runMatrixBeach(AnimationParams p, uint32_t t) {
+    int w = _ctrl->getWidth();
+    int h = _ctrl->getHeight();
+    int waterRows = (int)(p.tideLevel * h);
+    
     for (int y = 0; y < h; y++) {
-        // Physical displacement from simulation
-        float displacement = _fluid.getNodeHeight(y); 
-        float velocity = _fluid.getNodeVelocity(y);
-        
-        // Base "Water" calculation
-        // The simulation treats 0 as rest. 
-        // We map Y coordinate relative to WaterHeight + Displacement
-        float effectiveHeight = waterHeight + (displacement * 10.0); // Amplify simulation
-        
-        bool isWater = y < effectiveHeight;
-        
-        if (isWater) {
-            // --- PBR SHADING FAKE ---
-            // Depth attenuation
-            float depth = (effectiveHeight - y) / (float)h;
-            
-            // 1. Base Color (Deep to Shallow)
-            uint8_t palIdx = map(depth * 255, 0, 255, 0, 240);
-            CRGB color = ColorFromPalette(p.palette, palIdx);
-            
-            // 2. Specular Highlight (Velocity based glint)
-            // High velocity = glistening surface
-            if (abs(velocity) > 0.05) {
-                uint8_t spec = abs(velocity) * 500; 
-                if (spec > 255) spec = 255;
-                color += CRGB(spec, spec, spec);
+        for (int x = 0; x < w; x++) {
+            // Y=0 is bottom
+            if (y < waterRows) {
+                // Horizontal Wave moving
+                float wave = sin((x * 0.4f) + t / 300.0f);
+                uint8_t b = 160 + (wave * 60);
+                _ctrl->setPixelXY(x, y, CHSV(160, 255, b));
+            } else {
+                _ctrl->setPixelXY(x, y, CHSV(40, 100, 80)); // Sand Gold
             }
-            
-            // 3. Sub-surface scattering (Fake)
-            // If near surface, add light bleeding
-            if (depth < 0.1) {
-                color += CRGB(20, 40, 50);
-            }
-            
-            color.nscale8(p.intensity * 255);
-            
-            // Matrix Expansion
-            for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, color);
-            
-        } else {
-            // Air / Foam Particles
-            CRGB color = CRGB::Black;
-            
-            // Check particles
-            // Simple check: iterate particles (inefficient O(N) but N=50 is fine)
-            FoamParticle* parts = _fluid.getParticles();
-            for(int i=0; i<50; i++) {
-                if (parts[i].life > 0 && abs(parts[i].pos - y) < 0.5) {
-                    uint8_t b = parts[i].life * 255;
-                    color += CRGB(b,b,b);
-                }
-            }
-             for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, color);
         }
     }
 }
 
-// 🦠 PREMIUM: BIOLUMINESCENCE
-void WS2812BAnimations::runBioluminescence(AnimationParams p, uint32_t t) {
-    // Similar to fluid, but impact causes blue flash
-    _fluid.update();
-    int h = _ctrl->getHeight();
+// 3. MATRIX FLUID (Barra Vertical Premium)
+void WS2812BAnimations::runMatrixFluid(AnimationParams p, uint32_t t) {
     int w = _ctrl->getWidth();
-    int waterHeight = p.tideLevel * h;
-
-    // Random Impact
-    if (random8() < 5) {
-        int rNode = random(h);
-        if (rNode < waterHeight) {
-            _fluid.spawnFoam(rNode, 1.0); // Reuse particle system for bio-flash
+    int h = _ctrl->getHeight();
+    
+    // Directional Offset for flow
+    float waveOffset = (t / 400.0f) * (p.trend >= 0 ? 1.0f : -1.0f);
+    
+    for (int x = 0; x < w; x++) {
+        // Physical height per column with wave variation
+        float localH = (p.tideLevel * h) + sin(x * 0.5f + waveOffset) * 1.5f;
+        int limit = constrain((int)localH, 0, h);
+        
+        for (int y = 0; y < h; y++) {
+            if (y < limit) {
+                 // Water Body
+                 _ctrl->setPixelXY(x, y, CHSV(160, 255, 200));
+            } else {
+                 _ctrl->setPixelXY(x, y, CRGB::Black);
+            }
         }
     }
+}
 
+// 4. MOON PHASE RING (Anel Lunar)
+void WS2812BAnimations::runMoonPhase(AnimationParams p, uint32_t t) {
+    int count = _ctrl->getNumLeds();
+    
+    // Background: Deep space
+    for(int i=0; i<count; i++) {
+        // Random star twinkle
+        if (random8() > 250) _ctrl->setPixel(i, CRGB(10, 10, 15));
+        else _ctrl->setPixel(i, CRGB(0, 0, 3));
+    }
+    
+    // Lit Portion (Arc) based on Illumination % (0-100)
+    int litCount = (p.moonPhase * count) / 100;
+    if (litCount < 1) litCount = 0;
+    if (litCount > count) litCount = count;
+    
+    // Center of the arc (Top of Ring = Index 0 usually, or defined by layout)
+    int startIdx = (count / 2) - (litCount / 2); 
+    
+    for(int i=0; i<litCount; i++) {
+        int idx = (startIdx + i);
+        // Normalize wrap around
+        while(idx < 0) idx += count;
+        while(idx >= count) idx -= count;
+        
+        // Edge dimming for 3D effect
+        uint8_t dim = 255;
+        int distFromCenter = abs(i - (litCount/2));
+        if (distFromCenter > (litCount/2) * 0.7) {
+            dim = map(distFromCenter, (litCount/2)*0.7, litCount/2, 255, 50);
+        }
+        
+        CRGB moonColor = CRGB(255, 245, 220); // Warm White
+        moonColor.nscale8(dim);
+        
+        _ctrl->setPixel(idx, moonColor);
+    }
+}
+
+// 📊 MODE: TIDE GAUGE (Standard) + FLOW TEXTURE
+void WS2812BAnimations::runTideGauge(AnimationParams p, uint32_t t) {
+    int h = _ctrl->getHeight();
+    int w = _ctrl->getWidth();
+    float waterHeight = p.tideLevel * h;
+
+    _fluid.updateParams(0.025, 0.02, 0.1);
+    
+    if (random8() < p.windSpeed) {
+         int rNode = random(h);
+         if (abs(rNode - waterHeight) < 3) _fluid.disturb(rNode, (random(100)-50)/40.0f);
+    }
+    
+    _fluid.setTargetHeight(p.tideLevel);
+    _fluid.update();
+
+    // Determine Flow Direction Texture
+    uint16_t flowOffset = 0;
+    if (p.trend > 0) flowOffset = -(t / 40); 
+    else if (p.trend < 0) flowOffset = (t / 40);
+
+    for(int y=0; y<h; y++) {
+        float disp = _fluid.getNodeHeight(y);
+        float surfaceY = waterHeight + (disp * 5.0); 
+        bool isWater = y <= surfaceY;
+        
+        CRGB color = CRGB::Black;
+        
+        if (isWater) {
+             float depth = (float)y / h; 
+             color = ColorFromPalette(p.palette, depth * 255);
+             if (p.trend != 0) {
+                 uint8_t flow = sin8((y * 15) + flowOffset);
+                 color += CRGB(0, flow/6, flow/5);
+             }
+             if (abs(y - surfaceY) < 1.0) color += CRGB(50, 50, 70);
+        }
+
+        FoamParticle* parts = _fluid.getParticles();
+        for(int i=0; i<30; i++) {
+             if (parts[i].life > 0 && abs(parts[i].pos - y) < 0.8) {
+                 color += CRGB(parts[i].life * 150, parts[i].life * 150, parts[i].life * 180);
+             }
+        }
+        for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, color);
+    }
+}
+
+void WS2812BAnimations::runSunlightRefraction(AnimationParams p, uint32_t t) {
+    int h = _ctrl->getHeight();
+    int w = _ctrl->getWidth();
+    uint32_t speed = t * (p.speed * 8);
+    for(int y=0; y<h; y++) {
+        uint8_t wave1 = sin8((y * 10) + (speed / 3));
+        uint8_t wave2 = sin8((y * 23) - (speed / 2));
+        uint8_t wave3 = sin8((y * 15) + speed);
+        uint8_t bright = (wave1 + wave2 + wave3) / 3;
+        bright = qsub8(bright, 40); 
+        bright = qadd8(bright, 80);
+        CRGB color = ColorFromPalette(p.palette, bright);
+        if (p.trend > 0 && y % 5 == 0) color += CRGB(20,20,20);
+        float lvl = p.tideLevel * h;
+        if (y > lvl) color.nscale8(10); 
+        for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, color);
+    }
+}
+
+void WS2812BAnimations::runTideBreathing(AnimationParams p, uint32_t t) {
+    int h = _ctrl->getHeight();
+    int w = _ctrl->getWidth();
+    float bpm = 10.0 + (p.tideLevel * 20.0); 
+    if (p.trend > 0) bpm += 10;
+    uint8_t beat = beatsin8(bpm, 50, 255);
+    int fillLevel = p.tideLevel * h;
+    for(int y=0; y<h; y++) {
+        if (y <= fillLevel) {
+            CRGB color = ColorFromPalette(p.palette, y * (255/h));
+            color.nscale8(beat);
+            for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, color);
+        } else {
+            for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, CRGB::Black);
+        }
+    }
+}
+
+void WS2812BAnimations::runBioluminescence(AnimationParams p, uint32_t t) {
+    int h = _ctrl->getHeight();
+    int w = _ctrl->getWidth();
+    int fillLevel = p.tideLevel * h;
+    if (random8() < p.windSpeed) {
+        int rNode = random(h);
+        if (rNode < fillLevel) _fluid.spawnFoam(rNode, 1.0);
+    }
+    _fluid.update();
     for (int y = 0; y < h; y++) {
-        if (y < waterHeight) {
-             CRGB base = CRGB(0, 5, 10); // Very dark water
-             
-             // Check Bio-particles
+        if (y <= fillLevel) {
+             CRGB color = CRGB(0, 5, 15); 
              FoamParticle* parts = _fluid.getParticles();
-             for(int i=0; i<50; i++) {
-                if (parts[i].life > 0 && abs(parts[i].pos - y) < 1.5) {
-                    uint8_t b = parts[i].life * 255;
-                    // Neon Blue/Green flash
-                    base += CRGB(0, b, b/2); 
+             for(int i=0; i<30; i++) {
+                if (parts[i].life > 0 && abs(parts[i].pos - y) < 1.0) {
+                    uint8_t br = parts[i].life * 255;
+                    color += CRGB(0, br, br/2); 
                 }
              }
-             for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, base);
+             if (p.trend > 0 && y < 5) color += CRGB(0, 20, 10);
+             for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, color);
         } else {
              for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, CRGB::Black);
         }
     }
 }
 
-// 🔥 PREMIUM: THERMAL DRIFT
-void WS2812BAnimations::runThermalDrift(AnimationParams p, uint32_t t, int temp) {
-    // Map Temperature to Color Temperature
-    // Hot -> Red/Orange, Fast turbulence
-    // Cold -> Blue/Cyan, Slow crystal movement
-    
-    // Determine target color based on Temp
-    CRGB targetC = (temp > 30) ? CRGB(255, 50, 0) : CRGB(0, 100, 255);
-    
+void WS2812BAnimations::runAuroraHorizon(AnimationParams p, uint32_t t) {
     int h = _ctrl->getHeight();
     int w = _ctrl->getWidth();
-    
-    float noiseScale = (temp > 25) ? 0.3 : 0.05; // Hot = noisy
-    float speed = (temp > 25) ? 2.0 : 0.5;
-    
-    for (int y = 0; y < h; y++) {
-         uint8_t noise = inoise8(y * 30, t * speed);
-         CRGB c = targetC;
-         c.nscale8(noise);
-         
-         // Heat shimmer at top
-         if (temp > 30 && y > h*0.8) {
-             if (random8() > 200) c += CRGB(50,50,0);
+    int surfaceY = p.tideLevel * h;
+    for(int y=0; y<h; y++) {
+         int dist = abs(y - surfaceY);
+         if (dist < 8) {
+             uint8_t hue = (t / 20) + (y * 10);
+             CRGB color = CHSV(hue, 200, 255);
+             uint8_t fade = 255 - (dist * 30);
+             color.nscale8(fade);
+             for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, color);
+         } else if (y < surfaceY) {
+             for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, CRGB(0,0,30));
+         } else {
+             for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, CRGB::Black);
          }
-         
-         for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, c);
     }
 }
 
-// ... Legacy functions (OceanCaustics, TideWaveVertical) remain as fallbacks ...
-void WS2812BAnimations::oceanCaustics(AnimationParams p, uint32_t t) {
-    // (Existing Implementation)
-    int w = _ctrl->getWidth();
+void WS2812BAnimations::runStormAlert(AnimationParams p, uint32_t t) {
     int h = _ctrl->getHeight();
-    for(int x=0; x<w; x++) {
-        for(int y=0; y<h; y++) {
-             uint8_t noise = inoise8(x*20, y*20 + t/2, t/3);
-             CRGB color = ColorFromPalette(p.palette, noise, 255 * p.intensity);
-             _ctrl->setPixelXY(x, y, color);
+    int w = _ctrl->getWidth();
+    int fillLevel = p.tideLevel * h;
+    for(int y=0; y<h; y++) {
+        if (y <= fillLevel) {
+            uint8_t noise = inoise8(y*20, t/5);
+            CRGB c = CRGB(noise/2, noise/4, noise/4); 
+            if (p.tideLevel > 0.9) {
+                uint8_t pulse = beatsin8(60);
+                c += CRGB(pulse/4, 0, 0);
+            }
+            for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, c);
+        } else {
+             for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, CRGB::Black);
         }
     }
+    if (random16() < 50) {
+        int flashY = random(h);
+        for(int x=0; x<w; x++) _ctrl->setPixelXY(x, flashY, CRGB::White);
+    }
 }
 
-void WS2812BAnimations::tideWaveVertical(AnimationParams p, uint32_t t) {
-     // (Existing Implementation)
+void WS2812BAnimations::runThermalDepth(AnimationParams p, uint32_t t) {
+    int h = _ctrl->getHeight();
+    int w = _ctrl->getWidth();
+    int fillLevel = p.tideLevel * h;
+    for(int y=0; y<h; y++) {
+         if (y <= fillLevel) {
+             float relativeDepth = (float)y / fillLevel; 
+             uint8_t hue = 160 - (relativeDepth * 160);
+             CRGB c = CHSV(hue, 255, 255);
+             for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, c);
+         } else {
+             for(int x=0; x<w; x++) _ctrl->setPixelXY(x, y, CRGB::Black);
+         }
+    }
 }
 `;
+}

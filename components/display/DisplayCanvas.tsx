@@ -1,16 +1,40 @@
+
 import React, { useEffect, useRef } from 'react';
 import { useAppStore } from '../../store';
 import { WidgetType, DisplayType, DisplayTheme } from '../../types';
 import { Monitor } from 'lucide-react';
-import { renderOledModern } from './OledRenderer';
 
-const toRGB565Color = (hex: string) => {
-    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    if (!result) return hex;
-    let r = parseInt(result[1], 16) & 0xF8;
-    let g = parseInt(result[2], 16) & 0xFC;
-    let b = parseInt(result[3], 16) & 0xF8;
-    return `rgb(${r},${g},${b})`;
+// --- HELPERS (Simulating embedded graphics primitives) ---
+
+const toRGB565 = (hex: string) => {
+    // Just a visual simulation of color banding if needed, simplified for web
+    return hex; 
+};
+
+const drawGrid = (ctx: CanvasRenderingContext2D, w: number, h: number, style: DisplayTheme) => {
+    ctx.strokeStyle = style === DisplayTheme.NEON ? 'rgba(0, 255, 255, 0.1)' : 'rgba(255,255,255,0.1)';
+    ctx.lineWidth = 1;
+    
+    // Radial Grid
+    for(let r=20; r<w/2; r+=30) {
+        ctx.beginPath(); ctx.arc(w/2, h/2, r, 0, Math.PI*2); ctx.stroke();
+    }
+    // Crosshair
+    ctx.beginPath(); ctx.moveTo(w/2, 0); ctx.lineTo(w/2, h); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, h/2); ctx.lineTo(w, h/2); ctx.stroke();
+};
+
+const drawTicks = (ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, count: number, length: number, color: string) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    for(let i=0; i<count; i++) {
+        const ang = (i / count) * Math.PI * 2;
+        const x1 = cx + Math.cos(ang) * r;
+        const y1 = cy + Math.sin(ang) * r;
+        const x2 = cx + Math.cos(ang) * (r - length);
+        const y2 = cy + Math.sin(ang) * (r - length);
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    }
 };
 
 interface DisplayCanvasProps {
@@ -32,274 +56,359 @@ export const DisplayCanvas: React.FC<DisplayCanvasProps> = ({ selectedWidgetId, 
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        // Calc Tide Logic
-        let currentHeight = 50;
+        // --- 1. DATA CALCULATION ---
+        let tidePct = 50;
+        let trend = 0; // -1, 0, 1
+        
         if (keyframes.length >= 2) {
              let start = keyframes[0];
              let end = keyframes[keyframes.length - 1];
              const cycle = firmwareConfig.cycleDuration || 24;
-             // Handle wrapping for simulation loop
              const t = simulatedTime % cycle;
              
              for (let i = 0; i < keyframes.length - 1; i++) {
                if (t >= keyframes[i].timeOffset && t <= keyframes[i + 1].timeOffset) {
-                 start = keyframes[i];
-                 end = keyframes[i + 1];
-                 break;
+                 start = keyframes[i]; end = keyframes[i + 1]; break;
                }
              }
              
              let duration = end.timeOffset - start.timeOffset;
              if (duration < 0) duration += cycle;
-             
              let elapsed = t - start.timeOffset;
              if (elapsed < 0) elapsed += cycle;
-             
              const progress = duration === 0 ? 0 : elapsed / duration;
-             currentHeight = start.height + (end.height - start.height) * progress;
+             
+             const prevH = start.height;
+             const nextH = end.height;
+             tidePct = prevH + (nextH - prevH) * progress;
+             trend = nextH > prevH ? 1 : -1;
         }
 
         const render = () => {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const W = canvas.width;
+            const H = canvas.height;
+            const CX = W/2;
+            const CY = H/2;
             
-            // --- OLED MODE ---
-            if (displayConfig.type === DisplayType.OLED_128) {
-                 ctx.save();
-                 ctx.scale(240/128, 240/128); 
-                 renderOledModern({
-                     ctx,
-                     tidePercent: currentHeight,
-                     weatherData,
-                     time: simulatedTime
-                 });
-                 ctx.restore();
-                 requestAnimationFrame(render);
-                 return; 
-            }
-
-            // --- STANDARD GC9A01 MODE (240x240) ---
+            // --- 2. THEME BACKGROUNDS ---
+            ctx.clearRect(0, 0, W, H);
+            
+            // Mask Circle for GC9A01 Simulation
             ctx.save();
-            ctx.beginPath(); ctx.arc(120, 120, 120, 0, Math.PI * 2);
+            ctx.beginPath(); ctx.arc(CX, CY, CX, 0, Math.PI * 2); ctx.clip();
+
+            let bgColor = '#000';
+            let fgColor = '#fff';
             
-            // Background
-            let bgGrad = ctx.createRadialGradient(120, 120, 0, 120, 120, 120);
-            if (displayConfig.theme === DisplayTheme.CORAL_REEF) {
-                 bgGrad.addColorStop(0, '#0077BE'); bgGrad.addColorStop(1, '#004488');
-            } else if (displayConfig.theme === DisplayTheme.SOL_MORERE) {
-                 bgGrad.addColorStop(0, '#fff7ed'); bgGrad.addColorStop(1, '#ffedd5');
-            } else if (displayConfig.theme === DisplayTheme.NOITE_TROPICAL) {
-                 bgGrad.addColorStop(0, '#1e1b4b'); bgGrad.addColorStop(1, '#0f172a');
-            } else if (displayConfig.theme === DisplayTheme.OCEAN_TURQUOISE) {
-                 bgGrad.addColorStop(0, '#0891b2'); bgGrad.addColorStop(1, '#164e63');
-            } else {
-                 bgGrad.addColorStop(0, '#1a1a1a'); bgGrad.addColorStop(1, '#000000');
-            }
-            
-            ctx.fillStyle = bgGrad; ctx.fill();
-            
-            // Sunlight Glare Simulation
-            if (displayConfig.simulateSunlight) {
-                const glare = ctx.createLinearGradient(0, 0, 240, 240);
-                glare.addColorStop(0, 'rgba(255,255,255,0.1)');
-                glare.addColorStop(0.5, 'rgba(255,255,255,0)');
-                glare.addColorStop(1, 'rgba(255,255,255,0.05)');
-                ctx.fillStyle = glare; ctx.fill();
+            switch(displayConfig.theme) {
+                case DisplayTheme.MARINE:
+                    bgColor = '#0f172a'; // Slate 900
+                    fgColor = '#e2e8f0';
+                    break;
+                case DisplayTheme.TERMINAL:
+                    bgColor = '#001a00'; // Dark Green
+                    fgColor = '#00ff00';
+                    break;
+                case DisplayTheme.PAPER:
+                    bgColor = '#f8fafc'; // Slate 50
+                    fgColor = '#1e293b'; // Slate 800
+                    break;
+                case DisplayTheme.NEON:
+                    bgColor = '#09090b';
+                    fgColor = '#06b6d4'; // Cyan
+                    break;
+                case DisplayTheme.CHRONO:
+                    bgColor = '#171717';
+                    fgColor = '#fff';
+                    break;
+                default:
+                    bgColor = '#000000';
+                    fgColor = '#ffffff';
             }
 
-            ctx.clip();
-            
-            // Widgets Loop
-            const sortedWidgets = [...displayWidgets].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
-            sortedWidgets.forEach(widget => {
-                if (!widget.visible) return;
+            // Fill Background
+            ctx.fillStyle = bgColor;
+            ctx.fillRect(0, 0, W, H);
+
+            // Theme Specific Decor
+            if (displayConfig.theme === DisplayTheme.CHRONO) {
+                drawTicks(ctx, CX, CY, CX-2, 60, 5, '#404040'); // Minutes
+                drawTicks(ctx, CX, CY, CX-2, 12, 15, '#e5e5e5'); // Hours
+            }
+            if (displayConfig.theme === DisplayTheme.MARINE) {
+                // Compass Rose Ring
+                ctx.strokeStyle = '#334155'; ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.arc(CX, CY, CX-15, 0, Math.PI*2); ctx.stroke();
+                drawTicks(ctx, CX, CY, CX-15, 4, 10, '#f97316'); // NSEW
+            }
+
+            // --- 3. WIDGET RENDERING ---
+            // Sort by Z-Index
+            const widgets = [...displayWidgets].sort((a,b) => (a.zIndex||0) - (b.zIndex||0));
+
+            widgets.forEach(w => {
+                if (!w.visible) return;
                 ctx.save();
-                ctx.translate(widget.x, widget.y);
-                ctx.scale(widget.scale, widget.scale);
-                if (widget.rotation) ctx.rotate(widget.rotation * Math.PI / 180);
-                if (widget.opacity !== undefined) ctx.globalAlpha = widget.opacity;
+                ctx.translate(w.x, w.y);
+                ctx.rotate((w.rotation || 0) * Math.PI / 180);
+                ctx.scale(w.scale, w.scale);
                 
-                const color = displayConfig.simulateRGB565 ? toRGB565Color(widget.color) : widget.color;
-                ctx.fillStyle = color;
-                ctx.strokeStyle = color;
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
+                // Opacity
+                ctx.globalAlpha = w.opacity !== undefined ? w.opacity : 1.0;
 
-                switch (widget.type) {
-                    case WidgetType.TIDE_GAUGE:
-                        // Simple Bar Gauge
-                        const fillY = 120 - ((currentHeight / 100) * 240);
-                        ctx.fillStyle = color; 
-                        ctx.fillRect(-120, fillY - 120, 240, 240); // Offset by translate
+                // Color Resolve
+                let c = w.color;
+                if (!c || c === '#ffffff') c = fgColor; 
+
+                // Value Source Resolution
+                let valText = w.label || "";
+                let valNum = 0;
+                
+                switch(w.valueSource) {
+                    case 'TIDE': valNum = tidePct; valText = `${Math.round(tidePct)}%`; break;
+                    case 'TEMP': valNum = weatherData.temp; valText = `${Math.round(valNum)}°`; break;
+                    case 'HUM': valNum = weatherData.humidity; valText = `${Math.round(valNum)}%`; break;
+                    case 'WIND': valNum = weatherData.windSpeed; valText = `${Math.round(valNum)}`; break;
+                    case 'TIME': 
+                        const h = Math.floor(simulatedTime % 24);
+                        const m = Math.floor((simulatedTime % 1) * 60);
+                        valText = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`; 
                         break;
-                        
-                    case WidgetType.TIDE_FILL:
-                         // Wave Fill Effect
-                         const waveH = (1 - (currentHeight/100)) * 240 - 120;
-                         ctx.beginPath();
-                         ctx.moveTo(-120, waveH);
-                         for(let i=0; i<=240; i+=10) {
-                             ctx.lineTo(-120 + i, waveH + Math.sin((i + Date.now()/20)*0.05) * 5);
-                         }
-                         ctx.lineTo(120, 120);
-                         ctx.lineTo(-120, 120);
-                         ctx.fill();
-                         break;
+                }
+                
+                // Override label if user typed explicit text (and not using placeholder)
+                if (w.label && !w.valueSource) valText = w.label;
 
-                    case WidgetType.TEXT_LABEL:
-                    case WidgetType.WEATHER_TEMP_TEXT:
-                    case WidgetType.WEATHER_HUMIDITY_TEXT:
-                    case WidgetType.WEATHER_WIND_TEXT:
-                    case WidgetType.WEATHER_CONDITION_TEXT:
-                    case WidgetType.STATUS_WIFI_TEXT:
-                    case WidgetType.STATUS_BLE_TEXT:
-                        let text = widget.label || "TXT";
-                        if (widget.type === WidgetType.WEATHER_TEMP_TEXT) text = `${Math.round(weatherData.temp)}°C`;
-                        if (widget.type === WidgetType.WEATHER_HUMIDITY_TEXT) text = `${weatherData.humidity}%`;
-                        if (widget.type === WidgetType.WEATHER_WIND_TEXT) text = `${Math.round(weatherData.windSpeed)} km/h`;
-                        if (widget.type === WidgetType.WEATHER_CONDITION_TEXT) text = weatherData.conditionText;
-                        if (widget.type === WidgetType.STATUS_WIFI_TEXT) text = "WiFi OK";
-                        if (widget.type === WidgetType.STATUS_BLE_TEXT) text = "BLE OK";
+                // --- WIDGET TYPES ---
+                switch(w.type) {
+                    case WidgetType.ARC_GAUGE: {
+                        // Embedded-style arc (drawArc)
+                        const radius = 40;
+                        const start = Math.PI * 0.75; // 135 deg
+                        const range = Math.PI * 1.5;  // 270 deg span
                         
-                        // Replace placeholders
-                        text = text.replace("%VAL%", Math.round(currentHeight).toString());
-                        text = text.replace("%TEMP%", Math.round(weatherData.temp).toString());
+                        // Background Track
+                        ctx.beginPath();
+                        ctx.arc(0, 0, radius, start, start + range);
+                        ctx.strokeStyle = w.color2 || '#333';
+                        ctx.lineWidth = w.thickness || 8;
+                        ctx.lineCap = 'round';
+                        ctx.stroke();
+
+                        // Active Value
+                        const pct = Math.max(0, Math.min(100, valNum)) / 100;
+                        if (pct > 0) {
+                            ctx.beginPath();
+                            ctx.arc(0, 0, radius, start, start + (range * pct));
+                            ctx.strokeStyle = c;
+                            ctx.lineWidth = w.thickness || 8;
+                            ctx.lineCap = 'round';
+                            ctx.stroke();
+                        }
                         
-                        ctx.font = `bold 24px sans-serif`;
-                        ctx.fillText(text, 0, 0);
+                        // Center Value
+                        ctx.fillStyle = c;
+                        ctx.font = "bold 16px sans-serif";
+                        ctx.textAlign = "center";
+                        ctx.textBaseline = "middle";
+                        ctx.fillText(Math.round(valNum).toString(), 0, 5);
                         break;
+                    }
 
-                    case WidgetType.CLOCK_DIGITAL:
-                        const dh = Math.floor(simulatedTime % 24);
-                        const dm = Math.floor((simulatedTime % 1) * 60);
-                        const dStr = `${dh.toString().padStart(2,'0')}:${dm.toString().padStart(2,'0')}`;
-                        ctx.font = `bold 40px monospace`;
-                        ctx.fillText(dStr, 0, 0);
+                    case WidgetType.RADIAL_COMPASS: {
+                        // Wind Direction or Tide Trend
+                        const angle = w.valueSource === 'WIND' 
+                             ? (weatherData.windDir * Math.PI / 180) 
+                             : (trend === 1 ? -Math.PI/2 : Math.PI/2); // Up/Down for Tide
+                        
+                        ctx.rotate(angle);
+                        
+                        // Draw Arrow
+                        ctx.fillStyle = c;
+                        ctx.beginPath();
+                        ctx.moveTo(0, -20);
+                        ctx.lineTo(8, 8);
+                        ctx.lineTo(0, 4);
+                        ctx.lineTo(-8, 8);
+                        ctx.fill();
+                        
+                        // Label N
+                        ctx.rotate(-angle); // Reset for text
+                        ctx.fillStyle = w.color2 || '#666';
+                        ctx.font = "10px sans-serif";
+                        ctx.textAlign = "center";
+                        ctx.fillText("N", 0, -30);
                         break;
+                    }
 
-                    case WidgetType.CLOCK_ANALOG:
-                         const ah = (simulatedTime % 12);
-                         const am = (simulatedTime % 1) * 60;
-                         // Face
-                         ctx.beginPath(); ctx.arc(0,0, 50, 0, Math.PI*2); 
-                         ctx.lineWidth = 2; ctx.stroke();
-                         // Hour Hand
-                         ctx.save();
-                         ctx.rotate((ah * Math.PI / 6) + (am * Math.PI / 360) - Math.PI/2);
-                         ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(30,0); 
-                         ctx.lineWidth=4; ctx.stroke();
-                         ctx.restore();
-                         // Minute Hand
-                         ctx.save();
-                         ctx.rotate((am * Math.PI / 30) - Math.PI/2);
-                         ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(45,0); 
-                         ctx.lineWidth=2; ctx.stroke();
-                         ctx.restore();
-                         break;
+                    case WidgetType.GRAPH_LINE: {
+                        // Mini history graph
+                        const W = 60; const H = 30;
+                        ctx.fillStyle = w.color2 || 'rgba(255,255,255,0.1)';
+                        ctx.fillRect(-W/2, -H/2, W, H);
+                        
+                        ctx.strokeStyle = c;
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        for(let x=0; x<=W; x+=5) {
+                            // Fake Sine Data based on time
+                            const y = Math.sin((x + simulatedTime*10)*0.1) * (H/2 - 2);
+                            if(x===0) ctx.moveTo(-W/2 + x, y);
+                            else ctx.lineTo(-W/2 + x, y);
+                        }
+                        ctx.stroke();
+                        break;
+                    }
 
-                    case WidgetType.TIDE_RADAR:
-                         // Circle with arrow pointing to tide state
-                         ctx.beginPath(); ctx.arc(0,0, 40, 0, Math.PI*2); ctx.stroke();
-                         ctx.save();
-                         // 0% = Bottom (Low), 50% = Right/Left?, 100% = Top (High)
-                         // Let's map 0..100 to -PI/2 (Bottom) to PI/2 (Top) ?? 
-                         // Standard gauge: 0=Bottom, 100=Top.
-                         const angle = Math.PI - ((currentHeight/100) * Math.PI); // 0 -> PI (Bottom), 100 -> 0 (Top) -- Simple gauge 180
-                         // Let's do Full Circle: 0(Low) -> 12(High)
-                         // 0% -> PI/2 (Bottom), 100% -> -PI/2 (Top)
-                         const radAngle = (Math.PI/2) - ((currentHeight/100) * Math.PI); 
-                         ctx.rotate(radAngle);
-                         ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(35, 0); 
-                         ctx.lineWidth=3; ctx.stroke();
-                         ctx.restore();
-                         ctx.font='10px sans-serif';
-                         ctx.fillText("H", 0, -50); ctx.fillText("L", 0, 50);
-                         break;
+                    case WidgetType.DIGITAL_CLOCK: {
+                        ctx.font = `${w.fontFamily || 'monospace'} 42px bold`;
+                        ctx.fillStyle = c;
+                        ctx.textAlign = "center";
+                        ctx.textBaseline = "middle";
+                        ctx.fillText(valText, 0, 0);
+                        break;
+                    }
                     
-                    case WidgetType.MOON_PHASE:
-                         ctx.beginPath(); ctx.arc(0,0, 30, 0, Math.PI*2); ctx.fill();
-                         ctx.fillStyle = 'rgba(0,0,0,0.7)';
-                         // Simple shadow simulation based on illumination
-                         const phase = weatherData.moonIllumination / 100;
-                         const offset = (phase - 0.5) * 60; 
-                         ctx.beginPath(); ctx.ellipse(offset, 0, 30 * (1-phase), 30, 0, 0, Math.PI*2);
-                         ctx.fill();
-                         break;
+                    case WidgetType.ANALOG_CLOCK: {
+                        const h = simulatedTime % 12;
+                        const m = (simulatedTime % 1) * 60;
+                        const s = (simulatedTime * 60) % 60; // Simulation speed fast
+                        
+                        // Hour
+                        ctx.save();
+                        ctx.rotate((h * Math.PI/6) + (m * Math.PI/360) - Math.PI/2);
+                        ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(25,0); 
+                        ctx.strokeStyle = c; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.stroke();
+                        ctx.restore();
+                        
+                        // Minute
+                        ctx.save();
+                        ctx.rotate((m * Math.PI/30) - Math.PI/2);
+                        ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(40,0); 
+                        ctx.strokeStyle = c; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.stroke();
+                        ctx.restore();
+                        
+                        // Second (Accent)
+                        ctx.save();
+                        ctx.rotate((s * Math.PI/30) - Math.PI/2);
+                        ctx.beginPath(); ctx.moveTo(-5,0); ctx.lineTo(45,0); 
+                        ctx.strokeStyle = w.color2 || '#ef4444'; ctx.lineWidth = 1; ctx.stroke();
+                        ctx.beginPath(); ctx.arc(0,0,2,0,Math.PI*2); ctx.fillStyle=w.color2||'#ef4444'; ctx.fill();
+                        ctx.restore();
+                        break;
+                    }
 
-                    case WidgetType.ICON_WEATHER:
-                         if (weatherData.isDay) {
-                             // Sun
-                             ctx.beginPath(); ctx.arc(0,0, 20, 0, Math.PI*2); ctx.fill();
-                             for(let i=0; i<8; i++) {
-                                 ctx.save(); ctx.rotate(i*Math.PI/4);
-                                 ctx.beginPath(); ctx.moveTo(25,0); ctx.lineTo(35,0); ctx.stroke();
-                                 ctx.restore();
-                             }
-                         } else {
-                             // Moon
-                             ctx.beginPath(); ctx.arc(-5,0, 20, 0, Math.PI*2); ctx.fill();
-                             ctx.globalCompositeOperation = 'destination-out';
-                             ctx.beginPath(); ctx.arc(10, -5, 15, 0, Math.PI*2); ctx.fill();
-                             ctx.globalCompositeOperation = 'source-over';
-                         }
-                         break;
+                    case WidgetType.TEXT_VALUE: {
+                        // Big Value
+                        ctx.fillStyle = c;
+                        ctx.font = "bold 28px sans-serif";
+                        ctx.textAlign = "center";
+                        ctx.fillText(valText, 0, 0);
+                        
+                        // Label
+                        if (w.label) {
+                            ctx.fillStyle = w.color2 || '#888';
+                            ctx.font = "10px sans-serif";
+                            ctx.fillText(w.label.toUpperCase(), 0, 18);
+                        }
+                        break;
+                    }
 
-                    case WidgetType.WIND_VECTOR:
-                         ctx.save();
-                         ctx.rotate((weatherData.windDir || 0) * Math.PI / 180);
-                         ctx.beginPath(); 
-                         ctx.moveTo(0, -20); ctx.lineTo(10, 10); ctx.lineTo(0, 5); ctx.lineTo(-10, 10); 
-                         ctx.closePath(); ctx.fill();
-                         ctx.restore();
-                         ctx.font = '10px sans-serif';
-                         ctx.fillText("N", 0, -30);
-                         break;
+                    case WidgetType.TEXT_SIMPLE: {
+                        ctx.fillStyle = c;
+                        ctx.font = "14px sans-serif";
+                        ctx.textAlign = "center";
+                        ctx.fillText(w.label || "TEXT", 0, 0);
+                        break;
+                    }
 
-                    case WidgetType.STATUS_WIFI_ICON:
-                         ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI*2); ctx.fill();
-                         ctx.beginPath(); ctx.arc(0, 0, 15, Math.PI, 0); ctx.stroke();
-                         ctx.beginPath(); ctx.arc(0, 0, 25, Math.PI, 0); ctx.stroke();
-                         break;
+                    case WidgetType.ICON_WEATHER: {
+                        // Simple vector icons
+                        ctx.fillStyle = c;
+                        ctx.beginPath();
+                        if (weatherData.isDay) {
+                            ctx.arc(0,0,12,0,Math.PI*2); ctx.fill(); // Sun
+                            ctx.strokeStyle = c; ctx.lineWidth = 2;
+                            for(let i=0; i<8; i++) {
+                                ctx.save(); ctx.rotate(i*Math.PI/4);
+                                ctx.moveTo(16,0); ctx.lineTo(20,0); ctx.stroke();
+                                ctx.restore();
+                            }
+                        } else {
+                            ctx.arc(0,0,12,0,Math.PI*2); ctx.fill(); 
+                            ctx.globalCompositeOperation = 'destination-out';
+                            ctx.beginPath(); ctx.arc(6,-6,10,0,Math.PI*2); ctx.fill();
+                            ctx.globalCompositeOperation = 'source-over';
+                        }
+                        break;
+                    }
+                    
+                    case WidgetType.ICON_WIFI: {
+                        ctx.fillStyle = c;
+                        ctx.beginPath(); ctx.arc(0,0,3,0,Math.PI*2); ctx.fill();
+                        ctx.strokeStyle = c; ctx.lineWidth = 2;
+                        ctx.beginPath(); ctx.arc(0,0,10,Math.PI, 0); ctx.stroke();
+                        ctx.beginPath(); ctx.arc(0,0,16,Math.PI, 0); ctx.stroke();
+                        break;
+                    }
 
-                    case WidgetType.STATUS_BLE_ICON:
-                         ctx.beginPath(); 
-                         ctx.moveTo(0,-15); ctx.lineTo(0,15); 
-                         ctx.moveTo(0,-15); ctx.lineTo(10,-5); ctx.lineTo(-10,5); ctx.lineTo(10,15); ctx.lineTo(0,5);
+                    case WidgetType.GRID_BACKGROUND: {
+                        drawGrid(ctx, 240, 240, displayConfig.theme);
+                        break;
+                    }
+
+                    case WidgetType.RING_OUTER: {
+                         ctx.beginPath();
+                         ctx.arc(0, 0, 115, 0, Math.PI*2);
+                         ctx.strokeStyle = c;
+                         ctx.lineWidth = w.thickness || 2;
                          ctx.stroke();
                          break;
-
-                    case WidgetType.AI_IMAGE:
-                         if (widget.imageUrl) {
-                             if (!imageCache.current[widget.id]) {
+                    }
+                    
+                    case WidgetType.AI_IMAGE: {
+                         if (w.imageUrl) {
+                             if (!imageCache.current[w.id]) {
                                  const img = new Image();
-                                 img.src = widget.imageUrl;
-                                 imageCache.current[widget.id] = img;
+                                 img.src = w.imageUrl;
+                                 imageCache.current[w.id] = img;
                              }
-                             const img = imageCache.current[widget.id];
+                             const img = imageCache.current[w.id];
                              if (img && img.complete) {
-                                 // Draw centered, roughly 100x100 base size
-                                 try {
-                                     ctx.drawImage(img, -50, -50, 100, 100);
-                                 } catch(e) {
-                                     ctx.fillText("ERR", 0, 0);
-                                 }
-                             } else {
-                                 ctx.fillText("LOADING...", 0, 0);
+                                 const width = w.w || img.width;
+                                 const height = w.h || img.height;
+                                 ctx.drawImage(img, -width/2, -height/2, width, height);
                              }
                          }
                          break;
+                    }
                 }
-                
-                if (selectedWidgetId === widget.id) {
-                    ctx.strokeStyle = '#f59e0b'; 
-                    ctx.lineWidth = 2 / widget.scale; 
-                    ctx.setLineDash([5, 3]);
-                    ctx.strokeRect(-60, -60, 120, 120);
+
+                // Selection Highlight
+                if (selectedWidgetId === w.id) {
+                    ctx.strokeStyle = '#f59e0b'; // Amber
+                    ctx.lineWidth = 2 / w.scale;
+                    ctx.setLineDash([4, 2]);
+                    ctx.strokeRect(-20, -20, 40, 40); // Approx bounding box
                     ctx.setLineDash([]);
                 }
+
                 ctx.restore();
             });
 
-            ctx.restore();
+            // Restore Clip
+            ctx.restore(); 
+
+            // Simulate Glass Glare
+            if (displayConfig.simulateSunlight) {
+                const glare = ctx.createLinearGradient(0, 0, 240, 240);
+                glare.addColorStop(0, 'rgba(255,255,255,0.15)');
+                glare.addColorStop(0.4, 'rgba(255,255,255,0)');
+                glare.addColorStop(1, 'rgba(255,255,255,0.05)');
+                ctx.fillStyle = glare;
+                ctx.beginPath(); ctx.arc(CX, CY, CX, 0, Math.PI*2); ctx.fill();
+            }
+
             requestAnimationFrame(render);
         };
         const raf = requestAnimationFrame(render);
@@ -308,17 +417,15 @@ export const DisplayCanvas: React.FC<DisplayCanvasProps> = ({ selectedWidgetId, 
 
     return (
         <div className="flex flex-col items-center bg-slate-900 rounded-lg border border-slate-700 p-6 relative overflow-hidden">
-             <div className="absolute top-4 left-4 flex gap-2 z-10">
-                 <button onClick={() => setDisplayConfig({ type: displayConfig.type === DisplayType.GC9A01_240 ? DisplayType.OLED_128 : DisplayType.GC9A01_240 })} 
-                         className={`p-2 rounded flex gap-2 items-center text-xs font-bold ${displayConfig.type === DisplayType.OLED_128 ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-500 border border-slate-700'}`}>
-                     <Monitor size={16} /> {displayConfig.type === DisplayType.OLED_128 ? 'OLED 128px' : 'GC9A01 240px'}
-                 </button>
-             </div>
              
              <div className="relative rounded-full bg-slate-950 p-1 shadow-2xl border-[12px] border-slate-800 ring-1 ring-slate-700 cursor-pointer" onClick={() => setSelectedWidgetId(null)}>
                  <div className="w-[240px] h-[240px] rounded-full overflow-hidden bg-black relative shadow-inner">
                      <canvas ref={canvasRef} width={240} height={240} className="w-full h-full" />
                  </div>
+             </div>
+             
+             <div className="mt-4 text-[10px] text-slate-500 font-mono text-center">
+                 RENDERIZAÇÃO SIMULADA: {displayConfig.driver}
              </div>
         </div>
     );
