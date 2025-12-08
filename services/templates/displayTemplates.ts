@@ -2,6 +2,8 @@
 
 
 
+
+
 import { DisplayWidget, DisplayConfig, WidgetType } from '../../types';
 
 export const generateDisplayManagerH = () => `
@@ -53,6 +55,7 @@ export const generateDisplayManagerCpp = (widgets: DisplayWidget[], config: Disp
          if (w.type === WidgetType.ARC_GAUGE) typeCode = 10;
          if (w.type === WidgetType.RADIAL_COMPASS) typeCode = 20;
          if (w.type === WidgetType.GRAPH_LINE) typeCode = 30;
+         if (w.type === WidgetType.RAIN_CHART) typeCode = 35; // NEW
          if (w.type === WidgetType.DIGITAL_CLOCK) typeCode = 40;
          if (w.type === WidgetType.ANALOG_CLOCK) typeCode = 41;
          if (w.type === WidgetType.TEXT_VALUE) typeCode = 50;
@@ -188,6 +191,27 @@ void DisplayManager::drawWidget(int type, int x, int y, float scale, uint32_t co
              // Mock Sine for now
              break;
         }
+        case 35: // RAIN_CHART (New)
+        {
+             // Mock Logic for Template - In real C++, this would read from WeatherManager
+             // Draw simple histogram
+             int w = 60 * scale; 
+             int h = 30 * scale;
+             int bars = 8;
+             int bw = (w / bars) - 2;
+             
+             for(int i=0; i<bars; i++) {
+                 // Simulate data or read static array
+                 int h_bar = random(0, h);
+                 spr.fillRect((x - w/2) + i*(bw+2), (y + h/2) - h_bar, bw, h_bar, color);
+             }
+             if (label != "") {
+                 spr.setTextColor(color, TFT_BLACK);
+                 spr.setTextDatum(TR_DATUM); // Top Right relative to anchor? 
+                 spr.drawString(label, x + w/2, y - h/2 - 10);
+             }
+             break;
+        }
         case 40: // DIGITAL_CLOCK
         {
              spr.setTextColor(color, TFT_BLACK);
@@ -249,4 +273,3 @@ void DisplayManager::showSplashScreen() {
     tft.drawCentreString("TideFlux", 120, 100, 4);
 }
 `;
-}

@@ -1,134 +1,124 @@
 
+
+
 import React, { useState } from 'react';
 import { useAppStore } from '../../store';
-import { DisplayTheme, WidgetType, ViewState } from '../../types';
-import { Zap, Palette, CloudSun, Sparkles, Image as ImageIcon, Wifi, Bluetooth, Settings, Sun, Moon, Droplets, Thermometer, Wind, Waves, Gauge, Clock, Layout } from 'lucide-react';
-import { generateDisplayImage } from '../../services/geminiService';
+import { DisplayTheme, WidgetType, ViewState, DisplayType } from '../../types';
+import { oledPixelEngine } from '../../services/oledPixelEngine';
+import { Zap, Palette, CloudSun, Sparkles, Image as ImageIcon, Wifi, Bluetooth, Settings, Sun, Moon, Droplets, Thermometer, Wind, Waves, Gauge, Clock, Layout, Download, FileCode, Monitor, CloudRain } from 'lucide-react';
 
 export const DisplaySidebar: React.FC = () => {
   const { 
       weatherData, displayConfig, setDisplayConfig, setDisplayWidgets, addDisplayWidget,
-      dataSourceConfig, setView
+      dataSourceConfig, setView, displayWidgets
   } = useAppStore();
 
-  const [aiPrompt, setAiPrompt] = useState('');
-  const [aiGenerating, setAiGenerating] = useState(false);
-  const [lastGeneratedImage, setLastGeneratedImage] = useState<string | null>(null);
-
-  const handleGenerateImage = async () => {
-      if(!aiPrompt) return;
-      setAiGenerating(true);
-      try {
-          const base64 = await generateDisplayImage(aiPrompt);
-          setLastGeneratedImage(base64);
-      } catch(e: any) {
-          alert("Erro Gemini: " + e.message);
-      } finally {
-          setAiGenerating(false);
-      }
-  };
-
-  const addImageWidget = () => {
-      if(lastGeneratedImage) {
-          addDisplayWidget({
-              id: Math.random().toString(),
-              type: WidgetType.AI_IMAGE,
-              x: 120, y: 120, scale: 2.4,
-              color: '#fff',
-              visible: true,
-              zIndex: 0,
-              imageUrl: lastGeneratedImage
-          });
-      }
+  const handleExportHeader = () => {
+      // 1. Render current state to a temp canvas
+      const targetW = displayConfig.width;
+      const targetH = displayConfig.height;
+      const canvas = document.createElement('canvas');
+      canvas.width = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      
+      // Render scene at 1x scale for export
+      oledPixelEngine.renderScene(ctx, targetW, targetH, displayWidgets, {
+          tide: 50, weather: weatherData, time: 12, keyframes: []
+      });
+      
+      // Dither
+      const buffer = oledPixelEngine.ditherImage(ctx, targetW, targetH);
+      
+      // Generate C
+      const code = oledPixelEngine.generateCHeader(buffer, targetW, targetH, "oled_layout_preset");
+      navigator.clipboard.writeText(code);
+      alert("C Header copied to clipboard!");
   };
 
   const applyPreset = (name: string) => {
+    // Clear existing
+    let newWidgets = [];
+    
     switch (name) {
-      case 'Mariner':
-        setDisplayConfig({ ...displayConfig, theme: DisplayTheme.MARINE });
-        setDisplayWidgets([
-          { id: '1', type: WidgetType.RING_OUTER, x: 120, y: 120, scale: 1, color: '#1e293b', visible: true, zIndex: 0, thickness: 10 },
-          { id: '2', type: WidgetType.ARC_GAUGE, x: 120, y: 120, scale: 1, color: '#f97316', visible: true, zIndex: 1, valueSource: 'TIDE', label: 'TIDE' },
-          { id: '3', type: WidgetType.RADIAL_COMPASS, x: 120, y: 120, scale: 1, color: '#e2e8f0', visible: true, zIndex: 2, valueSource: 'WIND' },
-          { id: '4', type: WidgetType.TEXT_VALUE, x: 120, y: 180, scale: 0.8, color: '#fff', visible: true, zIndex: 3, valueSource: 'TIME' },
-        ]);
+      case 'Minimalist OLED':
+        setDisplayConfig({ ...displayConfig, theme: DisplayTheme.MINIMAL_OLED, width: 128, height: 64, type: DisplayType.SSD1306_128x64 });
+        newWidgets = [
+          { id: 'm1', type: WidgetType.TEXT_VALUE, x: 64, y: 32, scale: 1, color: '#ffffff', visible: true, zIndex: 1, valueSource: 'TIDE', label: 'TIDE', fontSize: 32 },
+          { id: 'm2', type: WidgetType.ICON_WEATHER, x: 110, y: 15, scale: 0.8, color: '#ffffff', visible: true, zIndex: 1 },
+          { id: 'm3', type: WidgetType.TEXT_VALUE, x: 110, y: 32, scale: 1, color: '#ffffff', visible: true, zIndex: 1, valueSource: 'TEMP', fontSize: 10, label: '' },
+        ];
         break;
         
-      case 'Chrono Sport':
-        setDisplayConfig({ ...displayConfig, theme: DisplayTheme.CHRONO });
-        setDisplayWidgets([
-          { id: 'c1', type: WidgetType.ANALOG_CLOCK, x: 120, y: 120, scale: 1, color: '#fff', visible: true, zIndex: 5, color2: '#ef4444' },
-          { id: 'c2', type: WidgetType.ARC_GAUGE, x: 60, y: 120, scale: 0.6, color: '#3b82f6', visible: true, zIndex: 2, valueSource: 'TIDE', thickness: 6 },
-          { id: 'c3', type: WidgetType.ARC_GAUGE, x: 180, y: 120, scale: 0.6, color: '#ef4444', visible: true, zIndex: 2, valueSource: 'TEMP', thickness: 6 },
-        ]);
+      case 'Sophisticated':
+        setDisplayConfig({ ...displayConfig, theme: DisplayTheme.MINIMAL_OLED, width: 128, height: 64 });
+        newWidgets = [
+          { id: 's1', type: WidgetType.SPARKLINE, x: 64, y: 40, scale: 1, color: '#ffffff', visible: true, zIndex: 0, w: 128, h: 48 },
+          { id: 's2', type: WidgetType.DIGITAL_CLOCK, x: 64, y: 12, scale: 1, color: '#000000', visible: true, zIndex: 2, fontSize: 16, fontFamily: 'monospace', color2: '#ffffff' }, // Inverse effect
+          { id: 's3', type: WidgetType.TEXT_VALUE, x: 20, y: 55, scale: 1, color: '#ffffff', visible: true, zIndex: 2, valueSource: 'TIDE', label: 'M', fontSize: 12 },
+        ];
         break;
-
-      case 'Digital Terminal':
-        setDisplayConfig({ ...displayConfig, theme: DisplayTheme.TERMINAL });
-        setDisplayWidgets([
-          { id: 'd1', type: WidgetType.GRID_BACKGROUND, x: 0, y: 0, scale: 1, color: '#00ff00', visible: true, zIndex: 0 },
-          { id: 'd2', type: WidgetType.DIGITAL_CLOCK, x: 120, y: 100, scale: 1, color: '#00ff00', visible: true, zIndex: 5, fontFamily: 'monospace' },
-          { id: 'd3', type: WidgetType.GRAPH_LINE, x: 120, y: 160, scale: 1, color: '#00ff00', visible: true, zIndex: 2, w: 100, h: 40 },
-          { id: 'd4', type: WidgetType.TEXT_SIMPLE, x: 120, y: 200, scale: 1, color: '#008800', visible: true, zIndex: 2, label: 'SYSTEM READY' },
-        ]);
-        break;
-
-      case 'Minimalist':
-         setDisplayConfig({ ...displayConfig, theme: DisplayTheme.PAPER });
-         setDisplayWidgets([
-             { id: 'm1', type: WidgetType.TEXT_VALUE, x: 120, y: 100, scale: 1.5, color: '#000', visible: true, zIndex: 1, valueSource: 'TIDE', label: 'HEIGHT' },
-             { id: 'm2', type: WidgetType.ICON_WEATHER, x: 120, y: 170, scale: 1.2, color: '#000', visible: true, zIndex: 1 },
-         ]);
+        
+      case 'Compact 128x32':
+         setDisplayConfig({ ...displayConfig, theme: DisplayTheme.MINIMAL_OLED, width: 128, height: 32, type: DisplayType.SSD1306_128x32 });
+         newWidgets = [
+             { id: 'c1', type: WidgetType.TEXT_VALUE, x: 30, y: 16, scale: 1, color: '#fff', visible: true, zIndex: 1, valueSource: 'TIDE', fontSize: 24, label: '' },
+             { id: 'c2', type: WidgetType.TEXT_SIMPLE, x: 80, y: 10, scale: 1, color: '#fff', visible: true, zIndex: 1, fontSize: 10, label: 'MORERE' },
+             { id: 'c3', type: WidgetType.TEXT_VALUE, x: 80, y: 22, scale: 1, color: '#fff', visible: true, zIndex: 1, valueSource: 'TEMP', fontSize: 12, label: '' }
+         ];
          break;
     }
+    setDisplayWidgets(newWidgets);
   };
 
   return (
     <div className="flex flex-col gap-6 max-h-full overflow-y-auto pr-2 pb-20 custom-scrollbar">
         
-        {/* Compact Status Bar */}
-        <div className="bg-slate-800 rounded-lg border border-slate-700 p-3 flex items-center justify-between">
-            <div className="flex items-center gap-4 text-xs">
-                <div className="flex flex-col items-center">
-                    <Waves size={16} className="text-cyan-400 mb-0.5" />
-                    <span className="text-slate-300 font-mono">DATA</span>
-                </div>
-                <div className="w-px h-8 bg-slate-700"></div>
-                <div className="flex flex-col items-center">
-                     <span className="text-slate-300 font-mono">{Math.round(weatherData.temp)}°C</span>
-                </div>
-            </div>
-            
-            <button 
-                onClick={() => setView(ViewState.EDITOR)}
-                className="p-2 hover:bg-slate-700 rounded-full text-slate-400 hover:text-white transition"
-                title="Configurar Fontes"
+        {/* Model Selector */}
+        <div className="bg-slate-800 rounded-lg border border-slate-700 p-3">
+            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                <Monitor size={12}/> Display Model
+            </h3>
+            <select 
+                value={displayConfig.type} 
+                onChange={(e) => {
+                    const t = e.target.value as DisplayType;
+                    const dims = t.includes('128x32') ? {w:128,h:32} : t.includes('240') ? {w:240,h:240} : {w:128,h:64};
+                    setDisplayConfig({ type: t, width: dims.w, height: dims.h });
+                }}
+                className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-xs text-white"
             >
-                <Settings size={18} />
-            </button>
+                <option value={DisplayType.SSD1306_128x64}>OLED SSD1306 (128x64)</option>
+                <option value={DisplayType.SH1106_128x64}>OLED SH1106 (128x64)</option>
+                <option value={DisplayType.SSD1306_128x32}>OLED Slim (128x32)</option>
+                <option value={DisplayType.GC9A01_240}>LCD Round (240x240)</option>
+            </select>
+            
+            <div className="flex gap-2 mt-2">
+                <button onClick={()=>setDisplayConfig({ditherEnabled: !displayConfig.ditherEnabled})} className={`flex-1 text-[10px] py-1 rounded border ${displayConfig.ditherEnabled ? 'bg-green-900/30 border-green-600 text-green-400' : 'bg-slate-700 border-transparent'}`}>
+                    Dithering: {displayConfig.ditherEnabled ? 'ON' : 'OFF'}
+                </button>
+            </div>
         </div>
 
         {/* Quick Presets */}
         <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
             <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-3 flex items-center gap-2">
-                <Layout size={14} className="text-cyan-400" /> Presets Inteligentes
+                <Layout size={14} className="text-cyan-400" /> Layout Presets
             </h3>
             <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => applyPreset('Mariner')} className="p-3 bg-slate-700 hover:bg-slate-600 rounded flex flex-col items-center gap-2 transition group">
-                    <div className="w-8 h-8 rounded-full border-2 border-orange-500 group-hover:bg-orange-500/20"></div>
-                    <span className="text-[10px] text-white font-bold">Mariner</span>
+                <button onClick={() => applyPreset('Minimalist OLED')} className="p-3 bg-slate-700 hover:bg-slate-600 rounded flex flex-col items-center gap-2 transition group">
+                    <div className="w-10 h-6 border-2 border-white rounded bg-black"></div>
+                    <span className="text-[10px] text-white font-bold">Minimal Mono</span>
                 </button>
-                <button onClick={() => applyPreset('Chrono Sport')} className="p-3 bg-slate-700 hover:bg-slate-600 rounded flex flex-col items-center gap-2 transition group">
-                    <Clock size={20} className="text-red-500" />
-                    <span className="text-[10px] text-white font-bold">Chrono</span>
+                <button onClick={() => applyPreset('Sophisticated')} className="p-3 bg-slate-700 hover:bg-slate-600 rounded flex flex-col items-center gap-2 transition group">
+                    <div className="w-10 h-6 border border-slate-400 rounded bg-slate-900 flex items-end"><div className="w-full h-2 bg-white/20"></div></div>
+                    <span className="text-[10px] text-white font-bold">Sparkline Pro</span>
                 </button>
-                <button onClick={() => applyPreset('Digital Terminal')} className="p-3 bg-slate-700 hover:bg-slate-600 rounded flex flex-col items-center gap-2 transition group">
-                     <div className="font-mono text-green-500 text-xs">_CMD</div>
-                    <span className="text-[10px] text-white font-bold">Terminal</span>
-                </button>
-                <button onClick={() => applyPreset('Minimalist')} className="p-3 bg-slate-100 hover:bg-white rounded flex flex-col items-center gap-2 transition group">
-                    <div className="text-black font-serif text-lg">Aa</div>
-                    <span className="text-[10px] text-black font-bold">Paper</span>
+                <button onClick={() => applyPreset('Compact 128x32')} className="p-3 bg-slate-700 hover:bg-slate-600 rounded flex flex-col items-center gap-2 transition group">
+                    <div className="w-10 h-3 border border-slate-400 rounded bg-black"></div>
+                    <span className="text-[10px] text-white font-bold">Slim 32px</span>
                 </button>
             </div>
         </div>
@@ -136,24 +126,25 @@ export const DisplaySidebar: React.FC = () => {
         {/* Widgets Adder */}
         <div className="bg-slate-800 rounded-lg border border-slate-700 p-6">
              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                <Gauge size={14} className="text-green-400" /> Adicionar Widgets
+                <Gauge size={14} className="text-green-400" /> Widgets
             </h3>
             <div className="grid grid-cols-2 gap-2">
                 {[
-                    { type: WidgetType.ARC_GAUGE, label: 'Medidor Arco', icon: <Gauge size={16}/> },
-                    { type: WidgetType.RADIAL_COMPASS, label: 'Bússola/Vento', icon: <Wind size={16}/> },
-                    { type: WidgetType.DIGITAL_CLOCK, label: 'Relógio Digital', icon: <Clock size={16}/> },
-                    { type: WidgetType.ANALOG_CLOCK, label: 'Relógio Analógico', icon: <Clock size={16}/> },
-                    { type: WidgetType.GRAPH_LINE, label: 'Mini Gráfico', icon: <Waves size={16}/> },
-                    { type: WidgetType.TEXT_VALUE, label: 'Valor + Label', icon: <Layout size={16}/> },
+                    { type: WidgetType.TEXT_VALUE, label: 'Valor Grande', icon: <Layout size={16}/> },
+                    { type: WidgetType.SPARKLINE, label: 'Gráfico Curva', icon: <Waves size={16}/> },
+                    { type: WidgetType.RAIN_CHART, label: 'Gráfico Chuva', icon: <CloudRain size={16}/> },
+                    { type: WidgetType.ICON_WEATHER, label: 'Ícone Clima', icon: <CloudSun size={16}/> },
+                    { type: WidgetType.DIGITAL_CLOCK, label: 'Relógio', icon: <Clock size={16}/> },
+                    { type: WidgetType.ICON_STATUS, label: 'Status Bar', icon: <Wifi size={16}/> },
                 ].map(w => (
                     <button 
                         key={w.type}
                         onClick={() => addDisplayWidget({
                             id: Math.random().toString(), 
                             type: w.type, 
-                            x:120, y:120, scale:1, color:'#fff', visible:true, zIndex:5,
-                            valueSource: 'TIDE' // Default
+                            x: displayConfig.width/2, y: displayConfig.height/2, 
+                            scale:1, color:'#fff', visible:true, zIndex:5,
+                            valueSource: 'TIDE', fontSize: 12, w: 64, h: 32
                         })} 
                         className="p-2 bg-slate-900 hover:bg-slate-700 border border-slate-700 rounded text-[10px] text-white flex flex-col items-center gap-1 transition"
                     >
@@ -164,36 +155,17 @@ export const DisplaySidebar: React.FC = () => {
             </div>
         </div>
 
-        {/* AI Image Generator */}
-        <div className="bg-slate-800 rounded-lg border border-slate-700 p-6">
-            <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-3 flex items-center gap-2">
-                <Sparkles size={14} className="text-pink-400" /> AI Backgrounds
-            </h3>
-            
-            <textarea 
-                value={aiPrompt} 
-                onChange={e => setAiPrompt(e.target.value)} 
-                placeholder="Ex: Radar sonar screen, green glowing grid..." 
-                className="w-full h-16 bg-slate-900 border border-slate-600 rounded p-2 text-xs text-white mb-2"
-            />
-            
+        {/* Export Actions */}
+        <div className="mt-auto">
             <button 
-                onClick={handleGenerateImage}
-                disabled={aiGenerating || !aiPrompt}
-                className={`w-full py-2 rounded text-xs font-bold flex items-center justify-center gap-2 mb-3 transition ${aiGenerating ? 'bg-purple-900/50 text-purple-300' : 'bg-purple-600 hover:bg-purple-500 text-white'}`}
+                onClick={handleExportHeader}
+                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 shadow-lg shadow-indigo-900/50 transition"
             >
-                {aiGenerating ? <ImageIcon className="animate-spin" size={14}/> : <ImageIcon size={14}/>}
-                {aiGenerating ? 'Gerando...' : 'Gerar Imagem'}
+                <FileCode size={16}/> Copiar C Header (PROGMEM)
             </button>
-
-            {lastGeneratedImage && (
-                <div className="bg-slate-900 p-2 rounded border border-slate-700 flex gap-2 items-center">
-                    <img src={lastGeneratedImage} className="w-10 h-10 rounded-full object-cover border border-slate-600" alt="Generated" />
-                    <button onClick={addImageWidget} className="flex-1 bg-slate-800 hover:bg-slate-700 text-xs py-1.5 rounded text-white border border-slate-600">
-                        Usar
-                    </button>
-                </div>
-            )}
+            <p className="text-[9px] text-slate-500 text-center mt-2">
+                Gera array de bytes otimizado para a tela selecionada.
+            </p>
         </div>
     </div>
   );

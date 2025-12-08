@@ -2,7 +2,7 @@
 import React from 'react';
 import { useAppStore } from '../../store';
 import { WidgetType } from '../../types';
-import { Settings, Layers, SendToBack, ArrowDown, ArrowUp, BringToFront, Trash2, Smartphone, Eye, ArrowLeft, Database } from 'lucide-react';
+import { Settings, Layers, SendToBack, ArrowDown, ArrowUp, BringToFront, Trash2, Smartphone, Eye, ArrowLeft, Database, Type } from 'lucide-react';
 
 interface WidgetPanelProps {
     selectedWidgetId: string | null;
@@ -55,7 +55,7 @@ export const WidgetPanel: React.FC<WidgetPanelProps> = ({ selectedWidgetId, setS
 
                     <div className="space-y-4 animate-in fade-in slide-in-from-right-4">
                         
-                        {/* DATA SOURCE SELECTOR */}
+                        {/* DATA SOURCE */}
                         <div className="bg-blue-900/20 p-3 rounded border border-blue-900/50">
                             <label className="text-[10px] text-blue-300 uppercase font-bold mb-2 block flex items-center gap-1">
                                 <Database size={12}/> Fonte de Dados
@@ -74,7 +74,7 @@ export const WidgetPanel: React.FC<WidgetPanelProps> = ({ selectedWidgetId, setS
                             </select>
                         </div>
 
-                        {/* POSITION */}
+                        {/* POSITION & SIZE */}
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="text-[10px] text-slate-500 uppercase font-bold">X</label>
@@ -86,63 +86,59 @@ export const WidgetPanel: React.FC<WidgetPanelProps> = ({ selectedWidgetId, setS
                             </div>
                         </div>
 
-                        {/* SPECIFIC DIMENSIONS FOR IMAGE WIDGETS */}
-                        {selectedWidget.type === WidgetType.AI_IMAGE && (
+                        {/* SPARKLINE / IMAGE DIMS */}
+                        {(selectedWidget.type === WidgetType.SPARKLINE || selectedWidget.type === WidgetType.AI_IMAGE) && (
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="text-[10px] text-slate-500 uppercase font-bold">Largura (px)</label>
+                                    <label className="text-[10px] text-slate-500 uppercase font-bold">Largura</label>
                                     <input type="number" value={selectedWidget.w || 32} onChange={e => updateDisplayWidget(selectedWidget.id, {w: parseInt(e.target.value)})} className="w-full bg-slate-900 border border-slate-600 rounded p-1.5 text-white text-sm mt-1 outline-none" />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] text-slate-500 uppercase font-bold">Altura (px)</label>
+                                    <label className="text-[10px] text-slate-500 uppercase font-bold">Altura</label>
                                     <input type="number" value={selectedWidget.h || 32} onChange={e => updateDisplayWidget(selectedWidget.id, {h: parseInt(e.target.value)})} className="w-full bg-slate-900 border border-slate-600 rounded p-1.5 text-white text-sm mt-1 outline-none" />
                                 </div>
                             </div>
                         )}
 
-                        {/* SCALE & ROTATION */}
-                        <div>
-                             <div className="flex justify-between">
-                                 <label className="text-[10px] text-slate-500 uppercase font-bold">Escala</label>
-                                 <span className="text-[10px] text-slate-300 font-mono">{selectedWidget.scale.toFixed(1)}x</span>
-                             </div>
-                             <input type="range" min="0.5" max="3" step="0.1" value={selectedWidget.scale} onChange={e => updateDisplayWidget(selectedWidget.id, {scale: parseFloat(e.target.value)})} className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer mt-1" />
-                        </div>
-
-                        {selectedWidget.type !== WidgetType.DIGITAL_CLOCK && (
-                        <div>
-                             <div className="flex justify-between">
-                                 <label className="text-[10px] text-slate-500 uppercase font-bold">Rotação</label>
-                                 <span className="text-[10px] text-slate-300 font-mono">{selectedWidget.rotation || 0}°</span>
-                             </div>
-                             <input type="range" min="0" max="360" value={selectedWidget.rotation || 0} onChange={e => updateDisplayWidget(selectedWidget.id, {rotation: parseInt(e.target.value)})} className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer mt-1" />
-                        </div>
-                        )}
-
-                        {/* COLORS */}
-                        <div>
-                            <label className="text-[10px] text-slate-500 uppercase font-bold">Cor Primária</label>
-                            <div className="flex gap-2 mt-1">
-                                <input type="color" value={selectedWidget.color} onChange={e => updateDisplayWidget(selectedWidget.id, {color: e.target.value})} className="h-8 w-8 rounded cursor-pointer bg-transparent border-0" />
-                                <input type="text" value={selectedWidget.color} onChange={e => updateDisplayWidget(selectedWidget.id, {color: e.target.value})} className="flex-1 bg-slate-900 border border-slate-600 rounded p-1.5 text-white text-sm font-mono uppercase" />
-                            </div>
-                        </div>
-
-                        {/* SPECIFICS */}
-                        {(selectedWidget.type === WidgetType.ARC_GAUGE || selectedWidget.type === WidgetType.RING_OUTER) && (
-                            <div>
-                                <label className="text-[10px] text-slate-500 uppercase font-bold">Espessura Linha</label>
-                                <input type="number" value={selectedWidget.thickness || 5} onChange={e => updateDisplayWidget(selectedWidget.id, {thickness: parseInt(e.target.value)})} className="w-full bg-slate-900 border border-slate-600 rounded p-1.5 text-white text-sm mt-1" />
-                            </div>
-                        )}
-
-                        {(selectedWidget.type === WidgetType.TEXT_VALUE || selectedWidget.type === WidgetType.TEXT_SIMPLE || selectedWidget.type === WidgetType.ARC_GAUGE) && (
-                            <div>
-                                <label className="text-[10px] text-slate-500 uppercase font-bold">Texto Label</label>
-                                <input type="text" value={selectedWidget.label || ''} onChange={e => updateDisplayWidget(selectedWidget.id, {label: e.target.value})} className="w-full bg-slate-900 border border-slate-600 rounded p-1.5 text-white text-sm mt-1" placeholder="Auto" />
+                        {/* TYPOGRAPHY SETTINGS (NEW) */}
+                        {(selectedWidget.type === WidgetType.TEXT_VALUE || selectedWidget.type === WidgetType.TEXT_SIMPLE || selectedWidget.type === WidgetType.DIGITAL_CLOCK) && (
+                            <div className="bg-slate-900 p-3 rounded border border-slate-700 space-y-3">
+                                <label className="text-[10px] text-slate-500 uppercase font-bold flex items-center gap-1"><Type size={10}/> Tipografia</label>
+                                
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label className="text-[9px] text-slate-600 block">Tamanho (px)</label>
+                                        <input type="number" value={selectedWidget.fontSize || 14} onChange={e => updateDisplayWidget(selectedWidget.id, {fontSize: parseInt(e.target.value)})} className="w-full bg-slate-800 border border-slate-600 rounded p-1 text-white text-xs"/>
+                                    </div>
+                                    <div>
+                                        <label className="text-[9px] text-slate-600 block">Peso</label>
+                                        <select value={selectedWidget.fontWeight || 'normal'} onChange={e => updateDisplayWidget(selectedWidget.id, {fontWeight: e.target.value as any})} className="w-full bg-slate-800 border border-slate-600 rounded p-1 text-white text-xs">
+                                            <option value="normal">Normal</option>
+                                            <option value="bold">Negrito</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                
+                                <div>
+                                    <label className="text-[9px] text-slate-600 block">Fonte Web</label>
+                                    <select value={selectedWidget.fontFamily || 'sans-serif'} onChange={e => updateDisplayWidget(selectedWidget.id, {fontFamily: e.target.value})} className="w-full bg-slate-800 border border-slate-600 rounded p-1 text-white text-xs">
+                                        <option value="sans-serif">Sans Serif (System)</option>
+                                        <option value="monospace">Monospace (Code)</option>
+                                        <option value="serif">Serif (Classic)</option>
+                                        <option value="Arial">Arial</option>
+                                        <option value="Verdana">Verdana</option>
+                                        <option value="Courier New">Courier</option>
+                                    </select>
+                                </div>
+                                
+                                <div>
+                                    <label className="text-[9px] text-slate-600 block">Texto Label</label>
+                                    <input type="text" value={selectedWidget.label || ''} onChange={e => updateDisplayWidget(selectedWidget.id, {label: e.target.value})} className="w-full bg-slate-800 border border-slate-600 rounded p-1 text-white text-xs" placeholder="Texto custom..." />
+                                </div>
                             </div>
                         )}
-                        
+
+                        {/* LAYERS */}
                         <div className="bg-slate-900 p-3 rounded border border-slate-700 mt-4">
                             <label className="text-[10px] text-slate-500 uppercase font-bold mb-2 block flex items-center gap-1"><Layers size={10}/> Camada (Z: {selectedWidget.zIndex || 0})</label>
                             <div className="flex gap-1 justify-between">

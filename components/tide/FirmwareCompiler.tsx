@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../../store';
-import { Cpu, Activity, Package, CheckCircle, Sliders, Thermometer, Droplets, Wind, Sun, Moon, Terminal } from 'lucide-react';
+import { Cpu, Activity, Package, CheckCircle, Sliders, Thermometer, Droplets, Wind, Sun, Moon, Terminal, Waves, Navigation } from 'lucide-react';
 
 export const FirmwareCompiler: React.FC = () => {
   const { firmwareConfig, updateFirmwareConfig, weatherData, setWeatherData, apiDebugLog, setNotification, keyframes } = useAppStore();
@@ -122,6 +122,40 @@ export const FirmwareCompiler: React.FC = () => {
                            <span className="text-xs font-mono text-white bg-slate-800 px-1.5 rounded">{weatherData.uv}</span>
                       </div>
                       <input type="range" min="0" max="15" value={weatherData.uv} onChange={e => setWeatherData({uv: parseInt(e.target.value)})} className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-yellow-400" />
+                  </div>
+
+                  {/* Wave Data Section */}
+                  <div className="bg-slate-900/50 p-3 rounded border border-slate-700/50">
+                      <div className="flex justify-between mb-2 items-center">
+                           <label className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1"><Waves size={12} className="text-blue-300"/> Ondas</label>
+                           {weatherData.wave && <span className="text-[9px] bg-blue-900/50 text-blue-200 px-1.5 rounded border border-blue-800">Marine API</span>}
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                          <div>
+                              <div className="flex justify-between text-[9px] text-slate-500 mb-1">
+                                  <span>Altura</span>
+                                  <span className="text-white font-mono">{weatherData.wave?.height || 0}m</span>
+                              </div>
+                              <input 
+                                  type="range" min="0" max="5" step="0.1"
+                                  value={weatherData.wave?.height || 0} 
+                                  onChange={e => setWeatherData({wave: {...(weatherData.wave || {height:0, direction:0, period:0}), height: parseFloat(e.target.value)}})} 
+                                  className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-400" 
+                              />
+                          </div>
+                          <div>
+                              <div className="flex justify-between text-[9px] text-slate-500 mb-1">
+                                  <span>Direção</span>
+                                  <span className="text-white font-mono flex items-center gap-1">{weatherData.wave?.direction || 0}° <Navigation size={8} style={{transform: `rotate(${weatherData.wave?.direction || 0}deg)`}}/></span>
+                              </div>
+                              <input 
+                                  type="range" min="0" max="360" step="1"
+                                  value={weatherData.wave?.direction || 0} 
+                                  onChange={e => setWeatherData({wave: {...(weatherData.wave || {height:0, direction:0, period:0}), direction: parseInt(e.target.value)}})} 
+                                  className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-slate-400" 
+                              />
+                          </div>
+                      </div>
                   </div>
 
                   <div className="bg-slate-900/50 p-3 rounded border border-slate-700/50">

@@ -34,6 +34,7 @@ export enum ConnectionType {
 export enum TideSourceType {
   API = 'API',
   TABUA_MARE = 'TABUA_MARE',
+  OPEN_METEO = 'OPEN_METEO',
   MOCK = 'MOCK',
   CALCULATED = 'CALCULATED'
 }
@@ -98,7 +99,10 @@ export enum DisplayDriver {
 
 export enum DisplayType {
     GC9A01_240 = 'GC9A01_240',
-    OLED_128 = 'OLED_128'
+    SSD1306_128x64 = 'SSD1306_128x64',
+    SSD1306_128x32 = 'SSD1306_128x32',
+    SH1106_128x64 = 'SH1106_128x64',
+    ST7789_240x240 = 'ST7789_240x240'
 }
 
 export enum WidgetType {
@@ -108,6 +112,8 @@ export enum WidgetType {
   GRAPH_LINE = 'GRAPH_LINE',        // Histórico simplificado
   DIGITAL_CLOCK = 'DIGITAL_CLOCK',  // Fonte mono/7-seg
   ANALOG_CLOCK = 'ANALOG_CLOCK',    // Ponteiros vetoriais
+  SPARKLINE = 'SPARKLINE',          // Advanced Graph for OLED
+  RAIN_CHART = 'RAIN_CHART',        // Hourly precipitation probability
   
   // Text Data
   TEXT_VALUE = 'TEXT_VALUE',        // Valor grande + Label pequeno
@@ -117,6 +123,7 @@ export enum WidgetType {
   ICON_WIFI = 'ICON_WIFI',
   ICON_BLE = 'ICON_BLE',
   ICON_WEATHER = 'ICON_WEATHER',
+  ICON_STATUS = 'ICON_STATUS',      // Battery, etc
   
   // Decor
   RING_OUTER = 'RING_OUTER',        // Anel decorativo externo
@@ -133,6 +140,7 @@ export enum DisplayTheme {
   MARINE = 'MARINE',   // Azul marinho, branco, laranja (náutico)
   NEON = 'NEON',       // Cyberpunk, linhas finas brilhantes
   PAPER = 'PAPER',     // Fundo claro, tinta preta (E-Ink style)
+  MINIMAL_OLED = 'MINIMAL_OLED', // High contrast black/white
 }
 
 export enum RenderMode {
@@ -176,11 +184,17 @@ export interface DisplayWidget {
   rotation?: number;
   thickness?: number; // Para arcos e linhas
   fontFamily?: string;
+  fontSize?: number;
+  fontWeight?: 'normal' | 'bold';
+  textAlign?: 'left' | 'center' | 'right';
+  inverted?: boolean;
 }
 
 export interface DisplayConfig {
   type: DisplayType; 
   driver: DisplayDriver;
+  width: number;
+  height: number;
   pinSCK: number;
   pinMOSI: number;
   pinCS: number;
@@ -197,6 +211,8 @@ export interface DisplayConfig {
   simulateSunlight: boolean;
   simulatePixelGrid: boolean;
   simulateRGB565: boolean;
+  ditherEnabled: boolean;
+  colorDepth: 1 | 16; // 1-bit or 16-bit
 }
 
 export interface LowPowerConfig {
@@ -370,6 +386,12 @@ export interface DailyForecast {
   icon?: string;
 }
 
+export interface WaveData {
+  height: number;
+  direction: number;
+  period: number;
+}
+
 export interface WeatherData {
   temp: number;
   humidity: number;
@@ -388,6 +410,8 @@ export interface WeatherData {
   battery: number;
   conditionText: string;
   forecast: DailyForecast[];
+  hourlyRain: number[]; // Next 12-24 hours probability %
+  wave?: WaveData;
 }
 
 export enum ViewState {

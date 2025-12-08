@@ -150,23 +150,31 @@ export const useAppStore = create<AppState>((set) => ({
     lastValidData: null
   },
   displayConfig: {
-    type: DisplayType.GC9A01_240, 
-    driver: DisplayDriver.TFT_ESPI,
+    type: DisplayType.SSD1306_128x64, 
+    driver: DisplayDriver.U8G2_OLED,
+    width: 128,
+    height: 64,
     pinSCK: 18, pinMOSI: 23, pinCS: 5, pinDC: 2, pinRST: 4, pinBLK: 22, 
     rotation: 0, brightness: 200, fps: 30,
     spi: { frequency: 40000000, mode: 0, dataOrderMSB: true },
     backlight: { pwmFrequency: 5000, smoothing: true },
     renderMode: RenderMode.QUALITY,
-    theme: DisplayTheme.DEFAULT,
-    simulateSunlight: false, simulatePixelGrid: false, simulateRGB565: true
+    theme: DisplayTheme.MINIMAL_OLED,
+    simulateSunlight: false, 
+    simulatePixelGrid: true, 
+    simulateRGB565: false,
+    ditherEnabled: true,
+    colorDepth: 1
   },
   displayWidgets: [
-    { id: '1', type: WidgetType.ARC_GAUGE, x: 120, y: 120, scale: 1, color: '#0ea5e9', visible: true, zIndex: 0, valueSource: 'TIDE' },
-    { id: '2', type: WidgetType.TEXT_SIMPLE, x: 120, y: 160, scale: 1, color: '#ffffff', label: 'NÍVEL MARÉ', visible: true, zIndex: 1 },
+    { id: '1', type: WidgetType.SPARKLINE, x: 64, y: 32, scale: 1, color: '#ffffff', visible: true, zIndex: 0, valueSource: 'TIDE', w: 128, h: 40 },
+    { id: '2', type: WidgetType.TEXT_VALUE, x: 64, y: 15, scale: 1, color: '#ffffff', label: 'TIDE', visible: true, zIndex: 1, valueSource: 'TIDE', fontSize: 18 },
   ],
   weatherData: {
       temp: 28.5, humidity: 78, windSpeed: 22, windDir: 45, feelsLike: 31, uv: 8, pressure: 1012, cloud: 20, precip: 0,
-      sunrise: "05:30", sunset: "17:45", isDay: true, battery: 100, moonPhase: "Waxing Crescent", moonIllumination: 25, conditionText: "Ensolarado", forecast: []
+      sunrise: "05:30", sunset: "17:45", isDay: true, battery: 100, moonPhase: "Waxing Crescent", moonIllumination: 25, conditionText: "Ensolarado", forecast: [],
+      hourlyRain: [0,0,10,30,60,40,10,0],
+      wave: { height: 0.5, direction: 90, period: 5.0 }
   },
   apiLoading: false, apiError: null, apiDebugLog: null, notification: null,
 
@@ -193,7 +201,6 @@ export const useAppStore = create<AppState>((set) => ({
   setSimulatedTime: (time) => set({ simulatedTime: time }),
   setSystemTime: (time) => set({ systemTime: time }),
   updateFirmwareConfig: (config) => set((state) => {
-    // Deep Merge Logic
     const newConfig = { ...state.firmwareConfig, ...config };
     if (config.ota) newConfig.ota = { ...state.firmwareConfig.ota, ...config.ota };
     if (config.mesh) newConfig.mesh = { ...state.firmwareConfig.mesh, ...config.mesh };
