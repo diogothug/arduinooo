@@ -1,5 +1,6 @@
 
 
+
 import { FirmwareConfig } from '../../types';
 
 export const generateWs2812bConfigH = () => `
@@ -600,4 +601,3 @@ void WS2812BAnimations::runThermalDepth(AnimationParams p, uint32_t t) {
     }
 }
 `;
-}
