@@ -7,6 +7,10 @@
 
 
 
+
+
+
+
 import { DataSourceConfig, Keyframe, TideSourceType, MockWaveType, EffectType, WeatherData } from "../types";
 import { useAppStore } from '../store';
 
@@ -361,33 +365,40 @@ async function fetchOpenMeteoData(config: DataSourceConfig) {
     // 1. Weather + Hourly Rain
     const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&hourly=precipitation_probability`;
     // 2. Marine (Waves)
+    // Removed timezone=auto to ensure consistent ISO8601 parsing or handle manual time zone offset if needed.
+    // Actually OpenMeteo returns proper ISO with timezone=auto usually, but let's be robust.
     const marineUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lng}&hourly=wave_height,wave_direction,wave_period&timezone=auto`;
     
     safeLog(`[OpenMeteo] GET Weather: ${weatherUrl}`);
     safeLog(`[OpenMeteo] GET Marine: ${marineUrl}`);
     
-    const [resWeather, resMarine] = await Promise.all([
-        fetch(weatherUrl),
-        fetch(marineUrl)
-    ]);
-    
-    if (!resWeather.ok) throw new Error("OpenMeteo Weather HTTP " + resWeather.status);
-    
+    // Fetch both independently so one failure doesn't block the other completely
+    let jsonWeather = null;
     let marineJson = null;
-    if (resMarine.ok) {
-        marineJson = await resMarine.json();
-    } else {
-        safeLog(`[OpenMeteo] Marine fetch failed or inland (HTTP ${resMarine.status})`);
-    }
+
+    try {
+        const resWeather = await fetch(weatherUrl);
+        if (resWeather.ok) jsonWeather = await resWeather.json();
+        else safeLog(`[OpenMeteo] Weather HTTP Error ${resWeather.status}`);
+    } catch(e: any) { safeLog(`[OpenMeteo] Weather Fetch Fail: ${e.message}`); }
+
+    try {
+        const resMarine = await fetch(marineUrl);
+        if (resMarine.ok) marineJson = await resMarine.json();
+        else safeLog(`[OpenMeteo] Marine HTTP Error ${resMarine.status}`);
+    } catch(e: any) { safeLog(`[OpenMeteo] Marine Fetch Fail: ${e.message}`); }
     
-    const jsonWeather = await resWeather.json();
-    const curr = jsonWeather.current_weather;
+    if (!jsonWeather && !marineJson) throw new Error("Falha total na comunicação com OpenMeteo.");
+    
+    const curr = jsonWeather?.current_weather || {};
     
     let waveData = { height: 0, direction: 0, period: 0 };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const hourlyWaves: any[] = [];
     let hourlyRain: number[] = [];
 
     // Process Hourly Rain (Next 8-12 hours)
-    if (jsonWeather.hourly && jsonWeather.hourly.precipitation_probability) {
+    if (jsonWeather && jsonWeather.hourly && jsonWeather.hourly.precipitation_probability) {
         // Find current index based on time
         const nowStr = new Date().toISOString().substring(0, 13); // "2023-10-27T10"
         const times = jsonWeather.hourly.time as string[];
@@ -411,7 +422,7 @@ async function fetchOpenMeteoData(config: DataSourceConfig) {
         let minDiff = Infinity;
         let idx = 0;
         
-        // Simple closest match
+        // Simple closest match logic
         for (let i = 0; i < times.length; i++) {
             const tDate = new Date(times[i]);
             const diff = Math.abs(now.getTime() - tDate.getTime());
@@ -430,21 +441,41 @@ async function fetchOpenMeteoData(config: DataSourceConfig) {
             period: marineJson.hourly.wave_period[idx] || 0
         };
         safeLog(`[OpenMeteo] Wave Data: ${waveData.height}m, ${waveData.direction}deg, ${waveData.period}s`);
+
+        // Populate hourlyWaves (Next 24h)
+        const heights = marineJson.hourly.wave_height;
+        const dirs = marineJson.hourly.wave_direction;
+        const periods = marineJson.hourly.wave_period;
+        
+        for(let i=0; i<24; i++) {
+            const index = idx + i;
+            if(index < times.length) {
+                hourlyWaves.push({
+                    time: i, // Relative hour 0-23
+                    height: heights[index] || 0,
+                    direction: dirs[index] || 0,
+                    period: periods[index] || 0
+                });
+            }
+        }
+    } else {
+        safeLog("[OpenMeteo] Warning: No marine data found in response.");
     }
     
     // Map to WeatherData
     const weather: Partial<WeatherData> = {
-        temp: curr.temperature,
-        windSpeed: curr.windspeed,
-        windDir: curr.winddirection,
+        temp: curr.temperature || 0,
+        windSpeed: curr.windspeed || 0,
+        windDir: curr.winddirection || 0,
         isDay: curr.is_day === 1,
-        conditionText: "Code: " + curr.weathercode,
+        conditionText: "Code: " + (curr.weathercode || 0),
         // Defaults for missing data in this specific endpoint
         humidity: 60,
         pressure: 1013,
         uv: 0,
         precip: 0,
         wave: waveData,
+        hourlyWaves: hourlyWaves,
         hourlyRain: hourlyRain
     };
     

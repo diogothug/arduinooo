@@ -1,10 +1,13 @@
 
+
+
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
 import { ConnectionType, ViewState } from '../types';
 import { Play, Pause, RefreshCw, UploadCloud, Usb, Bluetooth, Wifi, CalendarClock } from 'lucide-react';
 import { hardwareBridge } from '../services/hardwareBridge';
 import { TideChart } from './tide/TideChart';
+import { WaveChart } from './tide/WaveChart';
 import { TideSourceConfig } from './tide/TideSourceConfig';
 import { FirmwareCompiler } from './tide/FirmwareCompiler';
 
@@ -117,11 +120,20 @@ export const TideEditor: React.FC<TideEditorProps> = ({ view = ViewState.DATA_TI
         </div>
       </div>
 
-      {/* 2. CHART - Only show in Tides mode or if relevant */}
+      {/* 2. CHART - Show appropriate chart based on view */}
       {view === ViewState.DATA_TIDES && (
           <div className="w-full">
              <TideChart 
                  useSevenDayMode={useSevenDayMode} 
+                 isExpanded={isChartExpanded} 
+                 setIsExpanded={setIsChartExpanded} 
+             />
+          </div>
+      )}
+      
+      {view === ViewState.DATA_WAVES && (
+          <div className="w-full">
+             <WaveChart 
                  isExpanded={isChartExpanded} 
                  setIsExpanded={setIsChartExpanded} 
              />

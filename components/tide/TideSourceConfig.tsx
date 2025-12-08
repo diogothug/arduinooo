@@ -35,7 +35,7 @@ export const TideSourceConfig: React.FC<TideSourceConfigProps> = ({ useSevenDayM
           
           if (weather) {
               setWeatherData(weather);
-              setNotification('success', `Dados Atualizados: ${frames.length} pts + Clima`);
+              setNotification('success', `Dados Atualizados: ${frames.length} pts + Clima/Ondas`);
           } else {
               setNotification('success', `Dados gerados via: ${sourceUsed}`);
           }
@@ -240,9 +240,11 @@ export const TideSourceConfig: React.FC<TideSourceConfigProps> = ({ useSevenDayM
                       
                       <button 
                             onClick={handleSourceGenerate}
+                            disabled={isGeneratingSource}
                             className="w-full font-bold py-3 rounded-lg text-xs flex items-center justify-center gap-2 transition shadow-lg bg-green-600 hover:bg-green-500 text-white shadow-green-900/20"
                         >
-                            <RefreshCw size={14} /> Atualizar Clima
+                            {isGeneratingSource ? <RefreshCw className="animate-spin" size={14} /> : <RefreshCw size={14} />} 
+                            {isGeneratingSource ? 'Buscando Dados...' : 'Atualizar Clima'}
                       </button>
                   </div>
               )}
@@ -274,6 +276,16 @@ export const TideSourceConfig: React.FC<TideSourceConfigProps> = ({ useSevenDayM
                               </div>
                           </div>
                       </div>
+
+                      {/* NEW BUTTON FOR WAVES FETCH */}
+                      <button 
+                            onClick={handleSourceGenerate}
+                            disabled={isGeneratingSource}
+                            className="w-full font-bold py-3 rounded-lg text-xs flex items-center justify-center gap-2 transition shadow-lg bg-blue-600 hover:bg-blue-500 text-white shadow-blue-900/20"
+                        >
+                            {isGeneratingSource ? <RefreshCw className="animate-spin" size={14} /> : <RefreshCw size={14} />} 
+                            {isGeneratingSource ? 'Buscando Previsão de Ondas...' : 'Atualizar Previsão (Open-Meteo)'}
+                      </button>
 
                       <div className="bg-slate-800 p-4 rounded border border-slate-700">
                           <h4 className="text-[10px] text-slate-400 font-bold mb-3 uppercase flex items-center gap-2"><Settings size={12}/> Configuração Manual</h4>

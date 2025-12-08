@@ -392,6 +392,13 @@ export interface WaveData {
   period: number;
 }
 
+export interface HourlyWaveData {
+  time: number; // 0-23 hour offset
+  height: number;
+  direction: number;
+  period: number;
+}
+
 export interface WeatherData {
   temp: number;
   humidity: number;
@@ -412,6 +419,7 @@ export interface WeatherData {
   forecast: DailyForecast[];
   hourlyRain: number[]; // Next 12-24 hours probability %
   wave?: WaveData;
+  hourlyWaves?: HourlyWaveData[];
 }
 
 export enum ViewState {

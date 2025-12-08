@@ -174,7 +174,8 @@ export const useAppStore = create<AppState>((set) => ({
       temp: 28.5, humidity: 78, windSpeed: 22, windDir: 45, feelsLike: 31, uv: 8, pressure: 1012, cloud: 20, precip: 0,
       sunrise: "05:30", sunset: "17:45", isDay: true, battery: 100, moonPhase: "Waxing Crescent", moonIllumination: 25, conditionText: "Ensolarado", forecast: [],
       hourlyRain: [0,0,10,30,60,40,10,0],
-      wave: { height: 0.5, direction: 90, period: 5.0 }
+      wave: { height: 0.5, direction: 90, period: 5.0 },
+      hourlyWaves: []
   },
   apiLoading: false, apiError: null, apiDebugLog: null, notification: null,
 
