@@ -1,13 +1,18 @@
+
 import React, { useState } from 'react';
 import { useAppStore } from '../store';
-import { ConnectionType } from '../types';
+import { ConnectionType, ViewState } from '../types';
 import { Play, Pause, RefreshCw, UploadCloud, Usb, Bluetooth, Wifi, CalendarClock } from 'lucide-react';
 import { hardwareBridge } from '../services/hardwareBridge';
 import { TideChart } from './tide/TideChart';
 import { TideSourceConfig } from './tide/TideSourceConfig';
 import { FirmwareCompiler } from './tide/FirmwareCompiler';
 
-export const TideEditor: React.FC = () => {
+interface TideEditorProps {
+    view?: ViewState;
+}
+
+export const TideEditor: React.FC<TideEditorProps> = ({ view = ViewState.DATA_TIDES }) => {
   const { 
     keyframes, simulatedTime, setSimulatedTime, activeDeviceId, devices, connectionType,
     updateFirmwareConfig, setNotification, dataSourceConfig
@@ -52,6 +57,12 @@ export const TideEditor: React.FC = () => {
     } finally {
         setIsSyncing(false);
     }
+  };
+
+  const getSourceConfigMode = () => {
+      if (view === ViewState.DATA_WEATHER) return 'CLIMA';
+      if (view === ViewState.DATA_WAVES) return 'ONDAS';
+      return 'MARE';
   };
 
   return (
@@ -106,14 +117,16 @@ export const TideEditor: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. CHART */}
-      <div className="w-full">
-         <TideChart 
-             useSevenDayMode={useSevenDayMode} 
-             isExpanded={isChartExpanded} 
-             setIsExpanded={setIsChartExpanded} 
-         />
-      </div>
+      {/* 2. CHART - Only show in Tides mode or if relevant */}
+      {view === ViewState.DATA_TIDES && (
+          <div className="w-full">
+             <TideChart 
+                 useSevenDayMode={useSevenDayMode} 
+                 isExpanded={isChartExpanded} 
+                 setIsExpanded={setIsChartExpanded} 
+             />
+          </div>
+      )}
 
       {/* 3. GRID LAYOUT FOR CONFIG & COMPILER */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -121,6 +134,7 @@ export const TideEditor: React.FC = () => {
               <TideSourceConfig 
                   useSevenDayMode={useSevenDayMode}
                   setSimulatedTime={setSimulatedTime}
+                  mode={getSourceConfigMode()}
               />
           </div>
 

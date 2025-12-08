@@ -416,7 +416,10 @@ export interface WeatherData {
 
 export enum ViewState {
   DASHBOARD = 'DASHBOARD',
-  EDITOR = 'EDITOR',
+  DATA_TIDES = 'DATA_TIDES',
+  DATA_WEATHER = 'DATA_WEATHER',
+  DATA_WAVES = 'DATA_WAVES',
+  EDITOR = 'EDITOR', // Legacy alias
   DISPLAY = 'DISPLAY',
   LED_MASTER = 'LED_MASTER',
   FIRMWARE = 'FIRMWARE',

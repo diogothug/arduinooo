@@ -9,7 +9,7 @@ import { DisplayEditor } from './components/DisplayEditor';
 import { LedMaster } from './components/LedMaster';
 import { ConnectionManager } from './components/ConnectionManager';
 import { Esp32Tools } from './components/Esp32Tools';
-import { LayoutDashboard, Waves, Cpu, Settings, Activity, Monitor, Link2, Wifi, Usb, Bluetooth, AlertCircle, CheckCircle, Info, X, Lightbulb, Database, Shield, ChevronDown, ChevronRight, Calculator, Globe, MapPin, Thermometer, Clock } from 'lucide-react';
+import { LayoutDashboard, Waves, Cpu, Settings, Activity, Monitor, Link2, Wifi, Usb, Bluetooth, AlertCircle, CheckCircle, Info, X, Lightbulb, Database, Shield, ChevronDown, ChevronRight, Calculator, Globe, MapPin, Thermometer, Clock, Anchor, CloudSun } from 'lucide-react';
 
 const NotificationToast = () => {
     const { notification, clearNotification } = useAppStore();
@@ -53,12 +53,12 @@ const App: React.FC = () => {
 
   const handleEditDevice = (id: string) => {
       setActiveDevice(id);
-      setView(ViewState.EDITOR);
+      setView(ViewState.DATA_TIDES);
   };
 
-  const handleDataSourceSelect = (type: TideSourceType) => {
+  const handleDataSourceSelect = (type: TideSourceType, targetView: ViewState) => {
       updateDataSourceConfig({ activeSource: type });
-      setView(ViewState.EDITOR);
+      setView(targetView);
   };
 
   return (
@@ -103,24 +103,22 @@ const App: React.FC = () => {
                     {expandedData && (
                         <div className="mt-1 ml-4 border-l border-slate-700 pl-2 space-y-1">
                              <SubNavButton 
-                                onClick={() => handleDataSourceSelect(TideSourceType.TABUA_MARE)}
-                                label="Tábua Maré (BR)"
-                                icon={<MapPin size={14}/>}
+                                onClick={() => handleDataSourceSelect(TideSourceType.TABUA_MARE, ViewState.DATA_TIDES)}
+                                label="Maré (Tábua & Mocks)"
+                                icon={<Anchor size={14}/>}
+                                active={currentView === ViewState.DATA_TIDES}
                              />
                              <SubNavButton 
-                                onClick={() => handleDataSourceSelect(TideSourceType.API)}
-                                label="Weather API"
-                                icon={<Globe size={14}/>}
+                                onClick={() => handleDataSourceSelect(TideSourceType.API, ViewState.DATA_WEATHER)}
+                                label="Clima & Meteorologia"
+                                icon={<CloudSun size={14}/>}
+                                active={currentView === ViewState.DATA_WEATHER}
                              />
                              <SubNavButton 
-                                onClick={() => handleDataSourceSelect(TideSourceType.CALCULATED)}
-                                label="Calculadora Senoidal"
-                                icon={<Calculator size={14}/>}
-                             />
-                             <SubNavButton 
-                                onClick={() => handleDataSourceSelect(TideSourceType.MOCK)}
-                                label="Mocks & Snapshots"
-                                icon={<Activity size={14}/>}
+                                onClick={() => handleDataSourceSelect(TideSourceType.OPEN_METEO, ViewState.DATA_WAVES)}
+                                label="Ondas & Surf"
+                                icon={<Waves size={14}/>}
+                                active={currentView === ViewState.DATA_WAVES}
                              />
                         </div>
                     )}
@@ -171,7 +169,10 @@ const App: React.FC = () => {
             <h2 className="text-lg font-semibold text-white truncate flex items-center gap-4">
                 <span>
                     {currentView === ViewState.DASHBOARD && 'Visão Geral'}
-                    {currentView === ViewState.EDITOR && 'Editor de Dados & Fontes'}
+                    {currentView === ViewState.DATA_TIDES && 'Editor de Maré'}
+                    {currentView === ViewState.DATA_WEATHER && 'Editor de Clima'}
+                    {currentView === ViewState.DATA_WAVES && 'Editor de Ondas'}
+                    {currentView === ViewState.EDITOR && 'Editor de Dados'}
                     {currentView === ViewState.DISPLAY && 'Designer do Display'}
                     {currentView === ViewState.LED_MASTER && 'LED Master WS2812B'}
                     {currentView === ViewState.FIRMWARE && 'Gerador de Firmware'}
@@ -252,10 +253,11 @@ const App: React.FC = () => {
                  </div>
              )}
 
-             {currentView === ViewState.EDITOR && (
+             {/* Handles DATA_TIDES, DATA_WEATHER, DATA_WAVES, EDITOR */}
+             {(currentView === ViewState.DATA_TIDES || currentView === ViewState.DATA_WEATHER || currentView === ViewState.DATA_WAVES || currentView === ViewState.EDITOR) && (
                  <div className="flex flex-col xl:flex-row gap-6">
                      <div className="flex-1 min-w-0">
-                         <TideEditor />
+                         <TideEditor view={currentView} />
                      </div>
                      <div className="xl:w-[350px] shrink-0">
                          <div className="xl:sticky xl:top-0">
@@ -297,10 +299,10 @@ const NavButton = ({ active, onClick, icon, label }: { active: boolean, onClick:
     </button>
 );
 
-const SubNavButton = ({ onClick, icon, label }: { onClick: () => void, icon: React.ReactNode, label: string }) => (
+const SubNavButton = ({ onClick, icon, label, active }: { onClick: () => void, icon: React.ReactNode, label: string, active?: boolean }) => (
     <button 
         onClick={onClick}
-        className="w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-200 text-slate-500 hover:text-cyan-400 hover:bg-slate-800/50 text-xs font-medium"
+        className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-200 text-xs font-medium ${active ? 'text-cyan-400 bg-slate-800 font-bold' : 'text-slate-500 hover:text-cyan-400 hover:bg-slate-800/50'}`}
     >
         {icon}
         <span className="hidden lg:block">{label}</span>

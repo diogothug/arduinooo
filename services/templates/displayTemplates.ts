@@ -1,10 +1,5 @@
 
-
-
-
-
-
-import { DisplayWidget, DisplayConfig, WidgetType } from '../../types';
+import { DisplayWidget, WidgetType, DisplayConfig } from '../../types';
 
 export const generateDisplayManagerH = () => `
 #ifndef DISPLAY_MANAGER_H
@@ -273,3 +268,4 @@ void DisplayManager::showSplashScreen() {
     tft.drawCentreString("TideFlux", 120, 100, 4);
 }
 `;
+};

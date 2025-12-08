@@ -1,8 +1,4 @@
 
-
-
-
-
 import React, { useState } from 'react';
 import { useAppStore } from '../../store';
 import { TideSourceType, MockWaveType } from '../../types';
@@ -12,15 +8,15 @@ import { Database, MapPin, Globe, Calculator, Activity, Search, AlertCircle, Che
 interface TideSourceConfigProps {
     useSevenDayMode: boolean;
     setSimulatedTime: (t: number) => void;
+    mode?: 'MARE' | 'CLIMA' | 'ONDAS'; // Explicit mode prop
 }
 
-export const TideSourceConfig: React.FC<TideSourceConfigProps> = ({ useSevenDayMode, setSimulatedTime }) => {
+export const TideSourceConfig: React.FC<TideSourceConfigProps> = ({ useSevenDayMode, setSimulatedTime, mode = 'MARE' }) => {
   const { 
     dataSourceConfig, updateDataSourceConfig, weatherData, setWeatherData,
     setKeyframes, setNotification, setApiStatus, savedMocks, saveMock, deleteMock, systemTime
   } = useAppStore();
 
-  const [activeTab, setActiveTab] = useState<'MARE' | 'CLIMA' | 'ONDAS'>('MARE');
   const [isGeneratingSource, setIsGeneratingSource] = useState(false);
   const [isCheckingPort, setIsCheckingPort] = useState(false);
   const [newMockName, setNewMockName] = useState('');
@@ -88,30 +84,23 @@ export const TideSourceConfig: React.FC<TideSourceConfigProps> = ({ useSevenDayM
 
   return (
       <div className="bg-slate-800 rounded-lg border border-slate-700 flex flex-col h-auto">
-          {/* Header & Tabs */}
-          <div className="border-b border-slate-700">
-               <div className="p-4 pb-0">
-                   <h3 className="text-xs font-bold text-white flex items-center gap-2 mb-4">
-                        <Database size={14} className="text-purple-400"/> Dados & Fontes
-                   </h3>
-                   <div className="flex gap-1">
-                       <button onClick={()=>setActiveTab('MARE')} className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-t-lg transition ${activeTab==='MARE' ? 'bg-slate-900/50 text-cyan-400 border-t border-x border-slate-700' : 'text-slate-400 hover:text-slate-200'}`}>
-                           <Anchor size={14}/> Maré
-                       </button>
-                       <button onClick={()=>setActiveTab('CLIMA')} className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-t-lg transition ${activeTab==='CLIMA' ? 'bg-slate-900/50 text-green-400 border-t border-x border-slate-700' : 'text-slate-400 hover:text-slate-200'}`}>
-                           <CloudSun size={14}/> Clima
-                       </button>
-                       <button onClick={()=>setActiveTab('ONDAS')} className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-t-lg transition ${activeTab==='ONDAS' ? 'bg-slate-900/50 text-blue-400 border-t border-x border-slate-700' : 'text-slate-400 hover:text-slate-200'}`}>
-                           <Waves size={14}/> Ondas
-                       </button>
-                   </div>
-               </div>
+          {/* Header */}
+          <div className="border-b border-slate-700 p-4">
+               <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    {mode === 'MARE' && <Anchor size={16} className="text-cyan-400"/>}
+                    {mode === 'CLIMA' && <CloudSun size={16} className="text-green-400"/>}
+                    {mode === 'ONDAS' && <Waves size={16} className="text-blue-400"/>}
+                    
+                    {mode === 'MARE' && 'Configuração de Maré'}
+                    {mode === 'CLIMA' && 'Clima & Meteorologia'}
+                    {mode === 'ONDAS' && 'Ondas & Surf'}
+               </h3>
           </div>
 
           <div className="p-4 bg-slate-900/50 min-h-[300px]">
               
-              {/* --- TAB: MARE (TIDE) --- */}
-              {activeTab === 'MARE' && (
+              {/* --- SECTION: MARE (TIDE) --- */}
+              {mode === 'MARE' && (
                   <div className="space-y-6 animate-in fade-in">
                       {/* Source Selection */}
                       <div className="space-y-2">
@@ -206,8 +195,8 @@ export const TideSourceConfig: React.FC<TideSourceConfigProps> = ({ useSevenDayM
                   </div>
               )}
 
-              {/* --- TAB: CLIMA (WEATHER) --- */}
-              {activeTab === 'CLIMA' && (
+              {/* --- SECTION: CLIMA (WEATHER) --- */}
+              {mode === 'CLIMA' && (
                   <div className="space-y-6 animate-in fade-in">
                       <div className="space-y-2">
                           <label className="text-[9px] text-slate-500 uppercase font-bold">Provedor de Clima</label>
@@ -258,8 +247,8 @@ export const TideSourceConfig: React.FC<TideSourceConfigProps> = ({ useSevenDayM
                   </div>
               )}
 
-              {/* --- TAB: ONDAS (WAVES) --- */}
-              {activeTab === 'ONDAS' && (
+              {/* --- SECTION: ONDAS (WAVES) --- */}
+              {mode === 'ONDAS' && (
                   <div className="space-y-6 animate-in fade-in">
                       <div className="bg-blue-900/20 p-4 rounded border border-blue-900/30">
                           <div className="flex justify-between items-start mb-4">
